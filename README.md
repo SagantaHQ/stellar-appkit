@@ -346,4 +346,4 @@ Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
 ## License
 
-MIT
+GNU General Public License v3.0
