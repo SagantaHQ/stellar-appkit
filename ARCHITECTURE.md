@@ -1,0 +1,266 @@
+# Stellar AppKit — Architecture & Build Spec
+
+**A cross-platform wallet-connection SDK for Stellar/Soroban.**
+Web3Modal/Reown-AppKit-equivalent for Stellar, with a unified wallet API, a first-class Soroban layer, and a themeable UI that works identically across browser extensions, mobile web, and React Native.
+
+---
+
+## 0. Positioning — what already exists, and the actual gap
+
+Before designing this, it's worth being precise about prior art so we build the 20% that's missing instead of re-solving a solved problem:
+
+- **SEP-43 ("Standard Web Wallet API Interface")** is a draft Stellar standard that defines a common shape — `getAddress`, `signTransaction`, `signAuthEntry`, `signMessage`, `getNetwork` — with a shared error-code contract (`-1` internal, `-2` external service, `-3` invalid request, `-4` user rejected). Some wallets are converging on this natively; most aren't there yet, so real-world adapters still need per-wallet shims.
+- **`@creit-tech/stellar-wallets-kit`** is a mature, MIT-licensed, headless connector library already covering xBull, Albedo, Freighter, Rabet, Lobstr, Hana, Hot Wallet, Klever, OneKey, Bitget, and WalletConnect. It deliberately ships **no UI** — "allowing developers handling the UI/UX in the way they want."
+- **`@stellar/freighter-api`** is the official Freighter client, shaped close to SEP-43 already (`getAddress`, `requestAccess`, `signTransaction`, `getNetworkDetails`, `signMessage`).
+
+**The gap isn't wallet connectivity — it's everything around it:** there is no Reown-AppKit-style product for Stellar that ships a polished, themeable, cross-platform (web *and* React Native) modal/bottom-sheet UI, a first-class Soroban contract-call layer, and a built-in Sign-In-With-Stellar flow, all behind one typed API. That's what Stellar AppKit is.
+
+Two build strategies are viable for the connector layer itself:
+
+| | Build our own adapters | Wrap stellar-wallets-kit |
+|---|---|---|
+| Speed to first release | Slower | Fast — connectivity is solved |
+| Control over SEP-43 migration, error normalization, RN support | Full | Limited by their roadmap |
+| Bundle size / dependency surface | Own choice | Inherit theirs |
+| Risk | Re-discovering wallet-specific quirks | Coupling core infra to a third party |
+
+**Recommendation:** build a thin, SEP-43-native core adapter layer ourselves (small surface area, ~5 methods, easy to keep current), with legacy shims for wallets not yet SEP-43-compliant. This keeps the differentiated layers (Soroban, UI, SIWS, theming, smart-account hooks) fully in our control, which matters given Saganta's roadmap (embedded wallets, gas sponsorship, smart accounts). The scaffold below follows that path; `stellar-wallets-kit` connectors can still be dropped in later as an escape hatch for long-tail wallets without blocking the core.
+
+---
+
+## 1. Monorepo layout
+
+```
+saganta-connect/
+├── packages/
+│   ├── core/                 # framework-agnostic: adapters, unified API, Soroban, SIWS, state
+│   ├── react/                 # React hooks + <ConnectProvider> (web)
+│   ├── react-native/          # RN hooks + <ConnectProvider> (Expo-compatible)
+│   ├── ui-web/                 # Web Components (Shadow DOM), modal/inline/bottom-sheet, themeable
+│   ├── ui-react-native/         # RN bottom-sheet + modal + inline, themeable
+│   └── siws-verify/              # tiny server-side verifier for Sign-In With Stellar (Node/edge)
+├── examples/
+│   ├── next-app/
+│   ├── vite-react/
+│   └── expo-app/
+└── ARCHITECTURE.md
+```
+
+`core` has zero DOM/RN dependency — it only needs a `Storage` and `crypto` shim injected per platform, which is what makes the same connection/session logic work identically in a browser tab and inside a React Native app.
+
+---
+
+## 2. Unified wallet interface
+
+Every connector — native SEP-43 or shimmed — normalizes to one interface. This is intentionally the SEP-43 shape plus connection lifecycle and metadata, so we inherit the standard rather than inventing a competing one:
+
+```ts
+interface WalletConnector {
+  readonly id: string;                 // 'freighter' | 'xbull' | 'albedo' | 'walletconnect' | ...
+  readonly meta: WalletMeta;           // name, icon, deep-link scheme, install urls, platforms
+  readonly capabilities: {
+    signTransaction: boolean;
+    signAuthEntry: boolean;             // needed for Soroban auth
+    signMessage: boolean;               // needed for SIWS
+    submit: boolean;
+  };
+
+  isAvailable(): Promise<boolean>;      // injected extension present / WC relay reachable
+  connect(opts?: ConnectOptions): Promise<WalletAccount>;
+  disconnect(): Promise<void>;
+
+  getAddress(): Promise<{ address: string }>;
+  getNetwork(): Promise<{ network: string; networkPassphrase: string }>;
+  signTransaction(xdr: string, opts?: SignTxOptions): Promise<{ signedTxXdr: string; signerAddress: string }>;
+  signAuthEntry(entryXdr: string, opts?: SignOptions): Promise<{ signedAuthEntry: string; signerAddress: string }>;
+  signMessage(message: string, opts?: SignOptions): Promise<{ signedMessage: string; signerAddress: string }>;
+}
+```
+
+Errors are normalized into a single `ConnectError` class carrying the SEP-43 `code` (`-1..-4`), a human `message`, and optional `ext[]` — so UI code never branches on wallet identity to decide how to render a failure.
+
+**Adapters ship in v1** (mirroring the ecosystem's actual coverage): Freighter (extension + mobile), xBull (PWA + extension), Albedo (no-install, web-based signer), Rabet, Lobstr (via WalletConnect), Hana (via WalletConnect), Hot Wallet, and a generic WalletConnect v2/Reown relay adapter that covers any wallet supporting the Stellar WC namespace. Hardware (Ledger) is a Phase-2 adapter since it needs a different transport model (WebHID/WebUSB, no RN support yet).
+
+---
+
+## 3. Soroban abstraction
+
+A second facade sits next to the wallet layer and owns everything RPC/contract-shaped, so app code never touches `SorobanRpc.Server` directly:
+
+```ts
+class SorobanConnection {
+  constructor(opts: { rpcUrl: string; networkPassphrase: string; wallet: StellarAppKit });
+
+  // Low-level, still typed
+  simulate(tx: Transaction): Promise<SimulateResult>;
+  prepare(tx: Transaction): Promise<Transaction>;             // simulate + apply footprint/resource fees
+  submit(signedXdr: string): Promise<SubmitResult>;
+  pollStatus(hash: string, opts?: PollOptions): Promise<TxStatus>;
+
+  // High-level: the 90% case
+  invoke(opts: {
+    contractId: string;
+    method: string;
+    args: xdr.ScVal[];
+    simulateOnly?: boolean;         // read-only calls skip signing entirely
+  }): Promise<InvokeResult>;
+
+  // Typed contract client generation from a WASM spec / Stellar CLI bindings,
+  // so `contract.transfer({ to, amount })` is possible instead of manual ScVal building
+  contract<T extends ContractSpec>(contractId: string, spec: T): TypedContractClient<T>;
+}
+```
+
+`invoke()` runs the full pipeline — build, simulate, prepare (resource footprint + fees), request signature via the connected `WalletConnector` (using `signTransaction`, or `signAuthEntry` when the call needs delegated Soroban auth entries), submit, and poll to completion — surfacing one typed result or one normalized error. This is also the seam where Saganta's gas-sponsorship and smart-account signer can later be injected as an alternate `AuthProvider`, without changing the call site.
+
+---
+
+## 4. Cross-platform UI architecture
+
+The hard requirement — identical behavior on web (extension + mobile browser) and React Native — means the **state machine has to live in `core`**, and each platform only supplies a renderer.
+
+```
+┌─────────────────────────────┐
+│   core: ConnectStateMachine │   idle → selecting → connecting → connected → error
+│   (framework-agnostic)      │   session persistence, network watch, event bus
+└──────────────┬───────────────┘
+       ┌────────┴────────┐
+       │                 │
+┌──────▼──────┐   ┌───────▼────────┐
+│  ui-web      │   │ ui-react-native │
+│  Web Comps    │   │ RN components   │
+│  (Shadow DOM) │   │                 │
+└──────────────┘   └────────────────┘
+```
+
+- **`ui-web`** ships as framework-agnostic Web Components rendered in a Shadow DOM (style isolation — this is what makes it safe to drop into *any* site without CSS collisions), plus a thin `react` package that wraps them as idiomatic components/hooks for React apps (which covers the large majority of Stellar dApps).
+- **`ui-react-native`** ships real RN primitives (`View`/`Animated`/`Pressable`, `@gorhom/bottom-sheet` for the sheet), not a WebView wrapper — needed for 120fps gesture-driven sheets and to avoid RN WebView/extension-injection dead ends.
+- Both renderers consume the exact same `core` state machine, so "list of wallets, connecting spinner, error copy, session restore" behavior is defined once.
+
+**Presentation modes**, selectable per call site:
+
+| Mode | Trigger | Behavior |
+|---|---|---|
+| `modal` | default on desktop web | Centered dialog, backdrop, focus-trapped |
+| `bottom-sheet` | default on mobile web + always on RN | Swipe-to-dismiss sheet, snap points, safe-area aware |
+| `inline` | explicit `mode: 'inline'` | Renders the wallet list/connect UI directly in the page flow — no overlay, for embedded checkout-style flows |
+
+Viewport detection (not UA sniffing) picks `modal` vs `bottom-sheet` automatically on web; it's always overridable via prop/attribute.
+
+---
+
+## 5. Theming — CSS-variable-driven, logo-swappable
+
+Every visual value is a design token, exposed as CSS custom properties on web and a `Theme` object on RN, so a host app can restyle the whole thing without forking it:
+
+```css
+saganta-appkit-modal {
+  --sak-color-bg: #0B0D0E;
+  --sak-color-surface: #14171A;
+  --sak-color-border: rgba(255,255,255,0.08);
+  --sak-color-text: #F5F6F7;
+  --sak-color-text-muted: #9AA0A6;
+  --sak-color-accent: #6EE7B7;
+  --sak-radius-sm: 10px;
+  --sak-radius-lg: 20px;
+  --sak-font-display: 'Geist Sans', ui-sans-serif, system-ui;
+  --sak-font-mono: 'Geist Mono', ui-monospace;
+  --sak-shadow-elevated: 0 20px 60px rgba(0,0,0,0.35);
+  --sak-logo-url: url('/brand/logo.svg');
+  --sak-branding: 'show';   /* 'show' | 'hide' — "powered by" footer */
+}
+```
+
+```ts
+// RN / JS equivalent
+<ConnectProvider
+  theme={{
+    mode: 'dark',
+    colors: { bg: '#0B0D0E', surface: '#14171A', accent: '#6EE7B7', text: '#F5F6F7' },
+    radius: { sm: 10, lg: 20 },
+    fonts: { display: 'GeistSans', mono: 'GeistMono' },
+    logo: { uri: 'https://.../logo.svg', width: 28, height: 28 },
+    showBranding: true,
+  }}
+/>
+```
+
+**Default theme** (what ships before any customization) — deliberately not one of the generic "AI-default" looks (cream+terracotta, near-black+acid-green, broadsheet-serif). Direction: a quiet, editorial dark-mode with a single considered accent and generous type — closer to a well-made trading terminal than a crypto-modal template:
+
+- **Color** — near-black graphite `#0B0D0E` background, elevated surface `#14171A`, hairline borders at 8% white, primary text `#F5F6F7`, muted text `#9AA0A6`, one accent — a desaturated mint `#6EE7B7` used only for the active/selected state and the primary CTA, never decoratively.
+- **Type** — Geist Sans for UI labels and wallet names, Geist Mono for addresses, hashes, and network names (matches how addresses are usually read — as data, not prose).
+- **Signature element** — the connecting state doesn't use a generic spinner; it uses a single hairline circular arc that traces the outline of the selected wallet's icon tile, so "connecting" reads as *this specific wallet is being reached*, not a generic loading state.
+- **Motion** — one orchestrated open/close transition (sheet slides from the trigger's edge on mobile, modal scales from 96%→100% with a backdrop fade on desktop), restrained hover states elsewhere, `prefers-reduced-motion` respected throughout.
+
+Light mode is a first-class second token set (useful for Saganta's own site, which is light-mode/Pyth-inspired), not a naive inversion — surfaces, borders, and the accent are re-tuned separately.
+
+---
+
+## 6. Sign-In With Stellar (SIWS)
+
+There's no ratified "SIWS" SEP yet (SEP-10 is anchor-oriented, server-per-anchor). We define a minimal, self-issued message format analogous to Sign-In With Ethereum, built on SEP-43's `signMessage`, so any app can add "Sign in with wallet" without standing up a SEP-10 auth server:
+
+```
+saganta-connect wants you to sign in with your Stellar account:
+G...ADDRESS...
+
+Statement: <app-defined, e.g. "Sign in to Saganta">
+URI: https://app.example.com
+Version: 1
+Chain ID: pubnet | testnet
+Nonce: <random, server-issued>
+Issued At: 2026-08-02T10:00:00Z
+Expiration Time: 2026-08-02T10:10:00Z
+```
+
+Client:
+
+```ts
+const { message, signedMessage, signerAddress } = await connect.signIn({
+  domain: 'app.example.com',
+  statement: 'Sign in to Saganta',
+  nonce: await fetchNonceFromMyBackend(),
+});
+// POST { message, signedMessage, signerAddress } to your backend
+```
+
+`packages/siws-verify` provides the server-side counterpart — `verifySIWS(payload, { expectedDomain, expectedNonce })` — which checks expiry, domain binding, and the ed25519 signature against the claimed address, returning a plain boolean/claims object so it can sit in front of any session/JWT layer without dictating one. Apps that already run a SEP-10 anchor auth server can opt into that flow instead; `signIn()` accepts a `strategy: 'siws' | 'sep10'` flag.
+
+---
+
+## 7. Mobile wallet connectivity
+
+- **Mobile web → mobile wallet app:** WalletConnect v2 (Reown) relay — QR on desktop, deep link on mobile web, using the Stellar WC namespace already supported by Lobstr/Hana/xBull.
+- **React Native → external wallet app:** same WC relay (RN has first-class WC v2 SDKs), plus SEP-7 (`web+stellar:`) URI fallback for wallets that support it without WC.
+- **React Native → in-app embedded signer:** direct path, no deep link — this is the seam for Saganta's own embedded/smart-account wallet, which can register as a `WalletConnector` like any other and skip the deep-link round trip entirely.
+- Session persistence uses an injected `Storage` interface (`localStorage`/`IndexedDB` shim on web, `AsyncStorage`/`SecureStore` on RN) so reconnect-on-relaunch behaves the same on both platforms.
+
+---
+
+## 8. Naming
+
+**Decided:** `@saganta/stellar-appkit` (core), `@saganta/stellar-appkit-ui-web`, `@saganta/stellar-appkit-siws-verify`. Product name in prose/UI: **Stellar AppKit**. Scoped under `@saganta` — positions this as part of the existing Saganta product line (embedded wallets, gas sponsorship, smart accounts, payment APIs) rather than a fully independent brand, while "Stellar AppKit" itself reads cleanly on its own in READMEs, the modal's branding footer, and anywhere it's mentioned without the `@saganta/` scope attached.
+
+---
+
+## 9. Phased roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | `core`: types, error model, connector registry, Freighter/Albedo/xBull adapters, unified `StellarAppKit` client | **done** |
+| 1 | `core`: `SorobanConnection` (invoke pipeline, typed contract client), SIWS client + `siws-verify` | **done** (auth-entry signing within the pipeline is still a stub — see §10) |
+| 1.5 | Multi-session client (connect several wallets at once, switch active), richer `getReachability()`, typed `NetworkMismatchError` with optional auto-retry, cross-tab session sync, Ledger hardware adapter with multi-account support | **done** |
+| 1.75 | Transaction decoding (`decode.ts`) — human-readable operations, risk flags (account-merge, signer-change, large-transfer, unverified-contract, broad-auth-grant), an opt-in `onPreviewTransaction` hook wired into `signTransaction()`, signature-request queueing, `SorobanConnection.previewInvoke()` | **done** |
+| 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
+| 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
+| 3 | React wrapper around `ui-web` (thin — the web component already owns all state) | next |
+| 4 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
+| 5 | Smart-account/passkey signer as a native `WalletConnector` (Saganta embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline | later |
+
+---
+
+## 10. What's scaffolded in this pass
+
+`packages/core` — fully typed, working TypeScript for: unified types, the SEP-43-aligned error model, the connector registry, four real adapters (Freighter, Albedo, xBull, Ledger) plus a stub WalletConnect adapter to fill in with the relay client, the `StellarAppKit` unified facade (now multi-session — see §1.5 above), `SorobanConnection`, and the SIWS client. `packages/ui-web` implements the full modal/bottom-sheet/inline UI including the new network-mismatch and account-switcher/picker views. This is the foundation every remaining UI package will sit on — worth reviewing the interface shapes in `types.ts` before further UI work, since changing them later is the expensive kind of change.
+
+Two things are stubbed rather than faked, flagged clearly in code comments rather than silently half-working: `SorobanConnection`'s auth-entry signing within the `invoke()` pipeline, and Ledger's Soroban auth-entry signing specifically (`signAuthEntry` in `ledger.ts`) — both need the same underlying piece (constructing a valid `SorobanAuthorizationEntry` credentials structure from a raw signature), which is real Soroban-specific XDR work worth doing carefully rather than guessing at.

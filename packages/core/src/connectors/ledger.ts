@@ -1,0 +1,293 @@
+import type {
+  WalletConnector,
+  WalletMeta,
+  WalletCapabilities,
+  ConnectOptions,
+  WalletAccount,
+  WalletAccountOption,
+  GetAddressResult,
+  GetNetworkResult,
+  SignTxOptions,
+  SignTransactionResult,
+  SignOptions,
+  SignAuthEntryResult,
+  SignMessageResult,
+} from '../types.js';
+import { ConnectError } from '../types.js';
+import { withNormalizedError } from './error-utils.js';
+
+// Type-only import — @ledgerhq/hw-transport is a transitive dependency of
+// both transport packages below, so its types resolve without adding
+// another explicit peer dependency for something never imported at runtime.
+import type LedgerHwTransport from '@ledgerhq/hw-transport';
+
+const DEFAULT_ACCOUNT_COUNT = 5;
+const DERIVATION_PREFIX = "44'/148'"; // BIP44, Stellar coin type 148 — confirmed against @ledgerhq/hw-app-str's own docs/examples.
+
+function pathForIndex(index: number): string {
+  return `${DERIVATION_PREFIX}/${index}'`;
+}
+
+export interface LedgerConnectorOptions {
+  /** Preferred browser transport. Falls back to the other if the preferred one isn't supported. Defaults to 'webhid'. */
+  preferredTransport?: 'webhid' | 'webusb';
+  /** How many accounts listAccounts() derives. Defaults to 5 — each is a real device round-trip, so keep this modest. */
+  accountCount?: number;
+}
+
+/**
+ * Ledger hardware wallet via `@ledgerhq/hw-app-str`, transported over
+ * WebHID or WebUSB. Both are peer dependencies alongside the transport
+ * packages — install whichever transport(s) you target:
+ * `@ledgerhq/hw-app-str`, `@ledgerhq/hw-transport-webhid`,
+ * `@ledgerhq/hw-transport-webusb`.
+ *
+ * Neither WebHID nor WebUSB is universally supported (notably, Firefox
+ * supports neither as of this writing) — `getReachability()` reflects
+ * browser API support, not whether a device is actually plugged in, since
+ * that can only be known by actually attempting a connection.
+ *
+ * ⚠️ Two things in this file are marked as needing verification against
+ * the exact installed `@ledgerhq/hw-app-str` version rather than asserted
+ * as certain — the `signTransaction` payload shape, and Soroban
+ * auth-entry signing (stubbed, not faked — see `signAuthEntry` below).
+ * Everything else (getPublicKey → address derivation, multi-account via
+ * derivation path index, `Transaction.addSignature`) is confirmed against
+ * the package's published docs and @stellar/stellar-sdk's real API.
+ */
+export function createLedgerConnector(options: LedgerConnectorOptions = {}): WalletConnector {
+  const accountCount = options.accountCount ?? DEFAULT_ACCOUNT_COUNT;
+
+  const meta: WalletMeta = {
+    id: 'ledger',
+    name: 'Ledger',
+    // Inline SVG so this adapter has no dependency on an external icon host.
+    icon:
+      'data:image/svg+xml;utf8,' +
+      encodeURIComponent(
+        '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="7" width="20" height="10" rx="1.5" fill="none" stroke="black" stroke-width="1.5"/><rect x="4" y="9" width="6" height="6" fill="black"/></svg>'
+      ),
+    platforms: ['hardware'],
+  };
+
+  const capabilities: WalletCapabilities = {
+    signTransaction: true,
+    signAuthEntry: true,
+    // hw-app-str exposes signMessage, but older Ledger Stellar-app firmware may not support it —
+    // an unsupported call surfaces as a normal ConnectError via the device's own rejection, not a silent failure.
+    signMessage: true,
+    submit: false,
+  };
+
+  let transport: LedgerHwTransport | null = null;
+  let strApp: StrApp | null = null;
+  let currentIndex = 0;
+  let currentAddress: string | null = null;
+  const accountCache = new Map<string, number>(); // address -> derivation index, populated by listAccounts()/connect()
+
+  async function stellarSdk() {
+    return import('@stellar/stellar-sdk');
+  }
+
+  async function ensureTransport(): Promise<LedgerHwTransport> {
+    if (transport) return transport;
+
+    const order: Array<'webhid' | 'webusb'> =
+      options.preferredTransport === 'webusb' ? ['webusb', 'webhid'] : ['webhid', 'webusb'];
+
+    let lastError: unknown;
+    for (const kind of order) {
+      try {
+        transport = await openTransport(kind);
+        return transport;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw ConnectError.internal(
+      `Could not open a connection to the Ledger device. Make sure it's plugged in, unlocked, and the Stellar app is open. (${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      })`,
+      undefined,
+      meta.id
+    );
+  }
+
+  async function openTransport(kind: 'webhid' | 'webusb'): Promise<LedgerHwTransport> {
+    if (kind === 'webhid') {
+      const { default: TransportWebHID } = await import('@ledgerhq/hw-transport-webhid');
+      return TransportWebHID.create();
+    }
+    const { default: TransportWebUSB } = await import('@ledgerhq/hw-transport-webusb');
+    return TransportWebUSB.create();
+  }
+
+  async function ensureStrApp(): Promise<StrApp> {
+    if (strApp) return strApp;
+    const t = await ensureTransport();
+    const { default: Str } = await import('@ledgerhq/hw-app-str');
+    strApp = new Str(t) as StrApp;
+    return strApp;
+  }
+
+  async function deriveAddress(index: number): Promise<string> {
+    const str = await ensureStrApp();
+    const { StrKey } = await stellarSdk();
+    const result = await str.getPublicKey(pathForIndex(index));
+    const address = StrKey.encodeEd25519PublicKey(result.rawPublicKey);
+    accountCache.set(address, index);
+    return address;
+  }
+
+  const connector: WalletConnector = {
+    id: meta.id,
+    meta,
+    capabilities,
+
+    async getReachability() {
+      const hasWebHID = typeof navigator !== 'undefined' && 'hid' in navigator;
+      const hasWebUSB = typeof navigator !== 'undefined' && 'usb' in navigator;
+      return hasWebHID || hasWebUSB ? 'available' : 'unavailable';
+    },
+
+    async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
+      return withNormalizedError(meta.id, async () => {
+        const address = await deriveAddress(0);
+        currentIndex = 0;
+        currentAddress = address;
+        return { address, walletId: meta.id };
+      });
+    },
+
+    async disconnect() {
+      await transport?.close().catch(() => void 0);
+      transport = null;
+      strApp = null;
+      currentAddress = null;
+      accountCache.clear();
+    },
+
+    async getAddress(): Promise<GetAddressResult> {
+      if (!currentAddress) {
+        throw ConnectError.invalidRequest('Ledger is not connected — call connect() first.', undefined, meta.id);
+      }
+      return { address: currentAddress };
+    },
+
+    async getNetwork(): Promise<GetNetworkResult> {
+      // The device signs whatever bytes it's given — it has no concept of
+      // "current network" the way a software wallet does. Network is
+      // determined entirely by the networkPassphrase the app supplies to
+      // signTransaction, so there's nothing meaningful to report here.
+      throw ConnectError.invalidRequest(
+        'Ledger has no concept of a current network — it signs whatever networkPassphrase you provide.',
+        undefined,
+        meta.id
+      );
+    },
+
+    async signTransaction(xdr: string, opts?: SignTxOptions): Promise<SignTransactionResult> {
+      return withNormalizedError(meta.id, async () => {
+        if (!currentAddress) throw ConnectError.invalidRequest('Ledger is not connected.', undefined, meta.id);
+        if (!opts?.networkPassphrase) {
+          throw ConnectError.invalidRequest(
+            'signTransaction requires networkPassphrase — the device needs it to compute the correct signature base.',
+            undefined,
+            meta.id
+          );
+        }
+
+        const { TransactionBuilder } = await stellarSdk();
+        const transaction = TransactionBuilder.fromXDR(xdr, opts.networkPassphrase);
+        const str = await ensureStrApp();
+        const path = pathForIndex(accountCache.get(currentAddress) ?? currentIndex);
+
+        // ⚠️ Needs verification: hw-app-str's signTransaction parameter shape
+        // (raw signature-base bytes vs. full envelope) isn't fully confirmed
+        // from published docs alone — signatureBase() is the semantically
+        // correct payload (the bytes that get hashed and signed per the
+        // Stellar protocol) and matches the pattern other hw-app-* packages
+        // use, but double check against your installed version's types
+        // before relying on this in production.
+        const signResult = await str.signTransaction(path, (transaction as StellarTransaction).signatureBase());
+        const signatureBuffer = 'signature' in signResult ? signResult.signature : (signResult as Buffer);
+
+        (transaction as StellarTransaction).addSignature(currentAddress, signatureBuffer.toString('base64'));
+
+        return {
+          signedTxXdr: (transaction as StellarTransaction).toXDR(),
+          signerAddress: currentAddress,
+        };
+      });
+    },
+
+    async signAuthEntry(_authEntryXdr: string, _opts?: SignOptions): Promise<SignAuthEntryResult> {
+      // hw-app-str exposes signSorobanAuthorization(path, authEntryXdr), so
+      // getting a raw signature from the device is straightforward — the
+      // part that's genuinely uncertain is reconstructing a valid
+      // xdr.SorobanAuthorizationEntry with SOROBAN_CREDENTIALS_ADDRESS
+      // credentials from that raw signature, which has a specific ScVal
+      // structure. Rather than guess at that structure and risk shipping
+      // something that produces invalid auth entries, this is stubbed the
+      // same way SorobanConnection.signAuthEntries() is — see
+      // ARCHITECTURE.md §9 for this as explicit follow-up work.
+      throw ConnectError.internal(
+        'Ledger Soroban auth-entry signing needs the credentials-wrapping step implemented — see the comment in ledger.ts.',
+        undefined,
+        meta.id
+      );
+    },
+
+    async signMessage(message: string, _opts?: SignOptions): Promise<SignMessageResult> {
+      return withNormalizedError(meta.id, async () => {
+        if (!currentAddress) throw ConnectError.invalidRequest('Ledger is not connected.', undefined, meta.id);
+        const str = await ensureStrApp();
+        const path = pathForIndex(accountCache.get(currentAddress) ?? currentIndex);
+        const result = await str.signMessage(path, Buffer.from(message, 'utf-8'));
+        const signatureBuffer = 'signature' in result ? result.signature : (result as Buffer);
+        return { signedMessage: signatureBuffer.toString('base64'), signerAddress: currentAddress };
+      });
+    },
+
+    async listAccounts(): Promise<WalletAccountOption[]> {
+      return withNormalizedError(meta.id, async () => {
+        const accounts: WalletAccountOption[] = [];
+        for (let i = 0; i < accountCount; i++) {
+          const address = await deriveAddress(i);
+          accounts.push({ address, label: `Account ${i}` });
+        }
+        return accounts;
+      });
+    },
+
+    async selectAccount(address: string): Promise<void> {
+      const index = accountCache.get(address);
+      if (index === undefined) {
+        throw ConnectError.invalidRequest(
+          'Unknown address — call listAccounts() first so its derivation index is cached.',
+          undefined,
+          meta.id
+        );
+      }
+      currentIndex = index;
+      currentAddress = address;
+    },
+  };
+
+  return connector;
+}
+
+// ---- Narrow structural types for the lazily-imported hw-app-str SDK — avoids a hard type dependency on a package that's peer/optional. ----
+
+interface StrApp {
+  getPublicKey(path: string): Promise<{ rawPublicKey: Buffer }>;
+  signTransaction(path: string, payload: Buffer): Promise<{ signature: Buffer } | Buffer>;
+  signSorobanAuthorization?(path: string, payload: Buffer): Promise<{ signature: Buffer } | Buffer>;
+  signMessage(path: string, message: Buffer): Promise<{ signature: Buffer } | Buffer>;
+}
+
+interface StellarTransaction {
+  signatureBase(): Buffer;
+  addSignature(publicKey: string, signature: string): void;
+  toXDR(): string;
+}

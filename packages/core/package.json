@@ -1,0 +1,45 @@
+{
+  "name": "@saganta/stellar-appkit",
+  "version": "0.1.0",
+  "description": "Framework-agnostic wallet connection, unified API, Soroban abstraction, and SIWS for Stellar.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@stellar/stellar-sdk": "^13.0.0",
+    "@stellar/freighter-api": "^4.1.0",
+    "@ledgerhq/hw-transport": "^6.0.0",
+    "@ledgerhq/hw-app-str": "^7.0.0",
+    "@ledgerhq/hw-transport-webhid": "^6.0.0",
+    "@ledgerhq/hw-transport-webusb": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@stellar/freighter-api": {
+      "optional": true
+    },
+    "@ledgerhq/hw-transport": {
+      "optional": true
+    },
+    "@ledgerhq/hw-app-str": {
+      "optional": true
+    },
+    "@ledgerhq/hw-transport-webhid": {
+      "optional": true
+    },
+    "@ledgerhq/hw-transport-webusb": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

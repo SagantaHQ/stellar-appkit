@@ -1,0 +1,24 @@
+{
+  "name": "saganta-stellar-appkit",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@albedo-link/intent": "^0.13.0",
+    "@ledgerhq/hw-app-str": "^7.7.6",
+    "@ledgerhq/hw-transport-webhid": "^6.36.0",
+    "@ledgerhq/hw-transport-webusb": "^6.35.0",
+    "@stellar/freighter-api": "^4.1.0",
+    "@types/node": "^26.1.2",
+    "typescript": "^7.0.2"
+  }
+}
