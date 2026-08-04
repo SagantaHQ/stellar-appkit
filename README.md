@@ -55,7 +55,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 
 | Package | What it is |
 |---|---|
-| [`@saganta/stellar-appkit`](./packages/core) | Core: connectors, the unified `StellarAppKit` client, `SorobanConnection`, transaction decoding/risk flags, SIWS. Framework- and DOM-agnostic. |
+| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. |
 | [`@saganta/stellar-appkit-ui-web`](./packages/ui-web) | The themeable `<saganta-appkit-modal>` Web Component. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 

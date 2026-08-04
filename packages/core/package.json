@@ -1,7 +1,7 @@
 {
   "name": "@saganta/stellar-appkit",
   "version": "0.1.0",
-  "description": "Framework-agnostic wallet connection, unified API, Soroban abstraction, and SIWS for Stellar.",
+  "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK.",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "src"],
