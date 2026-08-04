@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Demo — Stellar AppKit</title>
+<meta name="description" content="Interactive, no-bundler demo of Stellar AppKit — theming, multiple wallets, inline mode, Sign-In With Stellar, and transaction preview." />
+
+<script type="importmap">
+{
+  "imports": {
+    "@stellar/freighter-api": "https://esm.sh/@stellar/freighter-api@4",
+    "@albedo-link/intent": "https://esm.sh/@albedo-link/intent@0.12",
+    "@creit.tech/xbull-wallet-connect": "https://esm.sh/@creit.tech/xbull-wallet-connect@0.4.0",
+    "@ledgerhq/hw-app-str": "https://esm.sh/@ledgerhq/hw-app-str@7",
+    "@ledgerhq/hw-transport-webhid": "https://esm.sh/@ledgerhq/hw-transport-webhid@6",
+    "@ledgerhq/hw-transport-webusb": "https://esm.sh/@ledgerhq/hw-transport-webusb@6",
+    "@stellar/stellar-sdk": "https://esm.sh/@stellar/stellar-sdk@13",
+    "@stellar/stellar-sdk/": "https://esm.sh/@stellar/stellar-sdk@13/"
+  }
+}
+</script>
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.3/index.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-mono@5.0.3/index.css" />
+<link rel="stylesheet" href="./assets/site.css" />
+
+<style>
+  .demo-wrap { max-width: 720px; margin: 0 auto; padding: 56px 24px 120px; }
+  .demo-wrap > .eyebrow { display: block; margin-bottom: 12px; }
+  .demo-wrap h1 { font-size: 30px; margin: 0 0 12px; }
+  .demo-wrap .lede { color: var(--text-dim); font-size: 15px; line-height: 1.6; max-width: 520px; margin: 0 0 36px; }
+
+  .demo-section { margin-top: 56px; padding-top: 40px; border-top: 1px solid var(--border); }
+  .demo-section h2 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .demo-section p.desc { color: var(--text-dim); font-size: 13px; margin: 0 0 20px; line-height: 1.6; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 24px; }
+  .controls label { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  select, input[type="color"] {
+    font-family: inherit; background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 13px;
+  }
+
+  #siws-output, #preview-output {
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; color: var(--text-dim); display: none;
+  }
+  .inline-host { max-width: 380px; }
+  #accent-demo { --sak-color-accent: #D4537E; --sak-color-accent-text: #ffffff; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <a href="./index.html" class="site-logo">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="#6EE7B7" stroke-width="1.5"/>
+        <path d="M8 12L11 15L16 9" stroke="#6EE7B7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Stellar AppKit
+    </a>
+    <nav class="site-nav">
+      <a href="./index.html">Overview</a>
+      <a href="./docs.html">Docs</a>
+      <a href="./demo.html" data-active="true">Demo</a>
+    </nav>
+    <div class="site-header-actions">
+      <a class="btn btn-sm" href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<div class="demo-wrap">
+  <span class="eyebrow">stellar appkit · demo</span>
+  <h1>Connect any Stellar wallet.</h1>
+  <p class="lede">Everything on this page runs the real, built package — no bundler, no framework, no mocked states. Freighter, Albedo, xBull, and Ledger are all wired up below.</p>
+
+  <button class="btn btn-primary" id="open-btn">Connect wallet</button>
+
+  <saganta-appkit-modal id="modal" theme="dark" mode="auto" title="Connect a wallet"></saganta-appkit-modal>
+
+  <section class="demo-section">
+    <h2>Theme &amp; presentation</h2>
+    <p class="desc">Every control below just sets an attribute or a CSS custom property on the element — nothing here is a special demo mode.</p>
+    <div class="controls">
+      <label>Theme
+        <select id="theme-select">
+          <option value="dark" selected>Dark</option>
+          <option value="light">Light</option>
+          <option value="auto">Auto (OS)</option>
+        </select>
+      </label>
+      <label>Mode
+        <select id="mode-select">
+          <option value="auto" selected>Auto (viewport)</option>
+          <option value="modal">Modal</option>
+          <option value="bottom-sheet">Bottom sheet</option>
+        </select>
+      </label>
+      <label>Accent
+        <input type="color" id="accent-input" value="#6ee7b7" />
+      </label>
+    </div>
+  </section>
+
+  <section class="demo-section" id="accent-demo">
+    <h2>Custom-branded instance</h2>
+    <p class="desc">A second instance with <code>--sak-color-accent</code> overridden from this page's own stylesheet — proves theming crosses the shadow-DOM boundary without any JS API.</p>
+    <button class="btn" id="open-branded-btn">Open (pink accent)</button>
+    <saganta-appkit-modal id="branded-modal" theme="dark" mode="modal" title="Connect a wallet"></saganta-appkit-modal>
+  </section>
+
+  <section class="demo-section">
+    <h2>Inline mode</h2>
+    <p class="desc">No overlay — renders directly in the page flow, for embedded checkout-style placements.</p>
+    <div class="inline-host">
+      <saganta-appkit-modal id="inline-modal" theme="dark" mode="inline" title="Connect to continue" branding="hide"></saganta-appkit-modal>
+    </div>
+  </section>
+
+  <section class="demo-section">
+    <h2>Sign-In With Stellar</h2>
+    <p class="desc">Connect a wallet above first, then sign a SIWS message — the exact envelope a backend would verify with <code>@saganta/stellar-appkit-siws-verify</code>.</p>
+    <button class="btn" id="siws-btn">Sign in with Stellar</button>
+    <pre id="siws-output"></pre>
+  </section>
+
+  <section class="demo-section">
+    <h2>Transaction preview</h2>
+    <p class="desc">Builds an unsigned self-payment and calls <code>client.signTransaction()</code> — since the modal is attached, it decodes the operation and shows an Approve/Reject screen <em>before</em> the wallet's own signature prompt ever appears, instead of passing raw XDR straight through.</p>
+    <button class="btn" id="preview-btn">Sign a test payment (1.5 XLM to self)</button>
+    <pre id="preview-output"></pre>
+  </section>
+</div>
+
+<footer class="site-footer">
+  <div class="container">
+    <span class="pill">Built by Saganta</span>
+    <nav>
+      <a href="./index.html">Overview</a>
+      <a href="./docs.html">Docs</a>
+      <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <span class="fine">GPL-3.0-or-later licensed (see LICENSE)</span>
+  </div>
+</footer>
+
+<script type="module">
+  import { StellarAppKit, createFreighterConnector, createAlbedoConnector, createXBullConnector, createLedgerConnector } from './vendor/core/index.js';
+  import './vendor/ui-web/index.js';
+
+  function makeClient() {
+    return new StellarAppKit({
+      network: 'PUBLIC',
+      connectors: [createFreighterConnector(), createAlbedoConnector(), createXBullConnector(), createLedgerConnector()],
+      appMetadata: { name: 'Stellar AppKit Demo', domain: window.location.hostname || 'localhost', uri: window.location.href },
+    });
+  }
+
+  const client = makeClient();
+  const modal = document.getElementById('modal');
+  modal.client = client;
+  client.restore();
+
+  document.getElementById('open-btn').addEventListener('click', () => modal.open());
+
+  const brandedClient = makeClient();
+  const brandedModal = document.getElementById('branded-modal');
+  brandedModal.client = brandedClient;
+  document.getElementById('open-branded-btn').addEventListener('click', () => brandedModal.open());
+
+  const inlineModal = document.getElementById('inline-modal');
+  inlineModal.client = makeClient();
+
+  document.getElementById('theme-select').addEventListener('change', (e) => {
+    modal.setAttribute('theme', e.target.value);
+  });
+  document.getElementById('mode-select').addEventListener('change', (e) => {
+    modal.setAttribute('mode', e.target.value);
+  });
+  document.getElementById('accent-input').addEventListener('input', (e) => {
+    modal.style.setProperty('--sak-color-accent', e.target.value);
+  });
+
+  document.getElementById('siws-btn').addEventListener('click', async () => {
+    const output = document.getElementById('siws-output');
+    output.style.display = 'block';
+    if (!client.session) {
+      output.textContent = 'Connect a wallet first (use the "Connect wallet" button above).';
+      return;
+    }
+    try {
+      const result = await client.signIn({ statement: 'Sign in to the Stellar AppKit demo', nonce: crypto.randomUUID() });
+      output.textContent = result.message + '\n\n[signature]\n' + result.signedMessage;
+    } catch (err) {
+      output.textContent = 'Sign-in failed: ' + (err && err.message ? err.message : String(err));
+    }
+  });
+  document.getElementById('preview-btn').addEventListener('click', async () => {
+    const output = document.getElementById('preview-output');
+    output.style.display = 'block';
+    if (!client.session) {
+      output.textContent = 'Connect a wallet first (use the "Connect wallet" button above).';
+      return;
+    }
+    try {
+      const sdk = await import('@stellar/stellar-sdk');
+      const account = new sdk.Account(client.session.address, '0');
+      const tx = new sdk.TransactionBuilder(account, { fee: sdk.BASE_FEE, networkPassphrase: sdk.Networks.PUBLIC })
+        .addOperation(sdk.Operation.payment({ destination: client.session.address, asset: sdk.Asset.native(), amount: '1.5' }))
+        .setTimeout(180)
+        .build();
+
+      output.textContent = 'Waiting on the preview/signature flow…';
+      const result = await client.signTransaction(tx.toXDR());
+      output.textContent = 'Signed. signedTxXdr:\n' + result.signedTxXdr;
+    } catch (err) {
+      output.textContent = 'Not signed: ' + (err && err.message ? err.message : String(err));
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docs — Stellar AppKit</title>
+<meta name="description" content="Installation, quick start, and API reference for Stellar AppKit." />
+
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.3/index.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/geist-mono@5.0.3/index.css" />
+<link rel="stylesheet" href="./assets/site.css" />
+
+<style>
+  .docs-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 56px;
+    padding: 48px 0 96px;
+    align-items: start;
+  }
+  .docs-sidebar {
+    position: sticky;
+    top: 88px;
+    max-height: calc(100vh - 110px);
+    overflow-y: auto;
+  }
+  .docs-sidebar h4 {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin: 20px 0 8px;
+  }
+  .docs-sidebar h4:first-child { margin-top: 0; }
+  .docs-sidebar a {
+    display: block;
+    padding: 5px 0;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+  .docs-sidebar a:hover { color: var(--text); }
+
+  .docs-content { max-width: 720px; min-width: 0; }
+  .docs-content h2 { font-size: 24px; margin: 56px 0 8px; scroll-margin-top: 88px; }
+  .docs-content h2:first-child { margin-top: 0; }
+  .docs-content h3 { font-size: 17px; margin: 32px 0 8px; scroll-margin-top: 88px; }
+  .docs-content p { color: var(--text-dim); font-size: 14.5px; line-height: 1.7; margin: 12px 0; }
+  .docs-content p code, .docs-content li code, .docs-content td code {
+    font-family: var(--font-mono); font-size: 0.9em; background: var(--surface);
+    padding: 1px 6px; border-radius: 5px; color: var(--text);
+  }
+  .docs-content ul, .docs-content ol { color: var(--text-dim); font-size: 14.5px; line-height: 1.7; padding-left: 20px; }
+  .docs-content li { margin: 6px 0; }
+  .docs-content .code-block { margin: 14px 0; }
+  .docs-content a.inline-link { color: var(--mint); text-decoration: none; border-bottom: 1px solid transparent; }
+  .docs-content a.inline-link:hover { border-bottom-color: var(--mint); }
+
+  .docs-table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  .docs-table th, .docs-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .docs-table th { color: var(--text-faint); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .docs-table td { color: var(--text-dim); }
+
+  .callout {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--mint);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin: 16px 0;
+    font-size: 13.5px;
+    color: var(--text-dim);
+    background: var(--surface);
+  }
+  .callout.warn { border-left-color: #C99A3F; }
+
+  @media (max-width: 880px) {
+    .docs-layout { grid-template-columns: 1fr; }
+    .docs-sidebar { position: static; max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container">
+    <a href="./index.html" class="site-logo">
+      <svg class="mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="#6EE7B7" stroke-width="1.5"/>
+        <path d="M8 12L11 15L16 9" stroke="#6EE7B7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Stellar AppKit
+    </a>
+    <nav class="site-nav">
+      <a href="./index.html">Overview</a>
+      <a href="./docs.html" data-active="true">Docs</a>
+      <a href="./demo.html">Demo</a>
+    </nav>
+    <div class="site-header-actions">
+      <a class="btn btn-sm" href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <h4>Start</h4>
+      <a href="#why">Why this exists</a>
+      <a href="#installation">Installation</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#wallets">Wallets supported</a>
+
+      <h4>Core concepts</h4>
+      <a href="#multi-wallet">Multiple wallets</a>
+      <a href="#network">Reachability &amp; network</a>
+      <a href="#preview">Transaction preview</a>
+      <a href="#soroban">Soroban</a>
+      <a href="#siws">Sign-In With Stellar</a>
+      <a href="#theming">Theming</a>
+
+      <h4>Reference</h4>
+      <a href="#element">The modal element</a>
+      <a href="#limitations">Known limitations</a>
+      <a href="#roadmap">Roadmap</a>
+    </aside>
+
+    <div class="docs-content">
+      <h2 id="why">Why this exists</h2>
+      <p>Stellar already has solid wallet-connection plumbing — <a class="inline-link" href="https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0043.md" target="_blank" rel="noopener">SEP-43</a> is an emerging standard several wallets are converging on, and <a class="inline-link" href="https://github.com/Creit-Tech/Stellar-Wallets-Kit" target="_blank" rel="noopener">stellar-wallets-kit</a> is a mature, headless connector library covering most of the ecosystem. Neither ships a polished themeable UI, a transaction preview that decodes operations before signing, or a first-class Soroban layer — that's the gap this fills.</p>
+      <p>Every connector tree-shakes independently. See <a class="inline-link" href="./index.html#">the landing page</a> for the verified bundle-size numbers.</p>
+
+      <h2 id="installation">Installation</h2>
+      <pre class="code-block">npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web</pre>
+      <p>Wallet SDKs are peer dependencies — install the ones for the connectors you actually use:</p>
+      <pre class="code-block">npm install @stellar/stellar-sdk              <span class="cm"># always — the base Stellar/Soroban SDK</span>
+npm install @stellar/freighter-api            <span class="cm"># if using createFreighterConnector</span>
+npm install @albedo-link/intent               <span class="cm"># if using createAlbedoConnector</span>
+npm install @creit.tech/xbull-wallet-connect  <span class="cm"># if using createXBullConnector</span>
+npm install @ledgerhq/hw-app-str \
+            @ledgerhq/hw-transport-webhid \
+            @ledgerhq/hw-transport-webusb     <span class="cm"># if using createLedgerConnector</span></pre>
+
+      <h2 id="quick-start">Quick start</h2>
+      <pre class="code-block"><span class="kw">import</span> {
+  StellarAppKit,
+  createFreighterConnector,
+  createAlbedoConnector,
+  createXBullConnector,
+} <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
+<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit-ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
+
+<span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
+  network: <span class="str">'PUBLIC'</span>,
+  connectors: [createFreighterConnector(), createAlbedoConnector(), createXBullConnector()],
+  appMetadata: { name: <span class="str">'My App'</span>, domain: <span class="str">'app.example.com'</span>, uri: <span class="str">'https://app.example.com'</span> },
+});
+
+<span class="kw">const</span> modal = document.querySelector(<span class="str">'saganta-appkit-modal'</span>);
+modal.client = appkit; <span class="cm">// wires up the UI — preview, account switcher, everything</span>
+
+document.getElementById(<span class="str">'connect-button'</span>).addEventListener(<span class="str">'click'</span>, () =&gt; modal.open());
+
+<span class="kw">await</span> appkit.restore(); <span class="cm">// resume a persisted session on page load, if any</span></pre>
+      <pre class="code-block">&lt;saganta-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/saganta-appkit-modal&gt;</pre>
+
+      <h2 id="wallets">Wallets supported</h2>
+      <table class="docs-table">
+        <tr><th>Wallet</th><th>Adapter</th><th>Status</th></tr>
+        <tr><td>Freighter</td><td><code>createFreighterConnector()</code></td><td>Ready — extension + mobile</td></tr>
+        <tr><td>Albedo</td><td><code>createAlbedoConnector()</code></td><td>Ready — no install required</td></tr>
+        <tr><td>xBull</td><td><code>createXBullConnector()</code></td><td>Ready — extension + PWA</td></tr>
+        <tr><td>Ledger</td><td><code>createLedgerConnector()</code></td><td>Ready for pubkey + plain tx signing; Soroban auth-entry signing is stubbed</td></tr>
+        <tr><td>WalletConnect</td><td><code>createWalletConnectConnector()</code></td><td>Not yet implemented</td></tr>
+      </table>
+
+      <h2 id="multi-wallet">Multiple wallets, switching, and account picking</h2>
+      <p>Connecting a second wallet doesn't replace the first — both stay connected.</p>
+      <pre class="code-block"><span class="kw">await</span> appkit.connect(<span class="str">'freighter'</span>);
+<span class="kw">await</span> appkit.connect(<span class="str">'ledger'</span>); <span class="cm">// both connected now; Ledger is active</span>
+
+appkit.sessions;                         <span class="cm">// every connected session</span>
+appkit.session;                          <span class="cm">// the active one</span>
+<span class="kw">await</span> appkit.switchAccount(<span class="str">'freighter'</span>); <span class="cm">// back to Freighter, Ledger stays connected</span>
+
+<span class="cm">// Ledger exposes more than one derivable account:</span>
+<span class="kw">const</span> accounts = <span class="kw">await</span> appkit.registry.getOrThrow(<span class="str">'ledger'</span>).listAccounts();
+<span class="kw">await</span> appkit.switchAccount(<span class="str">'ledger'</span>, accounts[2].address);</pre>
+
+      <h2 id="network">Reachability and network handling</h2>
+      <pre class="code-block"><span class="kw">await</span> appkit.getWalletReachability(<span class="str">'freighter'</span>);
+<span class="cm">// 'available' | 'locked' | 'not-installed' | 'unavailable'</span>
+
+<span class="kw">import</span> { NetworkMismatchError } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
+<span class="kw">try</span> {
+  <span class="kw">await</span> appkit.connect(<span class="str">'freighter'</span>);
+} <span class="kw">catch</span> (err) {
+  <span class="kw">if</span> (err <span class="kw">instanceof</span> NetworkMismatchError) {
+    console.log(<span class="str">`Wallet is on ${err.actualNetwork}, app needs ${err.expectedNetwork}`</span>);
+  }
+}
+<span class="cm">// Or resolve it automatically — polls until the user switches:</span>
+<span class="kw">await</span> appkit.connect(<span class="str">'freighter'</span>, { autoRetryNetworkMismatch: <span class="kw">true</span> });</pre>
+      <p>Sessions persist across browser tabs automatically via <code>BroadcastChannel</code> where available. Disable with <code>syncAcrossTabs: false</code> in the config.</p>
+
+      <h2 id="preview">Signing, transaction preview, and risk flags</h2>
+      <p>Every <code>signTransaction()</code> call is decoded and shown to the user before the wallet's own signature prompt. Attaching <code>&lt;saganta-appkit-modal&gt;</code> wires this up automatically.</p>
+      <pre class="code-block"><span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
+  network: <span class="str">'PUBLIC'</span>,
+  connectors: [createFreighterConnector()],
+  previewOptions: {
+    verifiedContracts: <span class="kw">new</span> Set([<span class="str">'CA...KNOWN_CONTRACT'</span>]), <span class="cm">// omit to skip the unverified-contract check</span>
+    largeTransferThreshold: 1000,                        <span class="cm">// in the asset's own units; omit to skip</span>
+  },
+});
+
+<span class="cm">// Without a UI package, supply your own handler:</span>
+appkit.onPreviewTransaction = <span class="kw">async</span> (preview) =&gt; {
+  console.log(preview.operations.map((op) =&gt; op.summary));
+  console.log(preview.riskFlags); <span class="cm">// account-merge and signer-change are always flagged</span>
+  <span class="kw">return</span> userConfirmedSomehow();
+};
+
+<span class="kw">await</span> appkit.signTransaction(xdr);                       <span class="cm">// decoded, previewed, then sent to the wallet</span>
+<span class="kw">await</span> appkit.signTransaction(xdr, { skipPreview: <span class="kw">true</span> }); <span class="cm">// bypass for a flow already confirmed elsewhere</span></pre>
+      <p>Concurrent <code>signTransaction</code>/<code>signAuthEntry</code>/<code>signMessage</code> calls are queued and resolved in order rather than racing the wallet extension. <code>appkit.pendingSignCount</code> and the <code>signQueueChange</code> event expose queue depth.</p>
+
+      <h2 id="soroban">Soroban</h2>
+      <pre class="code-block"><span class="kw">import</span> { SorobanConnection } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
+
+<span class="kw">const</span> soroban = <span class="kw">new</span> SorobanConnection({
+  rpcUrl: <span class="str">'https://soroban-testnet.stellar.org'</span>,
+  networkPassphrase: Networks.TESTNET,
+  wallet: appkit,
+});
+
+<span class="cm">// See what a call would do — and whether it would even succeed — before signing:</span>
+<span class="kw">const</span> preview = <span class="kw">await</span> soroban.previewInvoke({ contractId, method: <span class="str">'transfer'</span>, args });
+
+<span class="cm">// Build, simulate, prepare, sign (previewed automatically), submit, and poll — one call:</span>
+<span class="kw">const</span> result = <span class="kw">await</span> soroban.invoke({ contractId, method: <span class="str">'transfer'</span>, args });</pre>
+
+      <h2 id="siws">Sign-In With Stellar</h2>
+      <pre class="code-block"><span class="kw">const</span> { message, signedMessage, signerAddress } = <span class="kw">await</span> appkit.signIn({
+  statement: <span class="str">'Sign in to My App'</span>,
+  nonce: <span class="kw">await</span> fetch(<span class="str">'/api/siws/nonce'</span>).then((r) =&gt; r.text()),
+});
+<span class="cm">// POST { message, signedMessage, signerAddress } to your backend</span></pre>
+      <pre class="code-block"><span class="cm">// server side</span>
+<span class="kw">import</span> { verifySiws } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit-siws-verify'</span>;
+
+<span class="kw">const</span> result = <span class="kw">await</span> verifySiws(payload, { expectedDomain: <span class="str">'app.example.com'</span>, expectedNonce });
+<span class="kw">if</span> (result.ok) { <span class="cm">/* result.claims.address is verified */</span> }</pre>
+
+      <h2 id="theming">Theming</h2>
+      <pre class="code-block">&lt;saganta-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/saganta-appkit-modal&gt;
+&lt;style&gt;
+  <span class="cm">/* Overrides any token from the host page's own stylesheet — no JS needed. */</span>
+  saganta-appkit-modal { --sak-color-accent: #d4537e; }
+&lt;/style&gt;</pre>
+
+      <h2 id="element">The &lt;saganta-appkit-modal&gt; element</h2>
+      <table class="docs-table">
+        <tr><th>Attribute</th><th>Values</th><th>Default</th></tr>
+        <tr><td><code>mode</code></td><td>auto / modal / bottom-sheet / inline</td><td>auto</td></tr>
+        <tr><td><code>theme</code></td><td>dark / light / auto</td><td>dark</td></tr>
+        <tr><td><code>branding</code></td><td>show / hide</td><td>show</td></tr>
+        <tr><td><code>logo-src</code></td><td>image URL</td><td>— (falls back to <code>&lt;slot name="logo"&gt;</code>)</td></tr>
+        <tr><td><code>title</code></td><td>string</td><td>contextual per view</td></tr>
+        <tr><td><code>auto-retry-network</code></td><td>true / false</td><td>false</td></tr>
+      </table>
+      <p>Fires standard <code>CustomEvent</code>s (<code>sc-connect</code>, <code>sc-disconnect</code>, <code>sc-error</code>) mirroring the client's own events.</p>
+
+      <h2 id="limitations">Known limitations</h2>
+      <p>Flagged explicitly rather than silently half-working:</p>
+      <ul>
+        <li><strong>WalletConnect adapter isn't implemented</strong> — the shape exists, every method throws with a pointer to what's needed. Blocks Lobstr, Hana, Hot Wallet, and mobile deep-linking.</li>
+        <li><strong>Ledger Soroban auth-entry signing is stubbed</strong> — reconstructing a valid <code>SorobanAuthorizationEntry</code> from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at.</li>
+        <li><strong>Ledger's <code>signTransaction</code> payload shape</strong> is implemented against the most standard pattern but isn't 100% confirmed from published docs alone.</li>
+        <li><strong>"Locked" reachability isn't detected for Freighter or xBull</strong> — neither SDK exposes a distinct unlock-state check.</li>
+        <li><strong>xBull doesn't support Soroban auth-entry signing</strong> — the protocol has an internal concept for it, but the public <code>sign()</code> method doesn't expose a way to select it.</li>
+        <li><strong>Soroban balance-delta preview is argument-based, not simulation-based</strong> — recognized SEP-41 calls decode the intended amount from call arguments, not from diffing simulation state changes.</li>
+        <li><strong><code>signAuthEntry()</code> doesn't go through the preview flow</strong> — only <code>signTransaction()</code> does today.</li>
+        <li><strong>No React (or Vue/Svelte) wrapper yet</strong> — <code>ui-web</code> is plain Web Components.</li>
+        <li><strong>No React Native UI</strong> — <code>core</code> is platform-agnostic already, but there's no native bottom-sheet package yet.</li>
+      </ul>
+
+      <h2 id="roadmap">Roadmap</h2>
+      <ol>
+        <li>WalletConnect v2 relay adapter — Lobstr, Hana, Hot Wallet, mobile deep-linking</li>
+        <li>Thin React wrapper around <code>ui-web</code></li>
+        <li><code>ui-react-native</code> — bottom sheet, Expo compatibility</li>
+        <li>Ledger Soroban auth-entry signing</li>
+        <li>Smart-account/passkey signer as a native connector, gas-sponsorship hook in the Soroban invoke pipeline</li>
+      </ol>
+      <div class="callout">Full design rationale, positioning against prior art, and phase-by-phase detail live in <a class="inline-link" href="https://github.com/SagantaHQ/stellar-appkit/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a> in the repo.</div>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <div class="container">
+    <span class="pill">Built by Saganta</span>
+    <nav>
+      <a href="./index.html">Overview</a>
+      <a href="./demo.html">Demo</a>
+      <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <span class="fine">GPL-3.0-or-later licensed (see LICENSE)</span>
+  </div>
+</footer>
+
+</body>
+</html>

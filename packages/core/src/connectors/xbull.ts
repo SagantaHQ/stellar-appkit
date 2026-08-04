@@ -16,16 +16,31 @@ import { ConnectError } from '../types.js';
 import { withNormalizedError } from './error-utils.js';
 
 /**
- * Adapter for xBull (extension + PWA), which injects a provider on
- * `window.xBullSDK`.
+ * Adapter for xBull, via the official `@creit.tech/xbull-wallet-connect`
+ * package — confirmed against the package's own shipped `.d.ts` at v0.4.0,
+ * which is more precise than (and in one place corrects) its README:
+ * `signMessage()` genuinely exists and is implemented below, despite the
+ * README not documenting it.
  *
- * ⚠️ Verify against xBull's current published SDK before shipping: their
- * injected API has changed shape across major versions, and this file
- * targets the connect/getPublicKey/signXDR/network() surface documented at
- * the time this was written. Everything else in this adapter (error
- * normalization, capability flags, the WalletConnector contract) is stable
- * regardless of that surface — only the body of the six methods below
- * should need to change if xBull's SDK has moved on.
+ * Corrected from an earlier version of this file that assumed a
+ * `window.xBullSDK` injected global with `getPublicKey`/`signXDR`/
+ * `signAuthEntry`/`signMessage` methods. That shape doesn't exist — xBull's
+ * real API is a `xBullWalletConnect` bridge class you instantiate, with
+ * `connect()` (returns the public key directly), `sign({xdr, publicKey?,
+ * network?})` (returns the signed XDR directly), and `signMessage(message,
+ * opts?)`. There is no separate "get current address" call — `connect()`
+ * is both. The bridge itself handles falling back to the xBull webapp when
+ * the extension isn't installed, so there's no meaningful "not installed"
+ * state to detect the way there is for Freighter — it behaves like Albedo
+ * in that respect.
+ *
+ * Soroban auth-entry signing is still not supported here, but precisely
+ * so: the shipped types show the underlying message protocol *does* have
+ * an internal `xdrType: 'Transaction' | 'AuthEntry'` concept
+ * (`ISignXDRRequestPayload`), but the public `sign()` method's parameters
+ * (`ISignParams`) don't expose a way to select it — so there's no
+ * reliable, documented way to ask for auth-entry signing specifically
+ * through this public API today, as opposed to it simply not existing.
  */
 export function createXBullConnector(): WalletConnector {
   const meta: WalletMeta = {
@@ -40,21 +55,19 @@ export function createXBullConnector(): WalletConnector {
 
   const capabilities: WalletCapabilities = {
     signTransaction: true,
-    signAuthEntry: true,
-    signMessage: true,
+    signAuthEntry: false, // not exposed by the public sign() API — see file header comment
+    signMessage: true, // confirmed in the shipped .d.ts, despite the README omitting it
     submit: false,
   };
 
-  function provider(): XBullProvider {
-    const p = (globalThis as { xBullSDK?: XBullProvider }).xBullSDK;
-    if (!p) {
-      throw ConnectError.internal(
-        'xBull provider not found on window. Is the extension installed and unlocked?',
-        undefined,
-        meta.id
-      );
-    }
-    return p;
+  let bridge: XBullWalletConnectBridge | null = null;
+  let cachedAddress: string | null = null;
+
+  async function ensureBridge(): Promise<XBullWalletConnectBridge> {
+    if (bridge) return bridge;
+    const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
+    bridge = new xBullWalletConnect() as XBullWalletConnectBridge;
+    return bridge;
   }
 
   const connector: WalletConnector = {
@@ -63,83 +76,84 @@ export function createXBullConnector(): WalletConnector {
     capabilities,
 
     async getReachability() {
-      const installed = typeof (globalThis as { xBullSDK?: unknown }).xBullSDK !== 'undefined';
-      // Same limitation as Freighter — no distinct unlock-state check exposed, so 'locked' isn't reported here.
-      return installed ? 'available' : 'not-installed';
+      // The bridge falls back to the xBull webapp automatically when the
+      // extension isn't installed, so — like Albedo — there's no "not
+      // installed" state to report, only whether this environment can run
+      // the bridge at all (needs window for the popup/iframe it uses).
+      return typeof window !== 'undefined' ? 'available' : 'unavailable';
     },
 
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
-        const p = provider();
-        await p.connect();
-        const address = await p.getPublicKey();
-        return { address, walletId: meta.id };
+        const b = await ensureBridge();
+        // Both flags are required together per the real IConnectParams shape —
+        // we need both capabilities, so this is explicit rather than relying
+        // on whatever the library defaults to when the params object is omitted.
+        const publicKey = await b.connect({ canRequestPublicKey: true, canRequestSign: true });
+        cachedAddress = publicKey;
+        return { address: publicKey, walletId: meta.id };
       });
     },
 
     async disconnect() {
-      const p = provider();
-      await p.disconnect?.();
+      bridge?.closeConnections?.();
+      bridge = null;
+      cachedAddress = null;
     },
 
     async getAddress(): Promise<GetAddressResult> {
-      return withNormalizedError(meta.id, async () => {
-        const address = await provider().getPublicKey();
-        return { address };
-      });
+      if (!cachedAddress) {
+        throw ConnectError.invalidRequest('xBull is not connected — call connect() first.', undefined, meta.id);
+      }
+      return { address: cachedAddress };
     },
 
     async getNetwork(): Promise<GetNetworkResult> {
-      return withNormalizedError(meta.id, async () => {
-        const net = await provider().getNetwork();
-        return { network: net.network, networkPassphrase: net.networkPassphrase };
-      });
+      // Not exposed by this library — the network is passed explicitly to
+      // sign() instead of being something the bridge reports back.
+      throw ConnectError.invalidRequest(
+        'xBull Wallet Connect does not expose a persistent network — pass networkPassphrase explicitly on each call.',
+        undefined,
+        meta.id
+      );
     },
 
     async signTransaction(xdr: string, opts?: SignTxOptions): Promise<SignTransactionResult> {
       return withNormalizedError(meta.id, async () => {
-        const p = provider();
-        const signedTxXdr = await p.signXDR(xdr, {
-          publicKey: opts?.address,
+        const b = await ensureBridge();
+        const signerAddress = opts?.address ?? cachedAddress ?? undefined;
+        const signedTxXdr = await b.sign({
+          xdr,
+          publicKey: signerAddress,
           network: opts?.networkPassphrase,
         });
-        const signerAddress = opts?.address ?? (await p.getPublicKey());
+        if (!signerAddress) {
+          throw ConnectError.internal(
+            'Could not determine the signer address for this xBull transaction — call connect() first.',
+            undefined,
+            meta.id
+          );
+        }
         return { signedTxXdr, signerAddress };
       });
     },
 
-    async signAuthEntry(authEntryXdr: string, opts?: SignOptions): Promise<SignAuthEntryResult> {
-      return withNormalizedError(meta.id, async () => {
-        const p = provider();
-        if (!p.signAuthEntry) {
-          throw ConnectError.invalidRequest(
-            'This version of the xBull extension does not support signing auth entries.',
-            undefined,
-            meta.id
-          );
-        }
-        const signedAuthEntry = await p.signAuthEntry(authEntryXdr, {
-          publicKey: opts?.address,
-          network: opts?.networkPassphrase,
-        });
-        const signerAddress = opts?.address ?? (await p.getPublicKey());
-        return { signedAuthEntry, signerAddress };
-      });
+    async signAuthEntry(): Promise<SignAuthEntryResult> {
+      throw ConnectError.invalidRequest(
+        'xBull Wallet Connect does not support signing Soroban auth entries. Prompt the user to choose a different wallet for this action.',
+        undefined,
+        meta.id
+      );
     },
 
     async signMessage(message: string, opts?: SignOptions): Promise<SignMessageResult> {
       return withNormalizedError(meta.id, async () => {
-        const p = provider();
-        if (!p.signMessage) {
-          throw ConnectError.invalidRequest(
-            'This version of the xBull extension does not support message signing.',
-            undefined,
-            meta.id
-          );
-        }
-        const signedMessage = await p.signMessage(message, { publicKey: opts?.address });
-        const signerAddress = opts?.address ?? (await p.getPublicKey());
-        return { signedMessage, signerAddress };
+        const b = await ensureBridge();
+        const result = await b.signMessage(message, {
+          networkPassphrase: opts?.networkPassphrase,
+          address: opts?.address ?? cachedAddress ?? undefined,
+        });
+        return { signedMessage: result.signedMessage, signerAddress: result.signerAddress };
       });
     },
   };
@@ -147,13 +161,13 @@ export function createXBullConnector(): WalletConnector {
   return connector;
 }
 
-/** Shape of the injected xBull provider. Narrow, and marked optional where a method's presence is version-dependent. */
-interface XBullProvider {
-  connect(): Promise<void>;
-  disconnect?(): Promise<void>;
-  getPublicKey(): Promise<string>;
-  getNetwork(): Promise<{ network: string; networkPassphrase: string }>;
-  signXDR(xdr: string, opts: { publicKey?: string; network?: string }): Promise<string>;
-  signAuthEntry?(xdr: string, opts: { publicKey?: string; network?: string }): Promise<string>;
-  signMessage?(message: string, opts: { publicKey?: string }): Promise<string>;
+/** Shape of the real `xBullWalletConnect` bridge — confirmed against the package's shipped .d.ts (v0.4.0). */
+interface XBullWalletConnectBridge {
+  connect(params?: { canRequestPublicKey: boolean; canRequestSign: boolean }): Promise<string>;
+  sign(params: { xdr: string; publicKey?: string; network?: string }): Promise<string>;
+  signMessage(
+    message: string,
+    opts?: { networkPassphrase?: string; address?: string }
+  ): Promise<{ signedMessage: string; signerAddress: string }>;
+  closeConnections(): void;
 }

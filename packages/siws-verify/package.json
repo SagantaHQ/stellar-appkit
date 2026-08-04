@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit-siws-verify",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "description": "Server-side verifier for Sign-In With Stellar (SIWS) messages produced by @saganta/stellar-appkit.",
   "type": "module",
   "sideEffects": false,
@@ -22,5 +22,5 @@
   "peerDependencies": {
     "@stellar/stellar-sdk": "^13.0.0"
   },
-  "license": "MIT"
+  "license": "GPL-3.0-or-later"
 }

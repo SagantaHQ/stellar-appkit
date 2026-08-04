@@ -75,12 +75,11 @@ Wallet SDKs are peer dependencies — install the ones for the connectors you ac
 npm install @stellar/stellar-sdk              # always — the base Stellar/Soroban SDK
 npm install @stellar/freighter-api            # if using createFreighterConnector
 npm install @albedo-link/intent               # if using createAlbedoConnector
+npm install @creit.tech/xbull-wallet-connect  # if using createXBullConnector
 npm install @ledgerhq/hw-app-str \
             @ledgerhq/hw-transport-webhid \
             @ledgerhq/hw-transport-webusb     # if using createLedgerConnector
 ```
-
-xBull has no npm package — it injects `window.xBullSDK` directly, so `createXBullConnector` needs no install.
 
 ---
 
@@ -325,6 +324,7 @@ Flagged explicitly rather than silently half-working:
 - **Ledger Soroban auth-entry signing is stubbed** — reconstructing a valid `SorobanAuthorizationEntry` from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at rather than risk shipping something that produces invalid auth entries. Plain transaction signing and public-key/multi-account derivation both work.
 - **Ledger's `signTransaction` payload shape** is implemented against the most standard pattern but isn't 100% confirmed from published docs alone — worth checking against your installed `@ledgerhq/hw-app-str` version before production use.
 - **"Locked" reachability isn't detected for Freighter or xBull** — neither SDK exposes a distinct unlock-state check, so both report `'available'` once installed, even if locked.
+- **xBull doesn't support Soroban auth-entry signing** — the underlying message protocol has an internal concept for it (`xdrType: 'Transaction' | 'AuthEntry'`), but the public `sign()` method doesn't expose a way to select it, so there's no reliable way to request it through the published SDK today.
 - **Soroban balance-delta preview is argument-based, not simulation-based** — recognized SEP-41 calls decode the intended amount directly from call arguments; the preview does not diff Soroban RPC simulation state changes, since that response shape isn't stable enough across protocol versions to rely on.
 - **`signAuthEntry()` doesn't go through the preview flow** — only `signTransaction()` does today. A Soroban call made via `SorobanConnection.invoke()` is still covered (the outer transaction signature is previewed), but a standalone `signAuthEntry()` call bypasses it.
 - **No React (or Vue/Svelte) wrapper yet** — `ui-web` is plain Web Components; a thin React wrapper is next on the roadmap, not yet built.
@@ -346,4 +346,4 @@ Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
 ## License
 
-GNU General Public License v3.0
+GPL-3.0-or-later — see [LICENSE](./LICENSE). (Earlier drafts of this README said MIT; that was wrong, not a deliberate relicensing — the committed `LICENSE` file has always been GPLv3. Worth a deliberate decision if an SDK meant to be embedded in other people's apps is what you actually want under copyleft terms, since that has real implications for anyone adopting it.)

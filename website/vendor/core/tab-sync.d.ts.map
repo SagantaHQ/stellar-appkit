@@ -1,0 +1,1 @@
+{"version":3,"file":"tab-sync.d.ts","sourceRoot":"","sources":["../src/tab-sync.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;GAaG;AACH,qBAAa,OAAO;IAClB,OAAO,CAAC,OAAO,CAAiC;IAEhD,YAAY,WAAW,EAAE,MAAM,EAAE,cAAc,EAAE,MAAM,IAAI,EAS1D;IAED,+GAA+G;IAC/G,MAAM,IAAI,IAAI,CAEb;IAED,KAAK,IAAI,IAAI,CAGZ;CACF"}

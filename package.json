@@ -7,15 +7,14 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "publish": "npm publish --workspaces --access public",
-    "version": "npm version --workspaces"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
     "@albedo-link/intent": "^0.13.0",
+    "@creit.tech/xbull-wallet-connect": "^0.4.0",
     "@ledgerhq/hw-app-str": "^7.7.6",
     "@ledgerhq/hw-transport-webhid": "^6.36.0",
     "@ledgerhq/hw-transport-webusb": "^6.35.0",

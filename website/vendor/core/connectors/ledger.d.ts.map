@@ -1,0 +1,1 @@
+{"version":3,"file":"ledger.d.ts","sourceRoot":"","sources":["../../src/connectors/ledger.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAahB,MAAM,aAAa,CAAC;AAgBrB,MAAM,WAAW,sBAAsB;IACrC,uHAAuH;IACvH,kBAAkB,CAAC,EAAE,QAAQ,GAAG,QAAQ,CAAC;IACzC,uHAAuH;IACvH,YAAY,CAAC,EAAE,MAAM,CAAC;CACvB;AAED;;;;;;;;;;;;;;;;;;;GAmBG;AACH,wBAAgB,qBAAqB,CAAC,OAAO,GAAE,sBAA2B,GAAG,eAAe,CA4N3F"}
