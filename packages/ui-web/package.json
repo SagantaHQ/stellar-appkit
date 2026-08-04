@@ -1,9 +1,12 @@
 {
   "name": "@saganta/stellar-appkit-ui-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Themeable, framework-agnostic wallet-connect modal/bottom-sheet/inline UI for Stellar (Web Components, Shadow DOM).",
   "type": "module",
-  "sideEffects": ["./dist/connect-modal.js", "./dist/index.js"],
+  "sideEffects": [
+    "./dist/connect-modal.js",
+    "./dist/index.js"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

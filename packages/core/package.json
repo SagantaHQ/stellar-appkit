@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-agnostic wallet connection, unified API, Soroban abstraction, and SIWS for Stellar.",
   "type": "module",
   "sideEffects": false,
@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "cp ../../README.md ./ && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
