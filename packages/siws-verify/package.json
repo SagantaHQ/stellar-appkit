@@ -4,6 +4,7 @@
   "description": "Server-side verifier for Sign-In With Stellar (SIWS) messages produced by @saganta/stellar-appkit.",
   "type": "module",
   "sideEffects": false,
+  "files": ["dist", "src"],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@saganta/stellar-appkit": "*"
+    "@saganta/stellar-appkit": "^0.1.0"
   },
   "peerDependencies": {
     "@stellar/stellar-sdk": "^13.0.0"

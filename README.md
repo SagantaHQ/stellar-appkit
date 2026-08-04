@@ -314,6 +314,12 @@ npm run build       # builds every package
 npm run typecheck   # typechecks every package
 ```
 
+### Publishing
+
+Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`.
+
+The workspace-internal dependency (`ui-web` and `siws-verify` both depend on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on real packages, not just something that happens to resolve inside this monorepo via workspace linking.
+
 ---
 
 ## Known limitations

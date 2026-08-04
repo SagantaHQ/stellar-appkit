@@ -4,6 +4,7 @@
   "description": "Themeable, framework-agnostic wallet-connect modal/bottom-sheet/inline UI for Stellar (Web Components, Shadow DOM).",
   "type": "module",
   "sideEffects": ["./dist/connect-modal.js", "./dist/index.js"],
+  "files": ["dist", "src"],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@saganta/stellar-appkit": "*"
+    "@saganta/stellar-appkit": "^0.1.0"
   },
   "peerDependencies": {
     "@saganta/stellar-appkit": ">=0.1.0"
