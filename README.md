@@ -85,15 +85,24 @@ npm install @ledgerhq/hw-app-str \
 
 ### Installing the dev version directly from git
 
-For testing an in-development version before it's published to npm, install directly from the GitHub repo. There are three patterns depending on what you're doing — **Pattern 3 is the recommended one** for active development, because monorepo workspace packages don't always install cleanly via direct git URLs.
+For testing an in-development version before it's published to npm, install directly from the GitHub repo. **The recommended path is Pattern 3 (local link) for active development** — direct git URLs work for the core package but not for siws-verify (it depends on core via a workspace symlink that a direct git install doesn't set up).
 
-**Pattern 1 — Install a specific commit (most reproducible):**
+**Pattern 1 — Install a specific commit of the core package:**
 
 ```bash
 npm install SagantaHQ/stellar-appkit#<commit-sha> --save
 ```
 
-This clones the repo at that commit, runs `npm install` for its own dependencies, and (if the install succeeds) runs the per-package `prepare` script to build `dist/`. If you hit "Cannot find module './dist/index.js'", the build didn't run — fall back to Pattern 3.
+This clones the repo at that commit and runs `npm install` for its dependencies. After install, you'll need to build `dist/` manually because npm's `prepare` script handling for workspace packages is unreliable:
+
+```bash
+# In your consumer app, find the cloned package and build it:
+cd node_modules/@saganta/stellar-appkit
+npm install   # if dependencies weren't installed (they should be, but occasionally aren't)
+npx tsc -p tsconfig.json   # builds dist/
+```
+
+If this feels clunky, that's because it is — monorepo workspace packages aren't really designed for direct-from-git install. Use Pattern 3 instead.
 
 **Pattern 2 — Install from a branch (follows latest work):**
 
@@ -101,7 +110,7 @@ This clones the repo at that commit, runs `npm install` for its own dependencies
 npm install SagantaHQ/stellar-appkit#main --save
 ```
 
-Same as above but tracks `main`. Each `npm update @saganta/stellar-appkit` will pull the latest commit and rebuild. Useful for staying current, but your `package-lock.json` will point at whatever commit was current when you last ran install — commit it to lock a specific state.
+Same caveats as Pattern 1 — you'll still need to build `dist/` manually after install. Each `npm update @saganta/stellar-appkit` will pull the latest commit, but won't rebuild automatically.
 
 **Pattern 3 — Local development with live reload (recommended while iterating):**
 
@@ -129,14 +138,25 @@ Now `my-app`'s `import { StellarAppKit } from '@saganta/stellar-appkit'` resolve
 bun run build         # rebuilds dist/ — my-app picks up the change on next dev-server reload
 ```
 
-For `@saganta/stellar-appkit-siws-verify`, repeat from `packages/siws-verify` instead. The siws-verify package depends on `@saganta/stellar-appkit` — linking both packages locally (or linking siws-verify and letting it find core via the workspace) works; trying to install siws-verify from a direct git URL alone will fail because the workspace dependency on core won't be set up.
+For `@saganta/stellar-appkit-siws-verify`, repeat from `packages/siws-verify`:
+
+```bash
+cd stellar-appkit/packages/siws-verify
+npm link              # registers @saganta/stellar-appkit-siws-verify globally
+
+# In your consumer app:
+cd my-app
+npm link @saganta/stellar-appkit-siws-verify
+```
+
+The siws-verify package depends on `@saganta/stellar-appkit` — when both are linked locally, siws-verify will find core through the global symlink. (If only siws-verify is linked, it will fail to resolve core.)
 
 **Troubleshooting git installs:**
 
-- **"Cannot find module './dist/index.js'"** — the `prepare` script didn't run, so `dist/` wasn't built. This happens with `npm install` from git in some npm versions when the host has no build tooling, or when the install runs as root with `--unsafe-perm` off. Fix: clone the repo manually, run `bun install && bun run build` inside, then `npm link` as in Pattern 3.
+- **"Cannot find module './dist/index.js'"** — `dist/` wasn't built. This is the expected state after a direct git install (Pattern 1 or 2) because npm's `prepare` script handling for workspace packages is unreliable. Fix: build it manually with `npx tsc -p tsconfig.json` inside the cloned package, or use Pattern 3 (local link) which makes the build step explicit.
 - **"Cannot find module '@stellar/freighter-api'"** — the wallet SDK peer dependencies aren't auto-installed. Install them in your consumer app as listed above.
 - **TypeScript types not picked up** — make sure your consumer app's `tsconfig.json` has `"moduleResolution": "Bundler"` or `"Node16"`/`"NodeNext"` (the package uses subpath exports that older resolutions don't follow).
-- **`@saganta/stellar-appkit-siws-verify` fails to resolve `@saganta/stellar-appkit`** — the siws-verify package depends on core, but a direct git install doesn't set up the workspace symlink between them. Use Pattern 3 (local link) for siws-verify, or wait for the next npm publish.
+- **`@saganta/stellar-appkit-siws-verify` fails to resolve `@saganta/stellar-appkit`** — the siws-verify package depends on core, but a direct git install doesn't set up the workspace symlink between them. **siws-verify cannot be installed via direct git URL** — use Pattern 3 (local link) for it, or wait for the next npm publish.
 
 ---
 
@@ -396,7 +416,7 @@ See [TESTING.md](./TESTING.md) for what each test file covers and how to add tes
 
 ### Publishing
 
-Each package's `package.json` has an explicit `"files": ["dist", "src"]` and a `"prepare": "tsc -p tsconfig.json"` script. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. The `prepare` script also runs on `npm install` from a git URL, so direct-from-git installs build `dist/` automatically (see "Installing the dev version directly from git" above). Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`.
+Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`. (The published npm package includes `dist/`, so consumers installing from npm don't need to build — only consumers installing directly from a git URL do, see above.)
 
 The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
 
