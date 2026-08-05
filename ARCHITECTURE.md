@@ -296,6 +296,71 @@ Wired into `signAuthEntry()` via the `onPreviewAuthEntry` hook, with the same `s
 
 ---
 
+## 8.7 Framework wrappers
+
+Four framework wrappers ship as subpath exports of `@saganta/stellar-appkit`, mirroring the `/ui-web` pattern: `/react`, `/vue`, `/solid`, `/svelte`. Each is a separate entry point in `package.json`'s `exports` field, so a bundler only pulls in the framework code the consumer actually imports — a React app never pays for Vue/Svelte/Solid.
+
+**Why subpath exports instead of separate packages?** Same rationale as the `ui-web` merge in §8: separate packages drift. Each wrapper is a thin reactive binding over the framework-agnostic `StellarAppKit` client — keeping them in one package means one version, one CI, no cross-package drift. The framework packages (`react`, `vue`, `solid-js`, `svelte`) are optional peer dependencies, so consumers only install the one they need.
+
+### Shared hook surface
+
+All four wrappers expose the same hook names with the same semantics — only the reactivity primitives differ:
+
+| Hook | Returns | React | Vue | Solid | Svelte |
+|---|---|---|---|---|---|
+| `useAppKit()` | `StellarAppKit` | direct | direct | direct | `getAppKit()` |
+| `useStatus()` | `'idle' \| 'selecting' \| ...` | `useSyncExternalStore` | `ref` + `on('statusChange')` | `createSignal` | writable store |
+| `useSession()` | `ConnectSession \| null` | `useSyncExternalStore` | `shallowRef` | `createSignal` | writable store |
+| `useSessions()` | `ConnectSession[]` | `useSyncExternalStore` | `shallowRef` | `createSignal` | writable store |
+| `useAddress()` | `string \| null` | derived | `computed` | `createMemo` | derived store |
+| `usePendingSignCount()` | `number` | `useSyncExternalStore` | `ref` | `createSignal` | writable store |
+| `useConnect()` | `{ connect, disconnect, ... }` | `useState` + handler | `ref` + handlers | `createSignal` + handlers | writables + handlers |
+| `useSignTransaction()` | `{ sign, isSigning, data, error }` | `useState` | `writable` | `createSignal` | writables |
+| `useSignMessage()` | same shape | same | same | same | same |
+| `useSignIn()` | same shape | same | same | same | same |
+| `useSoroban({ rpcUrl, networkPassphrase })` | `{ soroban, invoke, previewInvoke, status, ... }` | `useMemo` + `useState` | `new` + `ref` | `new` + `createSignal` | `new` + writables |
+| `usePreviewTransaction()` | `{ preview, respond, isPending }` | `useState` + `useEffect` | `shallowRef` | `createSignal` | writable |
+| `usePreviewAuthEntry()` | same shape | same | same | same | same |
+
+### Per-framework design notes
+
+**React (`/react`)** — uses `useSyncExternalStore` (React 18+) for the read-only reactive slices (`useStatus`, `useSession`, `useSessions`, `usePendingSignCount`) because it's tearing-safe under concurrent rendering, and correctly handles the case where an event fires between render and effect setup. The signing hooks (`useSignTransaction`, etc.) use `useState` because their state is local to the hook instance, not subscribed from the client. The provider constructs the client in `useMemo` (with config fields as deps so a hot reload during dev doesn't leak instances) and runs `restore()` in `useEffect` so it doesn't block render. `dispose()` is called on unmount.
+
+**Vue (`/vue`)** — exposes two entry points: `StellarAppKitPlugin` (for `app.use()`) and `provideStellarAppKit()` (for component-tree-scoped setup). Uses `shallowRef` instead of `ref` for object-valued state (sessions, previews) because the underlying client emits new object references on change — deep reactivity would be wasted overhead. `shallowReadonly` wraps the refs to prevent consumers from mutating them while still allowing them to read nested fields. Each composable calls `onUnmounted` to unsubscribe from the client's event emitter.
+
+**Solid (`/solid`)** — uses `createSignal` + `createMemo` + `onCleanup` for fine-grained reactivity. The provider constructs the client in `onMount` (not during render) to avoid touching `localStorage` during SSR. The `AppKitContext.Provider` is rendered via `createComponent` instead of JSX to avoid TS JSX namespace conflicts with the React wrapper in the same package (TS can't switch `jsxImportSource` per-file). `useAppKitOptional()` is provided for SSR-safe access — returns `null` before mount instead of throwing.
+
+**Svelte (`/svelte`)** — uses Svelte's writable stores as the primary API because they work in both Svelte 4 and Svelte 5 (stores are still supported in 5). The client is a module-level singleton (`setStellarAppKitContext()`) because Svelte 5's runes model makes module-level state idiomatic, and Svelte 4 didn't have React-style Context anyway. Short aliases (`useSession` instead of `useSessionStore`) are exported for Svelte 5 runes-style code. The store's `subscribe` function cleans up implicitly when the store is garbage collected — for HMR-heavy dev, call `setStellarAppKitContext()` again to fully reset.
+
+### Tree-shakability contract
+
+Each wrapper is a separate subpath export in `package.json`:
+
+```json
+{
+  "exports": {
+    ".": "...",
+    "./ui-web": "...",
+    "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+    "./vue":   { "types": "./dist/vue/index.d.ts",   "import": "./dist/vue/index.js" },
+    "./solid": { "types": "./dist/solid/index.d.ts", "import": "./dist/solid/index.js" },
+    "./svelte":{ "types": "./dist/svelte/index.d.ts","import": "./dist/svelte/index.js" }
+  }
+}
+```
+
+Vite, webpack, and Rollup all respect subpath exports — `import { StellarAppKit } from '@saganta/stellar-appkit'` never pulls in `dist/react/`, and `import { useConnect } from '@saganta/stellar-appkit/react'` never pulls in `dist/vue/` or `dist/solid/`. The framework packages themselves (`react`, `vue`, `solid-js`, `svelte`) are optional peer dependencies, so consumers only install the one they need.
+
+### Reference patterns
+
+The hook surface is synthesized from the official Stellar docs ([dapp-frontend tutorial](https://developers.stellar.org/docs/build/apps/dapp-frontend), the [dapp SKILL.md](https://skills.stellar.org/), and the `soroban-example-dapp`'s `hooks/` directory) plus the existing `StellarAppKit` API. Two notable differences from the official examples:
+
+1. **Context provider instead of module-level singleton** — the official `soroban-example-dapp` uses a module-level `addressLookup` cache. We use a Context provider (React/Solid) / provide-inject (Vue) / module singleton (Svelte) so the client lifecycle is owned by the app root, not the import graph. This makes testing easier (inject a mock client) and supports multiple StellarAppKit instances in one app (rare but legitimate — e.g. a Testnet playground alongside a Mainnet dashboard).
+
+2. **`usePreviewTransaction` / `usePreviewAuthEntry` are first-class hooks** — the official examples don't have a preview flow. Ours surfaces the `onPreviewTransaction` / `onPreviewAuthEntry` payloads reactively, with a `respond(approve: boolean)` callback that resolves the pending preview. This lets apps build their own preview UI (instead of using `<saganta-appkit-modal>`) while still going through the same risk-flag pipeline.
+
+---
+
 ## 9. Phased roadmap
 
 | Phase | Scope | Status |
@@ -305,10 +370,11 @@ Wired into `signAuthEntry()` via the `onPreviewAuthEntry` hook, with the same `s
 | 1.5 | Multi-session client (connect several wallets at once, switch active), richer `getReachability()`, typed `NetworkMismatchError` with optional auto-retry, cross-tab session sync, Ledger hardware adapter with multi-account support | **done** |
 | 1.75 | Transaction decoding (`decode.ts`) — human-readable operations, risk flags (account-merge, signer-change, large-transfer, unverified-contract, broad-auth-grant), an opt-in `onPreviewTransaction` hook wired into `signTransaction()`, signature-request queueing, `SorobanConnection.previewInvoke()` | **done** |
 | 1.8 | Unified `signedData` SIWS contract (§6.1) — every connector surfaces the exact bytes the wallet signed; verifier works for Freighter/Ledger/Albedo/xBull with no custom `verifySignatureFn`. Simulation-based Soroban balance-delta preview (`decodeSimulationDeltas`). Auth-entry preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`) wired into `signAuthEntry()`. CI suite: 80 tests, typecheck + build + test on Linux + macOS. | **done** |
+| 1.9 | Framework wrappers (§8.7) — React (`/react`), Vue (`/vue`), Solid (`/solid`), Svelte (`/svelte`) as subpath exports. Shared hook surface (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) with per-framework reactivity primitives. Tree-shakable: each wrapper is a separate entry point; framework packages are optional peer deps. 15 wrapper tests covering module structure, provider/plugin surface, and tree-shakability contract. Total suite now 95 tests. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
-| 3 | React wrapper around `ui-web` (thin — the web component already owns all state) | next |
-| 4 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
+| 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
+| 4 | Ledger Soroban auth-entry signing | next |
 | 5 | Smart-account/passkey signer as a native `WalletConnector` (Saganta embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline | later |
 
 ---

@@ -52,13 +52,20 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Every color/radius/font is a themeable CSS custom property that crosses the shadow boundary — restyle from your own stylesheet, no JS API needed
 - Account switcher, account picker (multi-account wallets), network-mismatch view, and transaction-preview view all built in
 
+**Framework wrappers**
+- React (`@saganta/stellar-appkit/react`) — `<StellarAppKitProvider>` + hooks (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) using `useSyncExternalStore` for tearing-safe reactivity under React 18 concurrent rendering
+- Vue (`@saganta/stellar-appkit/vue`) — `StellarAppKitPlugin` (for `app.use()`) or `provideStellarAppKit()` + Composition API composables with the same surface, using `shallowRef` + `shallowReadonly` to avoid deep reactivity overhead
+- Solid (`@saganta/stellar-appkit/solid`) — `<StellarAppKitProvider>` + hooks using `createSignal`/`createMemo`/`onCleanup` for fine-grained reactivity
+- Svelte (`@saganta/stellar-appkit/svelte`) — `setStellarAppKitContext()` + store-based composables (`useSessionStore`, `useConnectStore`, ...) that work in both Svelte 4 and Svelte 5; short aliases (`useSession`, `useConnect`) are provided for Svelte 5 runes-style code
+- Each wrapper is a separate subpath export — bundlers only pull in the framework code you actually import. A React app never pays for Vue/Svelte/Solid.
+
 ---
 
 ## Packages
 
 | Package | What it is |
 |---|---|
-| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath — separate entry point, so importing only the core client never pulls in UI code. |
+| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath, plus framework wrappers at `/react`, `/vue`, `/solid`, `/svelte` — all separate entry points, so importing only the core client never pulls in UI or framework code. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 
 See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap.
@@ -339,6 +346,146 @@ No per-wallet custom verifier is needed — `verifySiws` works out of the box fo
 
 Every token (`--sak-color-bg`, `--sak-color-surface`, `--sak-color-accent`, `--sak-radius-*`, `--sak-font-*`, ...) has a sensible default and is fully overridable. `theme="light" | "dark" | "auto"` switches the base palette; individual tokens layer on top.
 
+### Framework wrappers
+
+If you'd rather use hooks than the Web Component UI, install the wrapper for your framework. Each is a separate subpath export — bundlers only ship the framework code you actually import.
+
+**React:**
+
+```bash
+npm install react react-dom @saganta/stellar-appkit
+```
+
+```tsx
+import { StellarAppKitProvider, useConnect, useSession, useSignTransaction } from '@saganta/stellar-appkit/react';
+import { createFreighterConnector } from '@saganta/stellar-appkit';
+
+export function App() {
+  return (
+    <StellarAppKitProvider config={{
+      network: 'TESTNET',
+      connectors: [createFreighterConnector()],
+      appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+    }}>
+      <WalletPanel />
+    </StellarAppKitProvider>
+  );
+}
+
+function WalletPanel() {
+  const { connect, isConnected, isConnecting } = useConnect();
+  const session = useSession();
+  const { sign, isSigning } = useSignTransaction();
+
+  if (!isConnected) {
+    return <button disabled={isConnecting} onClick={() => connect('freighter')}>
+      {isConnecting ? 'Connecting...' : 'Connect Freighter'}
+    </button>;
+  }
+  return <p>Connected as {session?.address}</p>;
+}
+```
+
+**Vue 3 (Composition API):**
+
+```bash
+npm install vue @saganta/stellar-appkit
+```
+
+```vue
+<script setup lang="ts">
+import { StellarAppKitPlugin, useConnect, useSession } from '@saganta/stellar-appkit/vue';
+import { createFreighterConnector } from '@saganta/stellar-appkit';
+import { createApp } from 'vue';
+
+const app = createApp(App);
+app.use(StellarAppKitPlugin, {
+  network: 'TESTNET',
+  connectors: [createFreighterConnector()],
+  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+});
+
+// Or inside a component's setup():
+import { provideStellarAppKit } from '@saganta/stellar-appkit/vue';
+provideStellarAppKit({ network: 'TESTNET', connectors: [createFreighterConnector()] });
+
+const { connect, isConnected, isConnecting } = useConnect();
+const session = useSession();  // Readonly<Ref<ConnectSession | null>>
+</script>
+
+<template>
+  <button v-if="!isConnected" :disabled="isConnecting" @click="connect('freighter')">
+    {{ isConnecting ? 'Connecting...' : 'Connect Freighter' }}
+  </button>
+  <p v-else>Connected as {{ session?.address }}</p>
+</template>
+```
+
+**Solid:**
+
+```bash
+npm install solid-js @saganta/stellar-appkit
+```
+
+```tsx
+import { StellarAppKitProvider, useConnect, useSession } from '@saganta/stellar-appkit/solid';
+import { createFreighterConnector } from '@saganta/stellar-appkit';
+import type { JSX } from 'solid-js';
+
+export function App(): JSX.Element {
+  return (
+    <StellarAppKitProvider config={{
+      network: 'TESTNET',
+      connectors: [createFreighterConnector()],
+    }}>
+      <WalletPanel />
+    </StellarAppKitProvider>
+  );
+}
+
+function WalletPanel(): JSX.Element {
+  const { connect, isConnected, isConnecting } = useConnect();
+  const session = useSession();
+  return (
+    <button disabled={isConnecting()} onClick={() => connect('freighter')}>
+      {isConnecting() ? 'Connecting...' : 'Connect Freighter'}
+    </button>
+  );
+}
+```
+
+**Svelte (4 or 5):**
+
+```bash
+npm install svelte @saganta/stellar-appkit
+```
+
+```svelte
+<!-- +layout.svelte -->
+<script lang="ts">
+  import { setStellarAppKitContext, useConnect, useSession } from '@saganta/stellar-appkit/svelte';
+  import { createFreighterConnector } from '@saganta/stellar-appkit';
+
+  setStellarAppKitContext({
+    network: 'TESTNET',
+    connectors: [createFreighterConnector()],
+    appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  });
+
+  const { connect, isConnected, isConnecting } = useConnect();
+  const session = useSession();
+</script>
+
+<button disabled={$isConnecting} onClick={() => connect('freighter')}>
+  {$isConnecting ? 'Connecting...' : 'Connect Freighter'}
+</button>
+{#if $isConnected}
+  <p>Connected as {$session?.address}</p>
+{/if}
+```
+
+All four wrappers share the same hook names (`useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) — only the reactivity primitives differ (React `useState`/`useSyncExternalStore`, Vue `ref`/`computed`, Solid `createSignal`/`createMemo`, Svelte stores). The full hook reference is in [ARCHITECTURE.md §11](./ARCHITECTURE.md#11-framework-wrappers).
+
 ### The `<saganta-appkit-modal>` element
 
 | Attribute | Values | Default |
@@ -384,7 +531,7 @@ packages/
       client.ts            # StellarAppKit — the client apps talk to
       connectors/            # freighter.ts, albedo.ts, xbull.ts, ledger.ts, walletconnect.ts, registry.ts
       soroban.ts               # SorobanConnection — invoke pipeline
-      decode.ts                  # transaction decoding + risk flags
+      decode.ts                  # transaction decoding + risk flags + balance deltas
       siws.ts                      # Sign-In With Stellar client
       tab-sync.ts                    # BroadcastChannel cross-tab sync
       storage.ts, events.ts            # session persistence, typed event emitter
@@ -392,6 +539,10 @@ packages/
         connect-modal.ts                   # the <saganta-appkit-modal> custom element
         tokens.ts, styles.ts                 # design tokens and the generated stylesheet
         icons.ts, a11y.ts                      # inline SVG icons, focus trap
+      react/                            # @saganta/stellar-appkit/react — provider + hooks
+      vue/                              # @saganta/stellar-appkit/vue — plugin + composables
+      solid/                            # @saganta/stellar-appkit/solid — provider + hooks
+      svelte/                           # @saganta/stellar-appkit/svelte — context + stores
   siws-verify/           # @saganta/stellar-appkit-siws-verify
     src/index.ts          # server-side SIWS verification
 examples/
@@ -431,7 +582,6 @@ Flagged explicitly rather than silently half-working:
 - **Ledger's `signTransaction` payload shape** is implemented against the most standard pattern but isn't 100% confirmed from published docs alone — worth checking against your installed `@ledgerhq/hw-app-str` version before production use.
 - **"Locked" reachability isn't detected for Freighter or xBull** — neither SDK exposes a distinct unlock-state check, so both report `'available'` once installed, even if locked.
 - **xBull doesn't support Soroban auth-entry signing** — the underlying message protocol has an internal concept for it (`xdrType: 'Transaction' | 'AuthEntry'`), but the public `sign()` method doesn't expose a way to select it, so there's no reliable way to request it through the published SDK today.
-- **No React (or Vue/Svelte) wrapper yet** — `ui-web` is plain Web Components; a thin React wrapper is next on the roadmap, not yet built.
 - **No React Native UI** — `core` is platform-agnostic already (inject a `ConnectStorage`), but there's no native bottom-sheet package yet.
 
 ---
@@ -439,10 +589,9 @@ Flagged explicitly rather than silently half-working:
 ## Roadmap
 
 1. WalletConnect v2 relay adapter — Lobstr, Hana, Hot Wallet, mobile deep-linking
-2. Thin React wrapper around `ui-web`
-3. `ui-react-native` — bottom sheet, Expo compatibility
-4. Ledger Soroban auth-entry signing
-5. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
+2. `ui-react-native` — bottom sheet, Expo compatibility
+3. Ledger Soroban auth-entry signing
+4. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
 
 Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
