@@ -461,6 +461,47 @@ For classic (non-Soroban) transactions, the simulation won't have a `cost` field
 
 ---
 
+## 8.9 UI polish — avatars, copy-to-clipboard, spinner, badges
+
+Four UI improvements that close the gap between "functional" and "production-grade":
+
+### 1. Wallet-provided avatars (`packages/core/src/ui-web/avatar.ts`)
+
+The `WalletConnector` interface now has an optional `getAvatar?()` method. Connectors that support profile pictures (e.g. a future smart-account wallet with passkey-linked identity) implement it; the modal renders the returned URL as an `<img>`.
+
+When no avatar is available (the wallet doesn't implement `getAvatar`, or it returns null), the modal falls back to a **deterministic gradient** generated from the address — same address always produces the same gradient, so users see a consistent visual identity across sessions. The gradient uses two hues derived from the address's bytes (after the version-byte prefix, for more visual variety).
+
+Opt-in **Stellar Expert avatars** via the `stellar-expert-avatars="true"` attribute on `<saganta-appkit-modal>`. This fetches a generated PNG from `api.stellar.expert/explorer/public/account/{address}/avatar` — a public third-party service. The `<img>` `onerror` handler falls back to the gradient if the service is down or the account has no avatar. Off by default because it's a third-party request.
+
+Priority: wallet-provided avatar → Stellar Expert (if enabled) → generated gradient.
+
+### 2. Copy-to-clipboard everywhere
+
+Previously, copy-to-clipboard was only on the active account in the connected panel. Now every address display has a copy button with per-address "copied!" feedback:
+
+- **Connected sessions** — each session row has its own copy button
+- **Account picker** — each account option has a copy button (with `event.stopPropagation()` so clicking copy doesn't also select the account)
+- **Transaction preview** — the source account has a copy button
+
+The `copyState` tracks which address was most recently copied, so the "copied!" checkmark feedback is per-button rather than global — copying address A doesn't show a checkmark on address B.
+
+### 3. Smooth loading spinner (the "square border-radius" bug)
+
+The connecting-state spinner previously used `border-radius: 11px` (a rounded rectangle) on the `::after` pseudo-element. When rotated, a rounded-square border wobbles visibly — the corners trace a larger radius than the edges, creating an uneven spin.
+
+Fix: `border-radius: 50%` (a perfect circle). A circle traces a constant radius when rotated, so the spin is smooth. The `inset: -2px` positions the circle 2px larger than the 36px tile, so it sits just outside the tile's border and traces around it.
+
+### 4. Contract verification badges in preview
+
+The `ContractBadge[]` from `previewOptions.contractMetadata` (added in §8.8) is now rendered inline on contract call operations in the transaction preview. Badges with a `url` (e.g. audit report links) are clickable — open in a new tab. Badge colors follow the severity field:
+- `success` (Verified, Audited) — green
+- `info` (Published by X, extra badges) — muted
+- `warning` / `danger` — amber / red (rare for badges, but supported)
+
+The fee estimate from §8.8 is also surfaced in the preview — `Fee 0.00501 XLM` instead of the raw stroops count, when `feeEstimate` is populated.
+
+---
+
 ## 9. Phased roadmap
 
 | Phase | Scope | Status |
@@ -472,6 +513,7 @@ For classic (non-Soroban) transactions, the simulation won't have a `cost` field
 | 1.8 | Unified `signedData` SIWS contract (§6.1) — every connector surfaces the exact bytes the wallet signed; verifier works for Freighter/Ledger/Albedo/xBull with no custom `verifySignatureFn`. Simulation-based Soroban balance-delta preview (`decodeSimulationDeltas`). Auth-entry preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`) wired into `signAuthEntry()`. CI suite: 80 tests, typecheck + build + test on Linux + macOS. | **done** |
 | 1.9 | Framework wrappers (§8.7) — React (`/react`), Vue (`/vue`), Solid (`/solid`), Svelte (`/svelte`) as subpath exports. Shared hook surface (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) with per-framework reactivity primitives. Tree-shakable: each wrapper is a separate entry point; framework packages are optional peer deps. 15 wrapper tests covering module structure, provider/plugin surface, and tree-shakability contract. Total suite now 95 tests. | **done** |
 | 2.0 | Soroban contract layer (§8.8) — typed contract client (`ContractClient<T>` from `stellar contract bindings`), RPC failover (`FailoverRpcServer` with health tracking + cooldown), contract verification badges (`PreviewOptions.contractMetadata` → `ContractBadge[]`), pre-simulate fee estimation (`FeeEstimate` on `previewInvoke()` + `estimateFee()`). 26 new tests (contract, rpc-failover, badges+fee). Total suite now 121 tests. | **done** |
+| 2.1 | UI polish (§8.9) — wallet-provided avatars (`getAvatar()` on `WalletConnector` + deterministic gradient fallback + opt-in Stellar Expert avatars), copy-to-clipboard on all address displays (connected, account picker, transaction preview), smooth loading spinner (border-radius: 50% fix for the square-wobble bug), contract verification badges + fee estimate rendered in the transaction preview UI. 8 new tests (avatar utilities). Total suite now 134 tests. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |

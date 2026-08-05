@@ -213,6 +213,20 @@ export interface WalletConnector {
   listAccounts?(): Promise<WalletAccountOption[]>;
   /** Switches which of listAccounts()'s addresses subsequent sign/getAddress calls act on. Only meaningful alongside listAccounts. */
   selectAccount?(address: string): Promise<void>;
+
+  /**
+   * Optional: returns a URL to the connected account's profile picture /
+   * avatar, if the wallet supports one. Used by the UI to render an
+   * avatar next to the address instead of a generic colored circle.
+   *
+   * Return `null` or `undefined` if no avatar is available — the UI
+   * falls back to a generated gradient avatar based on the address.
+   * Returning a string URL (data: or https:) causes the UI to render
+   * an `<img>` tag for the avatar.
+   *
+   * Wallets that don't support avatars omit this method entirely.
+   */
+  getAvatar?(): Promise<{ url: string } | null>;
 }
 
 /** Cross-platform storage shim — localStorage on web, AsyncStorage/SecureStore on RN. */

@@ -151,12 +151,20 @@ export function buildStyles(theme: ConnectTheme): string {
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
 
-    /* connecting state: a hairline arc traces the selected wallet's tile outline, not a generic spinner */
+    /* connecting state: a circular hairline arc traces the selected
+     * wallet's tile outline. Uses border-radius: 50% (a perfect circle)
+     * rather than a rounded rectangle — a rounded-square border wobbles
+     * visibly when rotated because the corners trace a larger radius
+     * than the edges. A circle traces a constant radius, so the spin
+     * is smooth. The arc is 1px larger than the tile (inset: -2px) so
+     * it sits just outside the tile's border, and only the top ~40% of
+     * the border is colored (border-top + border-right), creating the
+     * "loading arc" effect. */
     .wallet-tile.connecting::after {
       content: "";
       position: absolute;
-      inset: -1px;
-      border-radius: 11px;
+      inset: -2px;
+      border-radius: 50%;
       border: 1.5px solid transparent;
       border-top-color: ${v('colorAccent', theme)};
       border-right-color: ${v('colorAccent', theme)};
@@ -187,6 +195,16 @@ export function buildStyles(theme: ConnectTheme): string {
       width: 36px; height: 36px; border-radius: 50%;
       background: ${v('colorAccent', theme)};
       flex-shrink: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .account-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
     .account-address {
       font-family: ${v('fontMono', theme)};
@@ -239,10 +257,24 @@ export function buildStyles(theme: ConnectTheme): string {
     .preview-meta {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       font-family: ${v('fontMono', theme)};
       font-size: 12px;
       color: ${v('colorTextMuted', theme)};
       padding: 0 2px;
+      gap: 8px;
+    }
+    .preview-meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .preview-meta-item .icon-btn {
+      padding: 2px;
+      opacity: 0.6;
+    }
+    .preview-meta-item .icon-btn:hover {
+      opacity: 1;
     }
     .preview-ops { display: flex; flex-direction: column; gap: 8px; }
     .preview-op {
@@ -255,6 +287,48 @@ export function buildStyles(theme: ConnectTheme): string {
     .preview-op-index { color: ${v('colorTextMuted', theme)}; font-family: ${v('fontMono', theme)}; }
     .preview-actions { display: flex; gap: 8px; margin-top: 4px; }
     .preview-actions .btn { flex: 1; }
+
+    /* contract verification badges — positive trust signals (Verified,
+     * Audited, Published by X) surfaced from previewOptions.contractMetadata */
+    .contract-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .contract-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      border: 1px solid;
+      cursor: default;
+    }
+    .contract-badge[data-url] { cursor: pointer; }
+    .contract-badge[data-url]:hover { opacity: 0.8; }
+    .badge-success {
+      color: #16a34a;
+      background: rgba(22, 163, 74, 0.1);
+      border-color: rgba(22, 163, 74, 0.3);
+    }
+    .badge-info {
+      color: ${v('colorTextMuted', theme)};
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorBorder', theme)};
+    }
+    .badge-warning {
+      color: #d97706;
+      background: rgba(217, 119, 6, 0.1);
+      border-color: rgba(217, 119, 6, 0.3);
+    }
+    .badge-danger {
+      color: #dc2626;
+      background: rgba(220, 38, 38, 0.1);
+      border-color: rgba(220, 38, 38, 0.3);
+    }
 
     .risk-flag {
       margin-top: 8px;

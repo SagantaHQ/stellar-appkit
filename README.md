@@ -55,6 +55,10 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Modal (desktop), bottom-sheet (mobile web), and inline (embedded, no overlay) presentation, auto-selected by viewport or forced via attribute
 - Every color/radius/font is a themeable CSS custom property that crosses the shadow boundary — restyle from your own stylesheet, no JS API needed
 - Account switcher, account picker (multi-account wallets), network-mismatch view, and transaction-preview view all built in
+- **Wallet-provided avatars** — connectors can implement `getAvatar()` to surface profile pictures; falls back to a deterministic gradient generated from the address. Opt-in Stellar Expert avatars via the `stellar-expert-avatars` attribute.
+- **Copy-to-clipboard everywhere** — every address display (connected accounts, account picker, transaction preview source account) has a copy button with "copied!" feedback
+- **Contract verification badges in preview** — Verified/Audited/Published-by badges (with audit URLs) rendered inline on contract call operations in the transaction preview
+- **Smooth loading spinner** — the connecting-state spinner uses a perfect circular arc (border-radius: 50%), not a rounded-square border that wobbles when rotated
 
 **Framework wrappers**
 - React (`@saganta/stellar-appkit/react`) — `<StellarAppKitProvider>` + hooks (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) using `useSyncExternalStore` for tearing-safe reactivity under React 18 concurrent rendering
@@ -584,6 +588,7 @@ All four wrappers share the same hook names (`useConnect`, `useSession`, `useSig
 | `logo-src` | image URL | — (falls back to `<slot name="logo">`) |
 | `title` | string | contextual per view |
 | `auto-retry-network` | `true` \| `false` | `false` |
+| `stellar-expert-avatars` | `true` \| `false` | `false` — when `true`, fetches generated avatars from `api.stellar.expert` for accounts that don't have a wallet-provided avatar. Falls back to a deterministic gradient on error. |
 
 | Method | |
 |---|---|
