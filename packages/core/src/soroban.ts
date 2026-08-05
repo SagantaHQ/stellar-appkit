@@ -5,7 +5,10 @@ import {
   decodeSimulationDeltas,
   type TransactionPreview,
   type BalanceDelta,
+  type FeeEstimate,
 } from './decode.js';
+import { ContractClient, type ContractSpec } from './contract.js';
+import { FailoverRpcServer } from './rpc-failover.js';
 
 // Peer dependency — imported lazily (see `sdk()` below) so `core` doesn't
 // force a specific @stellar/stellar-sdk version on apps that only need the
@@ -14,7 +17,32 @@ type StellarSdkModule = typeof import('@stellar/stellar-sdk');
 type RpcModule = typeof import('@stellar/stellar-sdk/rpc');
 
 export interface SorobanConnectionConfig {
-  rpcUrl: string;
+  /**
+   * Primary RPC URL. If `rpcUrls` is also provided, this is ignored —
+   * use one or the other.
+   */
+  rpcUrl?: string;
+  /**
+   * Multiple RPC URLs for failover. The first healthy one is preferred;
+   * on a network/5xx error, the next is tried, and so on. Failed
+   * servers are marked unhealthy for 30s before being retried.
+   *
+   * Mutually exclusive with `rpcUrl` and `rpc` — if both are set,
+   * `rpcUrls` takes precedence.
+   */
+  rpcUrls?: string[];
+  /**
+   * Pre-constructed RPC server (or failover wrapper) to use directly.
+   * Mutually exclusive with `rpcUrl` and `rpcUrls` — if set, takes
+   * precedence over both. Useful for tests where you want to inject a
+   * mock server.
+   */
+  rpc?: InstanceType<RpcModule['Server']>;
+  /**
+   * Optional failover configuration — only used when `rpcUrls` is set.
+   * Pass `unhealthyCooldownMs` and `onFailover` here.
+   */
+  failoverOptions?: Omit<ConstructorParameters<typeof FailoverRpcServer>[0], 'servers'>;
   networkPassphrase: string;
   wallet: StellarAppKit;
 }
@@ -49,17 +77,30 @@ export interface InvokeResult {
  * here later without changing any call site that uses `invoke()`.
  */
 export class SorobanConnection {
-  private rpcUrl: string;
+  private rpcUrl?: string;
+  private rpcUrls?: string[];
+  private injectedRpc?: InstanceType<RpcModule['Server']>;
+  private failoverOptions?: SorobanConnectionConfig['failoverOptions'];
   private networkPassphrase: string;
   private wallet: StellarAppKit;
   private _sdk: StellarSdkModule | null = null;
   private _rpc: RpcModule | null = null;
   private _server: InstanceType<RpcModule['Server']> | null = null;
+  private _failover: FailoverRpcServer | null = null;
 
   constructor(config: SorobanConnectionConfig) {
     this.rpcUrl = config.rpcUrl;
+    this.rpcUrls = config.rpcUrls;
+    this.injectedRpc = config.rpc;
+    this.failoverOptions = config.failoverOptions;
     this.networkPassphrase = config.networkPassphrase;
     this.wallet = config.wallet;
+
+    // Validate config — exactly one of rpcUrl / rpcUrls / rpc must be set.
+    const sources = [config.rpcUrl, config.rpcUrls, config.rpc].filter((s) => s !== undefined);
+    if (sources.length === 0) {
+      throw new Error('SorobanConnectionConfig requires one of: rpcUrl, rpcUrls, or rpc');
+    }
   }
 
   private async sdk(): Promise<StellarSdkModule> {
@@ -72,9 +113,42 @@ export class SorobanConnection {
 
   private async server() {
     if (this._server) return this._server;
+
+    // Pre-injected server (for tests or advanced setups) — use as-is.
+    if (this.injectedRpc) {
+      this._server = this.injectedRpc;
+      return this._server;
+    }
+
     const { Server } = await this.rpc();
+
+    // Multiple URLs → wrap in a FailoverRpcServer.
+    if (this.rpcUrls && this.rpcUrls.length > 0) {
+      const servers = this.rpcUrls.map((url) => new Server(url));
+      this._failover = new FailoverRpcServer({
+        servers,
+        ...this.failoverOptions,
+      });
+      this._server = this._failover.asServer();
+      return this._server;
+    }
+
+    // Single URL — plain Server.
+    if (!this.rpcUrl) {
+      throw new Error('SorobanConnectionConfig: rpcUrl is required when rpcUrls and rpc are not set.');
+    }
     this._server = new Server(this.rpcUrl);
     return this._server;
+  }
+
+  /**
+   * Returns the current failover status, if the connection was configured
+   * with `rpcUrls`. Returns null for single-server configs. Useful for
+   * dashboards / monitoring UIs that want to show which RPC provider is
+   * currently being used.
+   */
+  getFailoverStatus(): Array<{ url: string; healthy: boolean; failureCount: number }> | null {
+    return this._failover?.getStatus() ?? null;
   }
 
   /** High-level: the 90% case. Builds, simulates, prepares, signs, submits, and polls a single contract call. */
@@ -145,11 +219,11 @@ export class SorobanConnection {
 
   /**
    * Builds and simulates like invoke() does, but stops there — returns a
-   * decoded preview (see decode.ts) with a simulation status AND balance
-   * deltas attached, instead of executing the full sign/submit pipeline.
-   * Useful for showing "here's what this call will do, whether it would
-   * even succeed, and how balances will change" before the user commits
-   * to it.
+   * decoded preview (see decode.ts) with a simulation status, balance
+   * deltas, AND a fee estimate attached, instead of executing the full
+   * sign/submit pipeline. Useful for showing "here's what this call will
+   * do, whether it would even succeed, how balances will change, and what
+   * it will cost" before the user commits to it.
    *
    * Balance deltas are extracted from the simulation's `stateChanges`
    * array — the network's own authoritative statement of what would
@@ -160,14 +234,20 @@ export class SorobanConnection {
    * version only decoded the *intended* amount from call args, not the
    * actual deltas.
    *
+   * The fee estimate is extracted from the simulation's `cost` field —
+   * the network's own statement of what the call will cost, including
+   * Soroban resource fees (CPU + memory + storage). Shown as
+   * `feeEstimate.totalFeeXlm` (e.g. "0.00001 XLM") for headline display.
+   *
    * Note invoke() itself already runs every signature through the preview
    * flow automatically (it calls wallet.signTransaction() under the hood,
    * which is where StellarAppKit's onPreviewTransaction hook lives) — this
    * method is for showing a preview earlier, e.g. inline in a confirm
    * button, without needing to actually call invoke() first. The balance
-   * deltas here are NOT included in the onPreviewTransaction hook (which
-   * fires at sign time, after the simulation has gone stale) — call this
-   * method explicitly if you want deltas.
+   * deltas and fee estimate here are NOT included in the
+   * onPreviewTransaction hook (which fires at sign time, after the
+   * simulation has gone stale) — call this method explicitly if you want
+   * them.
    */
   async previewInvoke(opts: InvokeOptions): Promise<TransactionPreview & {
     simulationStatus: 'success' | 'failed';
@@ -198,7 +278,17 @@ export class SorobanConnection {
     const simulation = await server.simulateTransaction(tx);
     const isFailure = rpc.Api.isSimulationError(simulation);
 
-    const preview = await buildTransactionPreview(tx.toXDR(), this.networkPassphrase, this.wallet.previewOptions);
+    // Pass the simulation into buildTransactionPreview so it can compute
+    // the fee estimate (when includeFeeEstimate is set on previewOptions).
+    // We merge the consumer's previewOptions with the simulation here
+    // rather than mutating the original.
+    const previewOpts = {
+      ...this.wallet.previewOptions,
+      simulation: isFailure ? undefined : simulation,
+      includeFeeEstimate: this.wallet.previewOptions?.includeFeeEstimate ?? true,
+    };
+
+    const preview = await buildTransactionPreview(tx.toXDR(), this.networkPassphrase, previewOpts);
 
     // Only decode deltas from successful simulations — failed ones don't
     // have a stateChanges array, and decoding would just return [].
@@ -210,6 +300,80 @@ export class SorobanConnection {
       simulationError: isFailure ? simulation.error : undefined,
       balanceDeltas,
     };
+  }
+
+  /**
+   * Estimates the fee for a given transaction XDR by simulating it.
+   * Returns the full FeeEstimate breakdown — base fee, Soroban resource
+   * fee, instruction count, total in stroops and XLM.
+   *
+   * This is a lower-level escape hatch than previewInvoke() — use it when
+   * you already have a built transaction (e.g. from a contract.Client
+   * call) and just want the fee number, without the full preview.
+   *
+   * For Soroban transactions, the simulation is required to compute the
+   * resource fee — without it, we can only return the declared base fee.
+   * For classic (non-Soroban) transactions, the simulation is optional
+   * (there's no resource fee), but passing one doesn't hurt.
+   */
+  async estimateFee(xdr: string): Promise<FeeEstimate | null> {
+    const sdk = await this.sdk();
+    const server = await this.server();
+
+    const tx = sdk.TransactionBuilder.fromXDR(xdr, this.networkPassphrase);
+    const isFeeBump = 'innerTransaction' in tx;
+    const innerTx = isFeeBump ? (tx as { innerTransaction: { fee: string; operations: unknown[] } }).innerTransaction : tx as { fee: string; operations: unknown[] };
+
+    // Simulate to get the cost. For classic transactions this will
+    // succeed but won't have a `cost` field — we still return the base
+    // fee breakdown.
+    const simulation = await server.simulateTransaction(tx as never).catch(() => null);
+
+    // Use the same computeFeeEstimate logic as buildTransactionPreview
+    // by calling buildTransactionPreview with includeFeeEstimate + simulation.
+    const preview = await buildTransactionPreview(xdr, this.networkPassphrase, {
+      includeFeeEstimate: true,
+      simulation,
+    });
+    return preview.feeEstimate ?? null;
+  }
+
+  /**
+   * Returns a typed client for a Soroban contract, bound to this
+   * connection. Methods on the client are typed from the consumer's
+   * TS interface (`T`), so `client.transfer({ from, to, amount })` is
+   * fully typed — wrong arg names, missing fields, or wrong types are
+   * caught at compile time.
+   *
+   * Each method delegates to `invoke()`, so it goes through the same
+   * simulate → prepare → sign → submit → poll pipeline, with the
+   * transaction preview flow and signature-request queueing intact.
+   *
+   * @param contractId The contract's address (C... form)
+   * @param spec The contract's spec — either a parsed Spec object, or
+   *             an array of base64 spec entry strings (from `stellar
+   *             contract bindings typescript`)
+   *
+   * @example
+   *   interface TokenContract extends defineContractSpec<{
+   *     transfer: (args: { from: string; to: string; amount: bigint }) => Promise<boolean>;
+   *     balanceOf: (args: { id: string }) => Promise<bigint>;
+   *   }> {}
+   *
+   *   const token = soroban.contract<TokenContract>('C...', {
+   *     specEntries: ['AAA==', 'BBB==', ...],
+   *   });
+   *   await token.transfer({ from, to, amount });  // typed
+   */
+  contract<T extends ContractSpec = ContractSpec>(
+    contractId: string,
+    opts: { specEntries: string[] | import('@stellar/stellar-sdk').xdr.ScSpecEntry[] }
+  ): ContractClient<T> {
+    return new ContractClient<T>({
+      connection: this,
+      contractId,
+      specEntries: opts.specEntries,
+    });
   }
 
   /** Low-level escape hatches for callers that need more control than `invoke()` gives. */

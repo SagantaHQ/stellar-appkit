@@ -499,6 +499,12 @@ export function useSoroban(opts: { rpcUrl: string; networkPassphrase: string }) 
     soroban,
     invoke,
     previewInvoke,
+    /** Estimates the fee for a transaction XDR by simulating it. Returns the full FeeEstimate breakdown. */
+    estimateFee: soroban.estimateFee.bind(soroban),
+    /** Returns a typed client for a Soroban contract, bound to this connection. */
+    contract: soroban.contract.bind(soroban),
+    /** Returns the current failover status (null for single-server configs). */
+    getFailoverStatus: soroban.getFailoverStatus.bind(soroban),
     status,
     lastResult,
     error,

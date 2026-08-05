@@ -31,6 +31,69 @@ export interface DecodedOperation {
   summary: string;
   details: Record<string, string>;
   riskFlags: RiskFlag[];
+  /**
+   * Trust/verification badges for contracts touched by this op, surfaced
+   * from the `contractMetadata` preview option. Unlike `riskFlags` (which
+   * flag danger), badges are positive signals — "verified by your app's
+   * contract registry", "audited by Firm X", "published by Saganta", etc.
+   *
+   * Empty when no `contractMetadata` is configured, or when this op
+   * doesn't touch a contract.
+   */
+  contractBadges?: ContractBadge[];
+}
+
+/**
+ * A trust/verification badge for a contract, surfaced in the preview UI.
+ * Multiple badges can apply to one contract (e.g. both "verified" and "audited").
+ */
+export interface ContractBadge {
+  contractId: string;
+  /** Short label for the badge — e.g. "Verified", "Audited", "Saganta". */
+  label: string;
+  /** Machine-readable code for the badge — e.g. 'verified', 'audited', 'publisher'. */
+  code: string;
+  /** Optional longer description, shown as a tooltip or expandable detail. */
+  description?: string;
+  /** Optional URL to the audit report, verification registry entry, etc. */
+  url?: string;
+  /** Visual severity — controls how the badge is rendered (e.g. green checkmark for 'verified'). */
+  severity: 'success' | 'info' | 'warning' | 'danger';
+}
+
+/**
+ * App-supplied metadata for a known contract, used to surface verification
+ * badges in the preview UI. The consumer typically maintains a registry
+ * of contracts their app supports (either hardcoded or fetched from a
+ * backend) and passes it via `previewOptions.contractMetadata`.
+ *
+ * Example:
+ *
+ *   previewOptions: {
+ *     contractMetadata: new Map([
+ *       ['CBETT2CX...', {
+ *         name: 'USDC Token',
+ *         publisher: 'Centre Consortium',
+ *         verified: true,
+ *         audited: true,
+ *         auditUrl: 'https://example.com/audits/usdc.pdf',
+ *       } as ContractMetadata]),
+ *     ]),
+ *   }
+ */
+export interface ContractMetadata {
+  /** Human-readable name for the contract — e.g. "USDC Token". */
+  name?: string;
+  /** Publisher/issuer of the contract — e.g. "Centre Consortium". */
+  publisher?: string;
+  /** Whether the app considers this contract verified (trusted). */
+  verified?: boolean;
+  /** Whether the contract has been independently audited. */
+  audited?: boolean;
+  /** URL to the audit report, if `audited` is true. */
+  auditUrl?: string;
+  /** Free-form additional badges — e.g. [{ label: 'Stellar Expert', url: '...' }]. */
+  extraBadges?: Array<{ label: string; description?: string; url?: string }>;
 }
 
 export interface TransactionPreview {
@@ -39,7 +102,56 @@ export interface TransactionPreview {
   operations: DecodedOperation[];
   /** Transaction-wide flags (e.g. fee-bump) — most flags live per-operation in `operations[i].riskFlags`. */
   riskFlags: RiskFlag[];
+  /**
+   * Detailed fee breakdown, populated when `includeFeeEstimate: true`
+   * is set in PreviewOptions AND a simulation response was passed in.
+   * Otherwise undefined — the basic `fee` field above is always present
+   * (it's the transaction's declared fee in stroops), but the breakdown
+   * requires simulation to compute Soroban resource fees.
+   *
+   * All amounts are in stroops (1 XLM = 10,000,000 stroops).
+   */
+  feeEstimate?: FeeEstimate;
   raw: { xdr: string; networkPassphrase: string };
+}
+
+/**
+ * Detailed fee estimate for a Soroban transaction, computed from the
+ * simulation response's `cost` field. Shown in the preview UI before
+ * the user signs, so they know what the transaction will actually cost
+ * — not just the declared base fee, but the full fee including Soroban
+ * resource charges (CPU, memory, storage).
+ *
+ * All amounts are in stroops (1 XLM = 10,000,000 stroops).
+ */
+export interface FeeEstimate {
+  /** The transaction's declared base fee (per operation), in stroops. */
+  baseFee: string;
+  /** Number of operations in the transaction. */
+  operationCount: number;
+  /** Total base fee = baseFee × operationCount, in stroops. */
+  totalBaseFee: string;
+  /**
+   * Soroban resource fee (CPU + memory + storage), in stroops. Populated
+   * from the simulation's `cost.resourceFeeCharged` field. Undefined for
+   * non-Soroban transactions (classic payments, etc.) — they don't incur
+   * resource fees.
+   */
+  sorobanResourceFee?: string;
+  /**
+   * The Soroban instruction count consumed by the simulation, if known.
+   * Useful for showing "this call uses N instructions" in the preview UI
+   * for users who care about gas optimization.
+   */
+  sorobanInstructions?: string;
+  /**
+   * The total estimated fee the user will pay, in stroops. This is the
+   * sum of `totalBaseFee` + `sorobanResourceFee` (if present). Shown as
+   * the headline number in the preview UI.
+   */
+  totalFee: string;
+  /** The total fee converted to XLM, for human display (e.g. "0.00001 XLM"). */
+  totalFeeXlm: string;
 }
 
 /**
@@ -77,8 +189,38 @@ export type AuthEntryPreviewHandler = (preview: AuthEntryPreview) => Promise<boo
 export interface PreviewOptions {
   /** Contract IDs considered known/verified. Anything else touched by an invokeHostFunction op is flagged — omit entirely to skip this check (there's no built-in registry to fall back on). */
   verifiedContracts?: Set<string> | ((contractId: string) => boolean);
+  /**
+   * Richer contract metadata — name, publisher, verified/audited status,
+   * audit URL, etc. When provided, contracts touched by invokeHostFunction
+   * ops get a `contractBadges` array on the decoded op, which the preview
+   * UI can render as trust signals (green checkmarks, audit links, etc.).
+   *
+   * This is a richer successor to `verifiedContracts` — if both are set,
+   * `contractMetadata` takes precedence for badge rendering, but
+   * `verifiedContracts` is still used for the `unverified-contract` risk
+   * flag (backwards compat).
+   */
+  contractMetadata?: Map<string, ContractMetadata> | ((contractId: string) => ContractMetadata | undefined);
   /** Flags payments/transfers at or above this amount (in the asset's own units) as large. Omit to skip this check — "large" is inherently app-specific. */
   largeTransferThreshold?: number;
+  /**
+   * When true, buildTransactionPreview() will populate `feeEstimate` on
+   * the returned preview IF a simulation response is passed via the
+   * `simulation` field of PreviewOptions. Without a simulation, the fee
+   * estimate can only include the base fee (no Soroban resource fees),
+   * so we omit it entirely rather than show a misleading number.
+   *
+   * Default: false (consumers opt in by passing `includeFeeEstimate: true`
+   * AND a simulation response).
+   */
+  includeFeeEstimate?: boolean;
+  /**
+   * Optional simulation response, used to compute the `feeEstimate` when
+   * `includeFeeEstimate: true`. SorobanConnection.previewInvoke() passes
+   * this automatically; consumers calling buildTransactionPreview()
+   * directly can pass it themselves if they've already simulated.
+   */
+  simulation?: unknown;
 }
 
 const SEP41_AMOUNT_METHODS = new Set(['transfer', 'mint', 'burn', 'transfer_from', 'burn_from', 'clawback']);
@@ -105,13 +247,107 @@ export async function buildTransactionPreview(
 
   const operations = tx.operations.map((op) => decodeOperation(op, sdk, opts));
 
-  return {
+  const preview: TransactionPreview = {
     sourceAccount: tx.source,
     fee: tx.fee,
     operations,
     riskFlags: txRiskFlags,
     raw: { xdr, networkPassphrase },
   };
+
+  // Compute the fee estimate if the consumer opted in AND provided a
+  // simulation response. We do this here (rather than in
+  // SorobanConnection.previewInvoke) so consumers calling
+  // buildTransactionPreview directly also get the estimate when they
+  // pass a simulation.
+  if (opts.includeFeeEstimate && opts.simulation) {
+    const feeEstimate = computeFeeEstimate(tx.fee, tx.operations.length, opts.simulation);
+    if (feeEstimate) preview.feeEstimate = feeEstimate;
+  }
+
+  return preview;
+}
+
+/**
+ * Computes a FeeEstimate from the transaction's declared fee, operation
+ * count, and a Soroban simulation response.
+ *
+ * The simulation response's `cost` field contains:
+ *   - `cpuInstructions`: number of Soroban instructions consumed
+ *   - `memoryBytes`: memory used
+ *   - `resourceFeeCharged`: the actual Soroban resource fee in stroops
+ *
+ * For classic (non-Soroban) transactions, the simulation won't have a
+ * `cost` field — we still compute the base fee breakdown, but
+ * `sorobanResourceFee` and `sorobanInstructions` are undefined.
+ *
+ * All amounts are in stroops (1 XLM = 10,000,000 stroops).
+ */
+function computeFeeEstimate(declaredFee: string, operationCount: number, simulation: unknown): FeeEstimate | null {
+  // declaredFee is the total fee on the TransactionEnvelope (in stroops).
+  // For a non-fee-bump transaction, this is baseFee × operationCount +
+  // any Soroban resource fee the builder already added. We treat the
+  // per-operation base fee as declaredFee / operationCount (integer division).
+  const totalDeclared = BigInt(declaredFee);
+  const baseFeePerOp = operationCount > 0 ? totalDeclared / BigInt(operationCount) : 0n;
+  const totalBaseFee = baseFeePerOp * BigInt(operationCount);
+
+  // Try to extract Soroban resource fee + instruction count from the
+  // simulation response. The shape varies a bit across SDK versions,
+  // so we check several common paths.
+  const sim = simulation as {
+    cost?: { cpuInstructions?: string | number; memoryBytes?: string | number; resourceFeeCharged?: string | number };
+    transactionData?: { resourceFee?: string | number };
+  };
+
+  let sorobanResourceFee: bigint | undefined;
+  let sorobanInstructions: string | undefined;
+
+  if (sim?.cost?.resourceFeeCharged !== undefined) {
+    sorobanResourceFee = BigInt(String(sim.cost.resourceFeeCharged));
+  } else if (sim?.transactionData?.resourceFee !== undefined) {
+    // Older SDK versions exposed the resource fee on transactionData
+    sorobanResourceFee = BigInt(String(sim.transactionData.resourceFee));
+  }
+
+  if (sim?.cost?.cpuInstructions !== undefined) {
+    sorobanInstructions = String(sim.cost.cpuInstructions);
+  }
+
+  // The total fee the user pays = the declared fee on the transaction
+  // (which already includes the Soroban resource fee if the builder
+  // added it via prepareTransaction). If the simulation's resource
+  // fee is HIGHER than what the builder added (rare, but possible if
+  // the network's fee schedule changed), we use the simulation's
+  // number as the more accurate estimate.
+  let totalFee = totalDeclared;
+  if (sorobanResourceFee !== undefined) {
+    const builderAddedResourceFee = totalDeclared - totalBaseFee;
+    if (sorobanResourceFee > builderAddedResourceFee) {
+      totalFee = totalBaseFee + sorobanResourceFee;
+    }
+  }
+
+  return {
+    baseFee: baseFeePerOp.toString(),
+    operationCount,
+    totalBaseFee: totalBaseFee.toString(),
+    sorobanResourceFee: sorobanResourceFee?.toString(),
+    sorobanInstructions,
+    totalFee: totalFee.toString(),
+    totalFeeXlm: formatStroopsAsXlm(totalFee),
+  };
+}
+
+/** Formats an integer amount of stroops as a decimal XLM string (1 XLM = 10,000,000 stroops). */
+function formatStroopsAsXlm(stroops: bigint): string {
+  const negative = stroops < 0n;
+  const abs = negative ? -stroops : stroops;
+  const whole = abs / 10_000_000n;
+  const frac = abs % 10_000_000n;
+  const fracStr = frac.toString().padStart(7, '0').replace(/0+$/, '');
+  const value = fracStr ? `${whole}.${fracStr}` : whole.toString();
+  return `${negative ? '-' : ''}${value} XLM`;
 }
 
 /**
@@ -560,6 +796,7 @@ function decodeInvokeHostFunction(
   const flags: RiskFlag[] = [];
   const details: Record<string, string> = {};
   let summary = 'Invoke a Soroban host function';
+  let badges: ContractBadge[] | undefined;
 
   if (op.func.switch().name === 'hostFunctionTypeInvokeContract') {
     const invoke = op.func.invokeContract();
@@ -570,20 +807,37 @@ function decodeInvokeHostFunction(
     details.contract = contractId;
     details.function = functionName;
 
-    summary = `Call \`${functionName}\` on contract ${short(contractId)}`;
+    // Surface the contract's human-readable name from contractMetadata
+    // (if available) in the summary — "Call `transfer` on USDC Token"
+    // reads much better than "Call `transfer` on contract CBETT2CX...".
+    const metadata = lookupContractMetadata(contractId, opts.contractMetadata);
+    const contractLabel = metadata?.name ?? short(contractId);
+    summary = `Call \`${functionName}\` on ${contractLabel}`;
 
     if (SEP41_AMOUNT_METHODS.has(functionName) && args.length > 0) {
       // SEP-41 token calls put the amount last (transfer(from, to, amount), mint(to, amount), ...) — decode it directly from the args rather than simulating.
       const amountArg = args[args.length - 1];
       if (typeof amountArg === 'bigint' || typeof amountArg === 'number') {
-        summary = `${capitalize(functionName)} ${amountArg} (raw units) via contract ${short(contractId)}`;
+        summary = `${capitalize(functionName)} ${amountArg} (raw units) via ${contractLabel}`;
         details.amount = String(amountArg);
       }
     }
 
+    // Backwards-compat: the verifiedContracts set still drives the
+    // unverified-contract RISK flag. If contractMetadata is also
+    // provided, we additionally surface positive badges (verified,
+    // audited, etc.) — but the risk flag and the badge are independent
+    // signals, so a contract could be "verified" (badge) but not in
+    // the verifiedContracts set (no risk flag), or vice versa.
     const verified = checkVerified(contractId, opts.verifiedContracts);
     if (verified === false) {
       flags.push({ severity: 'warning', code: 'unverified-contract', message: `Contract ${short(contractId)} isn't in your list of verified contracts.` });
+    }
+
+    // Surface positive trust signals as badges — verified, audited,
+    // publisher, plus any free-form extras the consumer configured.
+    if (metadata) {
+      badges = buildContractBadges(contractId, metadata);
     }
   } else if (op.func.switch().name === 'hostFunctionTypeUploadContractWasm') {
     summary = 'Upload contract WASM code';
@@ -596,7 +850,76 @@ function decodeInvokeHostFunction(
     if (authFlag) flags.push(authFlag);
   }
 
-  return { type: op.type, summary, details, riskFlags: flags };
+  return { type: op.type, summary, details, riskFlags: flags, contractBadges: badges };
+}
+
+/**
+ * Looks up a contract's metadata from the PreviewOptions.contractMetadata
+ * field — handles both the Map and the function form.
+ */
+function lookupContractMetadata(
+  contractId: string,
+  metadata: PreviewOptions['contractMetadata']
+): ContractMetadata | undefined {
+  if (!metadata) return undefined;
+  if (metadata instanceof Map) return metadata.get(contractId);
+  return metadata(contractId);
+}
+
+/**
+ * Builds the badge array for a contract from its metadata. Each badge
+ * is a separate entry — a contract can be both "Verified" and "Audited"
+ * and "Published by Saganta", and the preview UI renders each one
+ * independently.
+ */
+function buildContractBadges(contractId: string, meta: ContractMetadata): ContractBadge[] {
+  const badges: ContractBadge[] = [];
+
+  if (meta.verified) {
+    badges.push({
+      contractId,
+      label: 'Verified',
+      code: 'verified',
+      description: meta.name ? `Verified: ${meta.name}` : 'This contract is in your app\'s verified registry.',
+      severity: 'success',
+    });
+  }
+
+  if (meta.audited) {
+    badges.push({
+      contractId,
+      label: 'Audited',
+      code: 'audited',
+      description: 'This contract has been independently audited.',
+      url: meta.auditUrl,
+      severity: 'success',
+    });
+  }
+
+  if (meta.publisher) {
+    badges.push({
+      contractId,
+      label: meta.publisher,
+      code: 'publisher',
+      description: `Published by ${meta.publisher}`,
+      severity: 'info',
+    });
+  }
+
+  if (meta.extraBadges) {
+    for (const extra of meta.extraBadges) {
+      badges.push({
+        contractId,
+        label: extra.label,
+        code: 'extra',
+        description: extra.description,
+        url: extra.url,
+        severity: 'info',
+      });
+    }
+  }
+
+  return badges;
 }
 
 /**

@@ -361,6 +361,92 @@ The hook surface is synthesized from the official Stellar docs ([dapp-frontend t
 
 ---
 
+## 8.8 Soroban contract layer — typed clients, failover, badges, fee estimation
+
+Four additions to the Soroban layer that close the gap between "works in a demo" and "production-grade":
+
+### 1. Typed contract client (`packages/core/src/contract.ts`)
+
+`SorobanConnection.contract<T>(contractId, { specEntries })` returns a `ContractClient<T>` whose methods are typed from the consumer's TS interface. Wraps `@stellar/stellar-sdk`'s `Spec` class (which parses a contract's WASM spec entries) and binds it to the connection's invoke pipeline, so every call goes through simulate → prepare → sign → submit → poll with the transaction preview flow intact.
+
+```ts
+interface TokenContract extends defineContractSpec<{
+  transfer: (args: { from: string; to: string; amount: bigint }) => Promise<boolean>;
+  balanceOf: (args: { id: string }) => Promise<bigint>;
+}> {}
+
+const token = soroban.contract<TokenContract>('C...', { specEntries });
+await token.transfer({ from, to, amount: 100n });  // typed — wrong args caught at compile time
+const balance = await token.simulate('balanceOf', { id });  // read-only, skips signing
+```
+
+The spec entries come from `stellar contract bindings typescript --contract-id C... --output-dir ...` — the consumer's contract bindings package exports them as base64 strings. `Spec.funcArgsToScVals(method, args)` does the native→ScVal conversion (Address → ScAddress, bigint → ScInt, arrays → Vec, etc.) based on the function's declared parameter types. `Spec.funcResToNative(method, returnValue)` does the reverse for the result.
+
+### 2. RPC failover (`packages/core/src/rpc-failover.ts`)
+
+`FailoverRpcServer` wraps multiple `rpc.Server` instances and proxies every method call, transparently failing over on network errors and HTTP 5xx responses. `SorobanConnectionConfig` accepts `rpcUrls: string[]` (plural) — the connection constructs a `FailoverRpcServer` internally and uses its `.asServer()` proxy anywhere a regular `rpc.Server` is expected.
+
+**Failover policy** — fails over on:
+- Network errors (fetch rejects — DNS failure, connection refused, timeout, ECONNRESET)
+- HTTP 5xx responses
+- JSON-RPC internal errors (-32603)
+
+Does NOT fail over on:
+- HTTP 4xx (client error — retrying won't help)
+- Simulation errors (the transaction itself is invalid — that's a valid response)
+- `sendTransaction` returning non-PENDING (network rejected the tx)
+
+**Health tracking** — failed servers are marked unhealthy for 30s (configurable via `unhealthyCooldownMs`). Subsequent calls skip them entirely, avoiding timeout waits. After the cooldown, the server is retried. The first healthy server in the list is always preferred, so traffic shifts back to the primary when it recovers. `connection.getFailoverStatus()` returns the current health/failure-count for each server — useful for monitoring dashboards.
+
+**Proxy design** — uses a JS `Proxy` to delegate every property access, so we automatically support any new method `stellar-sdk` adds to `rpc.Server`. No method list to maintain.
+
+### 3. Contract verification badges (`PreviewOptions.contractMetadata`)
+
+Apps maintain a registry of contracts they trust and pass it via `previewOptions.contractMetadata`. The decoder surfaces trust signals as `ContractBadge[]` on each `DecodedOperation` that touches a contract — separate from `riskFlags` (which flag danger), badges are positive signals.
+
+```ts
+previewOptions: {
+  contractMetadata: new Map([
+    ['CBETT2CX...', {
+      name: 'USDC Token',
+      publisher: 'Centre Consortium',
+      verified: true,
+      audited: true,
+      auditUrl: 'https://example.com/audits/usdc.pdf',
+      extraBadges: [{ label: 'Stellar Expert', url: '...' }],
+    } as ContractMetadata],
+  ]),
+}
+```
+
+Surfaces as:
+- `op.contractBadges` — array of `{ label, code, severity, url?, description? }`
+- `op.summary` — uses the contract's `name` instead of its ID ("Call `transfer` on USDC Token" vs "Call `transfer` on contract CBETT2CX...")
+
+`contractMetadata` accepts both `Map<string, ContractMetadata>` and `(contractId: string) => ContractMetadata | undefined` (for dynamic lookups — e.g. fetching from a backend registry). Independent of the existing `verifiedContracts` option (which drives the `unverified-contract` risk flag) — a contract can have a "Verified" badge but still be in the risk-flag set, or vice versa. The two signals serve different purposes: badges are display-only trust signals; risk flags affect the preview's approve/deny flow.
+
+### 4. Pre-simulate fee estimation (`FeeEstimate`)
+
+`previewInvoke()` and `estimateFee()` return a `FeeEstimate` with the full fee breakdown, computed from the simulation's `cost` field:
+
+```ts
+interface FeeEstimate {
+  baseFee: string;              // per-op fee in stroops
+  operationCount: number;
+  totalBaseFee: string;         // baseFee × operationCount
+  sorobanResourceFee?: string;  // CPU + memory + storage, from simulation
+  sorobanInstructions?: string; // for gas-optimization display
+  totalFee: string;             // total in stroops
+  totalFeeXlm: string;          // human-readable, e.g. "0.00501 XLM"
+}
+```
+
+`previewInvoke()` populates `feeEstimate` automatically (when `includeFeeEstimate: true` is set on `previewOptions`, which is the default). `estimateFee(xdr)` is a lower-level escape hatch for when you already have a built transaction and just want the fee number — it simulates internally and returns the estimate.
+
+For classic (non-Soroban) transactions, the simulation won't have a `cost` field — we still compute the base fee breakdown, but `sorobanResourceFee` and `sorobanInstructions` are undefined. The total fee for a classic transaction is just `baseFee × operationCount`.
+
+---
+
 ## 9. Phased roadmap
 
 | Phase | Scope | Status |
@@ -371,6 +457,7 @@ The hook surface is synthesized from the official Stellar docs ([dapp-frontend t
 | 1.75 | Transaction decoding (`decode.ts`) — human-readable operations, risk flags (account-merge, signer-change, large-transfer, unverified-contract, broad-auth-grant), an opt-in `onPreviewTransaction` hook wired into `signTransaction()`, signature-request queueing, `SorobanConnection.previewInvoke()` | **done** |
 | 1.8 | Unified `signedData` SIWS contract (§6.1) — every connector surfaces the exact bytes the wallet signed; verifier works for Freighter/Ledger/Albedo/xBull with no custom `verifySignatureFn`. Simulation-based Soroban balance-delta preview (`decodeSimulationDeltas`). Auth-entry preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`) wired into `signAuthEntry()`. CI suite: 80 tests, typecheck + build + test on Linux + macOS. | **done** |
 | 1.9 | Framework wrappers (§8.7) — React (`/react`), Vue (`/vue`), Solid (`/solid`), Svelte (`/svelte`) as subpath exports. Shared hook surface (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) with per-framework reactivity primitives. Tree-shakable: each wrapper is a separate entry point; framework packages are optional peer deps. 15 wrapper tests covering module structure, provider/plugin surface, and tree-shakability contract. Total suite now 95 tests. | **done** |
+| 2.0 | Soroban contract layer (§8.8) — typed contract client (`ContractClient<T>` from `stellar contract bindings`), RPC failover (`FailoverRpcServer` with health tracking + cooldown), contract verification badges (`PreviewOptions.contractMetadata` → `ContractBadge[]`), pre-simulate fee estimation (`FeeEstimate` on `previewInvoke()` + `estimateFee()`). 26 new tests (contract, rpc-failover, badges+fee). Total suite now 121 tests. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
