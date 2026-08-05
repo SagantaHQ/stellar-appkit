@@ -251,6 +251,20 @@ interface SignMessageResult {
 
 Also fixes `decodeSignature`: the old regex heuristic could misfire on pure-alphanumeric base64 strings of even length. The new implementation tries base64 first (with a 64-byte length check), falls back to hex (also 64-byte length check).
 
+### 6.2 Multi-candidate verification (Freighter hash-signing support)
+
+Freighter v5+ has an experimental `isHashSigningEnabled` flag (declared in the freighter-api types as `ExperimentalFeatures.isHashSigningEnabled`). When on, Freighter signs SHA-256 of the message rather than the raw UTF-8 bytes. The freighter-api client is a thin messaging layer — it doesn't hash or transform the message itself; the hashing happens inside the extension's SUBMIT_BLOB handler, which isn't bundled in `node_modules`.
+
+Since there's no public API to query `isHashSigningEnabled` at runtime, the verifier can't know which mode Freighter is in. The fix: `defaultVerifySignature` tries multiple candidate byte sequences and returns true if ANY matches:
+
+1. `signedData` (if present) — the exact bytes the connector claims the wallet signed
+2. `utf8(message)` — the raw UTF-8 bytes (correct for Freighter with hash-signing OFF, Ledger, SEP-43 direct signers)
+3. `sha256(utf8(message))` — the SHA-256 hash (correct for Freighter with hash-signing ON)
+
+This is slightly weaker cryptographically than verifying against a single known byte sequence — an attacker who could find a SHA-256 second-preimage for the message could pass verification. In practice this is not a realistic threat for SIWS: the message includes a server-issued nonce and expiry timestamp, so a second-preimage attack would need to produce a different message with the same SHA-256 hash AND the same nonce AND a valid expiry — which is computationally infeasible.
+
+The alternative (failing verification for legitimate users whose wallet has hash-signing on) is worse than the small cryptographic tradeoff. Once Freighter exposes a public API to query `isHashSigningEnabled`, the connector can detect the mode and surface the correct `signedData` directly, eliminating the need for the multi-candidate fallback.
+
 ---
 
 ## 7. Mobile wallet connectivity
@@ -473,3 +487,5 @@ For classic (non-Soroban) transactions, the simulation won't have a `cost` field
 Two things are stubbed rather than faked, flagged clearly in code comments rather than silently half-working: `SorobanConnection`'s auth-entry signing within the `invoke()` pipeline, and Ledger's Soroban auth-entry signing specifically (`signAuthEntry` in `ledger.ts`) — both need the same underlying piece (constructing a valid `SorobanAuthorizationEntry` credentials structure from a raw signature), which is real Soroban-specific XDR work worth doing carefully rather than guessing at.
 
 **Note (Phase 1.8):** standalone `signAuthEntry()` calls now go through a real preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`, see §8.5) — what's still stubbed is the *signing* of those entries inside `SorobanConnection.invoke()`. The two are separate concerns: the preview decodes and risk-assesses whatever auth entry the app hands to `signAuthEntry()`, regardless of where it came from; the stub is about *producing* signed auth entries programmatically as part of the `invoke()` pipeline. A standalone `signAuthEntry()` call from app code (e.g. delegated auth flows where the app has the unsigned entry XDR in hand) now works end-to-end with preview.
+
+**Note (xBull extension detection):** the xBull connector now polls for `globalThis.xBullSDK` injection before every bridge call (`connect()`, `signTransaction()`, `signMessage()`). The xBull extension injects `window.xBullSDK` asynchronously via a content script — without polling, our code can race ahead of the injection, causing the SDK's bridge to silently fall back to opening the xBull web wallet popup even though the extension IS installed. The poll waits up to 2 seconds (configurable via `XBULL_EXTENSION_INJECTION_TIMEOUT_MS`); `getReachability()` now returns `'not-installed'` when the extension isn't detected after the timeout, rather than always returning `'available'` (which was misleading — it relied on the web-wallet fallback being functional, but users with the extension installed expected the extension UI, not a popup).

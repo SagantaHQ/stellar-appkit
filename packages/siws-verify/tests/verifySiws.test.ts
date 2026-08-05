@@ -36,6 +36,28 @@ const FREIGHTER: WalletProfile = {
   signatureEncoding: 'base64',
 };
 
+/**
+ * Simulates Freighter with hash-signing ENABLED (an experimental feature
+ * in Freighter v5+). When hash-signing is on, Freighter signs
+ * SHA-256(utf8(message)) rather than the raw UTF-8 bytes. The
+ * freighter-api types declare `isHashSigningEnabled`, and verification
+ * failures against raw UTF-8 are consistent with this being on by default
+ * in current builds.
+ *
+ * The connector still surfaces `signedData = base64(utf8(message))`
+ * (the "intended" bytes), so the verifier must try BOTH the raw UTF-8
+ * AND the SHA-256 hash as candidates. This profile tests that the
+ * SHA-256 candidate path works.
+ */
+const FREIGHTER_HASH_SIGNING: WalletProfile = {
+  name: 'Freighter (hash-signing ON — signs SHA-256 of message)',
+  bytesSignedByWallet: (msg) => {
+    const { createHash } = require('crypto') as typeof import('crypto');
+    return createHash('sha256').update(Buffer.from(msg, 'utf-8')).digest();
+  },
+  signatureEncoding: 'base64',
+};
+
 const ALBEDO: WalletProfile = {
   name: 'Albedo (transformative signer — signs a server-derived hash)',
   // Albedo's exact derivation is opaque/server-side; we approximate with
@@ -57,7 +79,7 @@ const XBULL: WalletProfile = {
   signatureEncoding: 'base64',
 };
 
-const PROFILES = [FREIGHTER, ALBEDO, XBULL];
+const PROFILES = [FREIGHTER, FREIGHTER_HASH_SIGNING, ALBEDO, XBULL];
 
 /** Build a fully-signed SiwsPayload for a given wallet profile, with overridable fixture. */
 function buildSignedPayload(

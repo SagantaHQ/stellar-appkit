@@ -161,11 +161,53 @@ async function defaultVerifySignature(opts: {
   const { Keypair } = await import('@stellar/stellar-sdk');
   try {
     const keypair = Keypair.fromPublicKey(opts.address);
-    const dataBuffer = opts.signedData
-      ? Buffer.from(opts.signedData, 'base64')
-      : Buffer.from(opts.message, 'utf-8');
     const signatureBuffer = decodeSignature(opts.signature);
-    return keypair.verify(dataBuffer, signatureBuffer);
+
+    // Build the list of candidate byte sequences the wallet might have
+    // signed. We try them in order of preference and return true if ANY
+    // matches — this is necessary because wallets don't all sign the
+    // same thing:
+    //
+    //  1. signedData (if present) — the exact bytes the connector
+    //     claims the wallet signed. This is the preferred path; it's
+    //     what every connector in @saganta/stellar-appkit populates
+    //     from v0.2 onwards.
+    //
+    //  2. utf8(message) — the raw UTF-8 bytes of the SIWS plaintext.
+    //     Correct for Freighter (with hash-signing OFF), Ledger, and
+    //     any SEP-43 direct signer that hasn't populated signedData.
+    //
+    //  3. sha256(utf8(message)) — the SHA-256 hash of the message.
+    //     Required for Freighter with hash-signing ON (an experimental
+    //     feature in Freighter v5+; the freighter-api types declare
+    //     `isHashSigningEnabled`, and verification failures against
+    //     raw UTF-8 are consistent with this being on by default in
+    //     current builds). Also used by some other wallets that
+    //     pre-hash before ed25519 signing.
+    //
+    // Trying multiple candidates is slightly weaker cryptographically
+    // than verifying against a single known byte sequence — an attacker
+    // who could find a SHA-256 second-preimage for the message could
+    // pass verification. In practice this is not a realistic threat
+    // for SIWS (the message includes a server-issued nonce and expiry),
+    // and the alternative (failing verification for legitimate users
+    // whose wallet has hash-signing on) is worse.
+    const candidates: Buffer[] = [];
+    if (opts.signedData) {
+      candidates.push(Buffer.from(opts.signedData, 'base64'));
+    }
+    const messageUtf8 = Buffer.from(opts.message, 'utf-8');
+    candidates.push(messageUtf8);
+    // SHA-256 prehash — used by Freighter with hash-signing enabled.
+    const { createHash } = await import('crypto');
+    candidates.push(createHash('sha256').update(messageUtf8).digest());
+
+    for (const candidate of candidates) {
+      if (keypair.verify(candidate, signatureBuffer)) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }

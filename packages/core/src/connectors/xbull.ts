@@ -22,26 +22,74 @@ import { withNormalizedError } from './error-utils.js';
  * `signMessage()` genuinely exists and is implemented below, despite the
  * README not documenting it.
  *
- * Corrected from an earlier version of this file that assumed a
- * `window.xBullSDK` injected global with `getPublicKey`/`signXDR`/
- * `signAuthEntry`/`signMessage` methods. That shape doesn't exist — xBull's
- * real API is a `xBullWalletConnect` bridge class you instantiate, with
- * `connect()` (returns the public key directly), `sign({xdr, publicKey?,
- * network?})` (returns the signed XDR directly), and `signMessage(message,
- * opts?)`. There is no separate "get current address" call — `connect()`
- * is both. The bridge itself handles falling back to the xBull webapp when
- * the extension isn't installed, so there's no meaningful "not installed"
- * state to detect the way there is for Freighter — it behaves like Albedo
- * in that respect.
+ * ## Extension detection (the "opens web wallet instead of extension" bug)
  *
- * Soroban auth-entry signing is still not supported here, but precisely
- * so: the shipped types show the underlying message protocol *does* have
- * an internal `xdrType: 'Transaction' | 'AuthEntry'` concept
- * (`ISignXDRRequestPayload`), but the public `sign()` method's parameters
- * (`ISignParams`) don't expose a way to select it — so there's no
- * reliable, documented way to ask for auth-entry signing specifically
- * through this public API today, as opposed to it simply not existing.
+ * The xBull SDK's `xBullWalletConnect` bridge checks `window.xBullSDK`
+ * synchronously inside `connect()` / `sign()` / `signMessage()`. If
+ * `window.xBullSDK` is truthy AND `preferredTarget === 'extension'` (the
+ * default), the bridge uses the extension directly — no popup. If
+ * `window.xBullSDK` is undefined at call time, the bridge silently falls
+ * back to opening the xBull web wallet popup at https://wallet.xbull.app.
+ *
+ * The extension injects `window.xBullSDK` asynchronously via a content
+ * script — content scripts run after the page's main JS begins executing.
+ * On a fast page-load → user-click-connect flow, our code can race ahead
+ * of the injection, causing the bridge to open the web wallet even though
+ * the extension IS installed. This is the exact bug users report.
+ *
+ * The fix: poll for `window.xBullSDK` injection before calling `connect()`
+ * (and before `signTransaction` / `signMessage`). We wait up to 2 seconds
+ * (configurable); if the extension doesn't appear, we fall through to the
+ * bridge's default behavior (web wallet popup) — which is still functional,
+ * just not what the user wanted.
+ *
+ * `getReachability()` now returns `'not-installed'` when the extension
+ * isn't detected after the timeout, so the connect-modal can prompt the
+ * user to install the extension (or explicitly accept the web-wallet flow)
+ * rather than silently opening a popup.
+ *
+ * Soroban auth-entry signing is still not supported here: the shipped
+ * types show the underlying message protocol *does* have an internal
+ * `xdrType: 'Transaction' | 'AuthEntry'` concept (`ISignXDRRequestPayload`),
+ * but the public `sign()` method's parameters (`ISignParams`) don't expose
+ * a way to select it.
  */
+
+/**
+ * How long to wait for the xBull extension to inject `window.xBullSDK`
+ * before giving up and letting the bridge fall back to the web wallet
+ * popup. 2 seconds is enough for content-script injection on a normal
+ * page load; if it doesn't appear in that window, the extension is
+ * almost certainly not installed.
+ */
+const XBULL_EXTENSION_INJECTION_TIMEOUT_MS = 2000;
+
+/**
+ * Polls for `window.xBullSDK` to be injected by the xBull extension's
+ * content script. Returns true if the extension is detected within the
+ * timeout, false otherwise.
+ *
+ * The extension injects asynchronously (content scripts run after the
+ * page's main JS), so a synchronous `typeof window.xBullSDK !== 'undefined'`
+ * check at connect time can return false even when the extension IS
+ * installed — causing the SDK's bridge to silently fall back to the web
+ * wallet popup. This poll gives the injection time to complete.
+ */
+async function waitForXBullExtension(timeoutMs = XBULL_EXTENSION_INJECTION_TIMEOUT_MS): Promise<boolean> {
+  // Use globalThis rather than window — in a browser, `window === globalThis`,
+  // so this is equivalent. In Node/bun (SSR, tests), `globalThis` exists but
+  // `window` doesn't, so this avoids a ReferenceError without needing a
+  // typeof window guard.
+  const g = globalThis as { xBullSDK?: unknown };
+  if (g.xBullSDK) return true;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 50));
+    if (g.xBullSDK) return true;
+  }
+  return false;
+}
+
 export function createXBullConnector(): WalletConnector {
   const meta: WalletMeta = {
     id: 'xbull',
@@ -66,13 +114,14 @@ export function createXBullConnector(): WalletConnector {
   async function ensureBridge(): Promise<XBullWalletConnectBridge> {
     if (bridge) return bridge;
     const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
-    // Cast through `unknown` because the upstream SDK's shipped `.d.ts`
-    // declares `signMessage()` as returning `{ signedMessage; signerAddress }`,
-    // but the actual runtime return (verified against v0.4.0 of the package)
-    // is the richer `ISignMessageResult` shape with `message`, `fullMessage`,
-    // `success`, etc. Our bridge type reflects the real runtime shape so we
-    // can surface `fullMessage` to the verifier.
-    bridge = new xBullWalletConnect() as unknown as XBullWalletConnectBridge;
+    // Pass `preferredTarget: 'extension'` explicitly — it's the SDK's
+    // default, but making it explicit protects against a future SDK version
+    // that changes the default, and documents our intent: we always prefer
+    // the installed extension over the web wallet popup. The bridge still
+    // falls back to the web wallet if `window.xBullSDK` is absent at call
+    // time — `waitForXBullExtension()` (called before each bridge method)
+    // gives the injection time to complete so that fallback rarely fires.
+    bridge = new xBullWalletConnect({ preferredTarget: 'extension' }) as unknown as XBullWalletConnectBridge;
     return bridge;
   }
 
@@ -82,15 +131,43 @@ export function createXBullConnector(): WalletConnector {
     capabilities,
 
     async getReachability() {
-      // The bridge falls back to the xBull webapp automatically when the
-      // extension isn't installed, so — like Albedo — there's no "not
-      // installed" state to report, only whether this environment can run
-      // the bridge at all (needs window for the popup/iframe it uses).
-      return typeof window !== 'undefined' ? 'available' : 'unavailable';
+      // The xBull extension injects `window.xBullSDK` (aka `globalThis.xBullSDK`
+      // — same object in a browser) asynchronously via a content script. The
+      // SDK's bridge checks this global synchronously inside connect()/sign()/
+      // signMessage() — if it's undefined at call time, the bridge silently
+      // falls back to opening the web wallet popup. We poll briefly for
+      // injection; if it doesn't appear within the timeout, we report
+      // 'not-installed' so the connect-modal can prompt the user to install
+      // the extension (or explicitly accept the web-wallet flow) rather than
+      // silently opening a popup.
+      //
+      // Previous versions of this connector always returned 'available' on
+      // the grounds that the web wallet fallback meant xBull was always
+      // usable. That's technically true but leads to a poor UX: the user
+      // has the extension installed, clicks connect, and gets a web wallet
+      // popup instead of the extension UI they expected. Reporting
+      // 'not-installed' when the extension isn't detected lets the modal
+      // surface the install link instead.
+      //
+      // In a non-browser environment (Node, bun, SSR), the extension can
+      // never be installed — return 'unavailable' immediately so the modal
+      // doesn't show xBull as an option.
+      if (typeof window === 'undefined' && typeof (globalThis as { xBullSDK?: unknown }).xBullSDK === 'undefined') return 'unavailable';
+      const installed = await waitForXBullExtension();
+      return installed ? 'available' : 'not-installed';
     },
 
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
+        // Wait for the extension to inject window.xBullSDK before
+        // instantiating the bridge — otherwise the bridge's synchronous
+        // `window.xBullSDK` lookup fails and it silently opens the web
+        // wallet popup, which is the exact bug users report ("opens the
+        // web wallet version instead of using the extension"). 2s is
+        // enough for content-script injection on a normal page load; if
+        // it doesn't appear, the bridge will fall back to the web wallet
+        // popup (which is still functional, just not what the user wanted).
+        await waitForXBullExtension();
         const b = await ensureBridge();
         // Both flags are required together per the real IConnectParams shape —
         // we need both capabilities, so this is explicit rather than relying
@@ -126,6 +203,11 @@ export function createXBullConnector(): WalletConnector {
 
     async signTransaction(xdr: string, opts?: SignTxOptions): Promise<SignTransactionResult> {
       return withNormalizedError(meta.id, async () => {
+        // Wait for the extension before signing too — same race-condition
+        // fix as connect(). Without this, a sign call immediately after
+        // page load could open the web wallet popup instead of using the
+        // extension, even if connect() succeeded via the extension.
+        await waitForXBullExtension();
         const b = await ensureBridge();
         const signerAddress = opts?.address ?? cachedAddress ?? undefined;
         const signedTxXdr = await b.sign({
@@ -154,6 +236,7 @@ export function createXBullConnector(): WalletConnector {
 
     async signMessage(message: string, opts?: SignOptions): Promise<SignMessageResult> {
       return withNormalizedError(meta.id, async () => {
+        await waitForXBullExtension();
         const b = await ensureBridge();
         const result = await b.signMessage(message, {
           networkPassphrase: opts?.networkPassphrase,

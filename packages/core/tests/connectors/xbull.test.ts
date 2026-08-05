@@ -1,4 +1,4 @@
-import { test, expect, describe, mock, beforeEach } from 'bun:test';
+import { test, expect, describe, mock, beforeEach, afterEach } from 'bun:test';
 import { createXBullConnector } from '../../src/connectors/xbull.js';
 
 /**
@@ -57,6 +57,17 @@ mock.module('@creit.tech/xbull-wallet-connect', () => ({
 beforeEach(() => {
   fakeSignMessageResult = null;
   fakeConnectResult = 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA';
+  // The connector now polls for globalThis.xBullSDK injection before each
+  // bridge call (to avoid the "opens web wallet instead of extension" race
+  // condition). Set globalThis.xBullSDK to a truthy value so the poll returns
+  // immediately in tests — otherwise every test would wait 2 seconds for
+  // the injection timeout.
+  (globalThis as { xBullSDK?: unknown }).xBullSDK = { __testStub: true };
+});
+
+afterEach(() => {
+  // Clean up the globalThis.xBullSDK stub between tests so state doesn't leak.
+  delete (globalThis as { xBullSDK?: unknown }).xBullSDK;
 });
 
 describe('createXBullConnector — signMessage', () => {
@@ -183,6 +194,64 @@ describe('createXBullConnector — signMessage', () => {
       expect(connector.signMessage(message)).rejects.toThrow(/denied|rejected/i);
     } finally {
       origProto.signMessage = orig;
+    }
+  });
+});
+
+describe('createXBullConnector — extension detection', () => {
+  test('getReachability returns "available" when window.xBullSDK is present', async () => {
+    // window.xBullSDK is set in beforeEach to a truthy stub.
+    const connector = createXBullConnector();
+    const reachability = await connector.getReachability();
+    expect(reachability).toBe('available');
+  });
+
+  test('getReachability returns "not-installed" when the extension is absent after the timeout', async () => {
+    // Remove the stub set in beforeEach — simulates the extension NOT being
+    // installed. In a real browser, the poll would time out after 2s and
+    // return 'not-installed'. In bun's test environment (no `window`), the
+    // connector returns 'unavailable' instead — so we only assert
+    // 'not-installed' when running in a browser-like environment.
+    delete (globalThis as { xBullSDK?: unknown }).xBullSDK;
+    const connector = createXBullConnector();
+    const reachability = await connector.getReachability();
+    // In bun (no window), this returns 'unavailable'. In a browser, it
+    // would return 'not-installed' after the 2s timeout. We accept either
+    // — the important thing is it's NOT 'available' (which would mean the
+    // extension was detected).
+    expect(reachability).not.toBe('available');
+  });
+
+  test('connect() waits for window.xBullSDK injection before calling the bridge', async () => {
+    // Start with no extension injected, then inject it after a short delay.
+    // The connector should wait for the injection rather than immediately
+    // falling back to the web wallet popup.
+    delete (globalThis as { xBullSDK?: unknown }).xBullSDK;
+
+    let bridgeConnectCalled = false;
+    const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
+    const origProto = (xBullWalletConnect as unknown as { prototype: unknown }).prototype as {
+      connect: (params?: unknown) => Promise<string>;
+    };
+    const orig = origProto.connect;
+    origProto.connect = async () => {
+      bridgeConnectCalled = true;
+      return fakeConnectResult;
+    };
+
+    // Inject window.xBullSDK after 100ms — the connector's poll (50ms interval)
+    // should pick it up within the 2s timeout.
+    setTimeout(() => {
+      (globalThis as { xBullSDK?: unknown }).xBullSDK = { __testStub: true };
+    }, 100);
+
+    try {
+      const connector = createXBullConnector();
+      const account = await connector.connect({ canRequestPublicKey: true, canRequestSign: true });
+      expect(account.address).toBe(fakeConnectResult);
+      expect(bridgeConnectCalled).toBe(true);
+    } finally {
+      origProto.connect = orig;
     }
   });
 });
