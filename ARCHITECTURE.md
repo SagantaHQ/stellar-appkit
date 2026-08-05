@@ -245,7 +245,7 @@ interface SignMessageResult {
 
 - **Freighter, Ledger** (direct signers): `signedData = base64(utf8(message))`
 - **Albedo** (transformative): `signedData = base64(hexDecode(res.signed_message))` — the connector now surfaces what Albedo actually signed, instead of discarding it
-- **xBull** (prefixed): `signedData = base64(utf8(result.fullMessage))` — the connector now surfaces the prefixed message, instead of discarding it
+- **xBull** (best-effort): `signedData = base64(utf8(message))` — the xBull SDK's TypeScript interface declares a `fullMessage` field, but the actual runtime never populates it (verified against v0.4.0). The connector surfaces `utf8(message)` as a best-effort hypothesis; if xBull transforms the message before signing, the verifier's multi-candidate fallback (SHA-256, SHA-512, domain-prefixed hashes) may help, but xBull SIWS verification is not guaranteed without a custom `verifySignatureFn`.
 
 `signInWithStellar()` threads `signedData` through into `SignInResult`, and the verifier (`verifySiws`) uses `signedData` when present, falling back to `utf8(message)` for backward compatibility with third-party connectors that haven't been updated yet. The fallback is correct for any direct signer (Freighter, Ledger, SEP-43) and fails loudly for transformative signers (Albedo, xBull) — which is the right thing to do rather than silently passing. No custom `verifySignatureFn` is needed for any supported wallet anymore.
 

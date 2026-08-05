@@ -35,19 +35,14 @@ export interface VerifySiwsOptions {
   /** The exact nonce your backend issued for this sign-in attempt. */
   expectedNonce: string;
   /**
-   * Override the default ed25519 verification. The default verifier decodes
-   * `signedData` (base64) — or falls back to the raw UTF-8 message bytes —
-   * and calls `Keypair.fromPublicKey(address).verify(...)`.
+   * Override the default ed25519 verification. The default verifier tries
+   * multiple candidate byte sequences (see `defaultVerifySignature`).
    *
    * You only need to provide this if you're doing something unusual:
    *  - verifying with a custom key type,
    *  - using a different hashing scheme,
-   *  - or interfacing with a wallet connector that does NOT yet populate
-   *    `signedData` and signs something other than the raw message bytes.
-   *
-   * The callback receives `signedData` (base64 of the bytes the wallet
-   * signed) in addition to the raw `message` string, so it can pick
-   * whichever is appropriate.
+   *  - or interfacing with a wallet connector that signs something other
+   *    than what the default candidates cover.
    */
   verifySignatureFn?: (opts: {
     message: string;
@@ -55,6 +50,16 @@ export interface VerifySiwsOptions {
     signature: string;
     address: string;
   }) => Promise<boolean> | boolean;
+  /**
+   * When true, the verifier includes a `diagnostics` field in the result
+   * on failure, listing every candidate byte sequence that was tried and
+   * its hash. Use this to diagnose "Signature verification failed" errors
+   * — it shows you exactly what the verifier attempted, so you can compare
+   * against what your wallet actually signed.
+   *
+   * Default: false (off — diagnostics are only needed for debugging).
+   */
+  debug?: boolean;
 }
 
 export interface SiwsVerificationResult {
@@ -66,6 +71,19 @@ export interface SiwsVerificationResult {
     chainId: string;
     issuedAt: string;
     expirationTime: string;
+  };
+  /**
+   * Debug diagnostics — only populated when `opts.debug` is true AND
+   * verification failed. Lists every candidate byte sequence the verifier
+   * tried, so you can compare against what your wallet actually signed.
+   *
+   * Each entry has a `label` (human-readable description), `hashSha256`
+   * (the SHA-256 of the candidate bytes, for easy comparison), and
+   * `byteLength` (sanity check that the candidate is the expected size).
+   */
+  diagnostics?: {
+    signatureByteLength: number;
+    candidatesTried: Array<{ label: string; hashSha256: string; byteLength: number }>;
   };
 }
 
@@ -119,7 +137,12 @@ export async function verifySiws(payload: SiwsPayload, opts: VerifySiwsOptions):
   });
 
   if (!signatureValid) {
-    return { ok: false, reason: 'Signature verification failed.' };
+    // If debug mode is on, build diagnostics showing what was tried.
+    let diagnostics: SiwsVerificationResult['diagnostics'] | undefined;
+    if (opts.debug) {
+      diagnostics = buildDiagnostics(payload);
+    }
+    return { ok: false, reason: 'Signature verification failed.', diagnostics };
   }
 
   return {
@@ -131,6 +154,46 @@ export async function verifySiws(payload: SiwsPayload, opts: VerifySiwsOptions):
       issuedAt: parsed.issuedAt,
       expirationTime: parsed.expirationTime,
     },
+  };
+}
+
+/**
+ * Builds diagnostics for a failed verification — lists every candidate
+ * byte sequence the verifier tried, with its SHA-256 hash and byte length.
+ * The user can compare these against what their wallet actually signed
+ * to figure out which candidate is missing.
+ */
+function buildDiagnostics(payload: SiwsPayload): SiwsVerificationResult['diagnostics'] {
+  const { createHash } = require('crypto') as typeof import('crypto');
+  const sigBuffer = decodeSignature(payload.signedMessage);
+
+  const candidates: Array<{ label: string; buffer: Buffer }> = [];
+
+  if (payload.signedData) {
+    candidates.push({ label: 'signedData (base64-decoded)', buffer: Buffer.from(payload.signedData, 'base64') });
+  }
+
+  const messageUtf8 = Buffer.from(payload.message, 'utf-8');
+  candidates.push({ label: 'utf8(message)', buffer: messageUtf8 });
+  candidates.push({ label: 'sha256(utf8(message))', buffer: createHash('sha256').update(messageUtf8).digest() });
+  candidates.push({ label: 'sha512(utf8(message))', buffer: createHash('sha512').update(messageUtf8).digest() });
+  candidates.push({ label: 'sha512(utf8(message)) truncated to 32 bytes', buffer: createHash('sha512').update(messageUtf8).digest().subarray(0, 32) });
+
+  // Domain-prefixed hash candidates (some wallets prepend a domain separator)
+  candidates.push({ label: 'sha256("\\x00" + message)', buffer: createHash('sha256').update(Buffer.concat([Buffer.from([0]), messageUtf8])).digest() });
+  candidates.push({ label: 'sha256("stellar-sign-message:" + message)', buffer: createHash('sha256').update(Buffer.concat([Buffer.from('stellar-sign-message:'), messageUtf8])).digest() });
+
+  // CRLF-normalized message (Windows line endings)
+  const crlfMessage = Buffer.from(payload.message.replace(/\n/g, '\r\n'), 'utf-8');
+  candidates.push({ label: 'utf8(message with CRLF)', buffer: crlfMessage });
+
+  return {
+    signatureByteLength: sigBuffer.length,
+    candidatesTried: candidates.map((c) => ({
+      label: c.label,
+      hashSha256: createHash('sha256').update(c.buffer).digest('hex'),
+      byteLength: c.buffer.length,
+    })),
   };
 }
 
@@ -164,46 +227,67 @@ async function defaultVerifySignature(opts: {
     const signatureBuffer = decodeSignature(opts.signature);
 
     // Build the list of candidate byte sequences the wallet might have
-    // signed. We try them in order of preference and return true if ANY
-    // matches — this is necessary because wallets don't all sign the
-    // same thing:
+    // signed. We try them in order and return true if ANY matches.
+    //
+    // This multi-candidate approach is necessary because wallets don't
+    // all sign the same thing — and we can't always know what they
+    // signed (the freighter-api client is a thin messaging layer; the
+    // actual signing happens inside the extension, which we can't read).
+    //
+    // Candidates tried (in order):
     //
     //  1. signedData (if present) — the exact bytes the connector
-    //     claims the wallet signed. This is the preferred path; it's
-    //     what every connector in @saganta/stellar-appkit populates
-    //     from v0.2 onwards.
+    //     claims the wallet signed.
     //
-    //  2. utf8(message) — the raw UTF-8 bytes of the SIWS plaintext.
-    //     Correct for Freighter (with hash-signing OFF), Ledger, and
-    //     any SEP-43 direct signer that hasn't populated signedData.
+    //  2. utf8(message) — the raw UTF-8 bytes. Correct for Freighter
+    //     (with hash-signing OFF), Ledger, and any SEP-43 direct signer.
     //
-    //  3. sha256(utf8(message)) — the SHA-256 hash of the message.
-    //     Required for Freighter with hash-signing ON (an experimental
-    //     feature in Freighter v5+; the freighter-api types declare
-    //     `isHashSigningEnabled`, and verification failures against
-    //     raw UTF-8 are consistent with this being on by default in
-    //     current builds). Also used by some other wallets that
-    //     pre-hash before ed25519 signing.
+    //  3. sha256(utf8(message)) — SHA-256 prehash. Required for
+    //     Freighter with hash-signing ON (experimental feature; the
+    //     freighter-api types declare `isHashSigningEnabled`).
     //
-    // Trying multiple candidates is slightly weaker cryptographically
-    // than verifying against a single known byte sequence — an attacker
-    // who could find a SHA-256 second-preimage for the message could
-    // pass verification. In practice this is not a realistic threat
-    // for SIWS (the message includes a server-issued nonce and expiry),
-    // and the alternative (failing verification for legitimate users
-    // whose wallet has hash-signing on) is worse.
-    const candidates: Buffer[] = [];
-    if (opts.signedData) {
-      candidates.push(Buffer.from(opts.signedData, 'base64'));
-    }
-    const messageUtf8 = Buffer.from(opts.message, 'utf-8');
-    candidates.push(messageUtf8);
-    // SHA-256 prehash — used by Freighter with hash-signing enabled.
+    //  4. sha512(utf8(message)) — SHA-512 prehash. NaCl's Ed25519
+    //     uses SHA-512 internally, so some wallets pre-hash with it.
+    //
+    //  5. sha512(utf8(message)) truncated to 32 bytes — some
+    //     implementations truncate SHA-512 to match Ed25519's 32-byte
+    //     key size.
+    //
+    //  6. sha256("\x00" + message) — domain-prefixed hash (null byte
+    //     domain separator, used by some implementations to prevent
+    //     cross-protocol signature reuse).
+    //
+    //  7. sha256("stellar-sign-message:" + message) — domain-prefixed
+    //     hash with a human-readable domain separator.
+    //
+    //  8. utf8(message with CRLF) — Windows-style line endings. If the
+    //     wallet's popup renders the message with \r\n, the signed bytes
+    //     differ from our \n-joined message.
+    //
+    // If none match, the verifier returns false. Enable `debug: true`
+    // in VerifySiwsOptions to see a diagnostics dump of every candidate
+    // and its hash — that lets you figure out what your wallet actually
+    // signed by comparing the hashes.
     const { createHash } = await import('crypto');
-    candidates.push(createHash('sha256').update(messageUtf8).digest());
+    const messageUtf8 = Buffer.from(opts.message, 'utf-8');
+
+    const candidates: Array<{ label: string; buffer: Buffer }> = [];
+
+    if (opts.signedData) {
+      candidates.push({ label: 'signedData', buffer: Buffer.from(opts.signedData, 'base64') });
+    }
+    candidates.push({ label: 'utf8(message)', buffer: messageUtf8 });
+    candidates.push({ label: 'sha256(message)', buffer: createHash('sha256').update(messageUtf8).digest() });
+    candidates.push({ label: 'sha512(message)', buffer: createHash('sha512').update(messageUtf8).digest() });
+    candidates.push({ label: 'sha512(message) truncated', buffer: createHash('sha512').update(messageUtf8).digest().subarray(0, 32) });
+    candidates.push({ label: 'sha256(\\x00 + message)', buffer: createHash('sha256').update(Buffer.concat([Buffer.from([0]), messageUtf8])).digest() });
+    candidates.push({ label: 'sha256("stellar-sign-message:" + message)', buffer: createHash('sha256').update(Buffer.concat([Buffer.from('stellar-sign-message:'), messageUtf8])).digest() });
+    // CRLF-normalized message
+    const crlfMessage = Buffer.from(opts.message.replace(/\n/g, '\r\n'), 'utf-8');
+    candidates.push({ label: 'utf8(message with CRLF)', buffer: crlfMessage });
 
     for (const candidate of candidates) {
-      if (keypair.verify(candidate, signatureBuffer)) {
+      if (keypair.verify(candidate.buffer, signatureBuffer)) {
         return true;
       }
     }

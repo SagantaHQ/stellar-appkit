@@ -74,16 +74,22 @@ describe('createXBullConnector — signMessage', () => {
   const message = 'localhost wants you to sign in with your Stellar account:\nG...\n\nStatement: x';
   const address = 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA';
 
-  test('uses fullMessage as signedData when present', async () => {
-    // The smoking-gun test: when xBull returns fullMessage = "prefix\n" + message,
-    // the connector must return signedData = base64(utf8(fullMessage)),
-    // NOT base64(utf8(message)). The verifier needs the actual bytes the
-    // wallet signed.
-    const fullMessage = 'Stellar Wallet Sign Message:\n' + message;
+  test('surfaces signedData = base64(utf8(message)) — best-effort, xBull SDK does not expose fullMessage', async () => {
+    // The xBull SDK's TypeScript interface (ISignMessageResult) declares
+    // `message` and `fullMessage` fields, but the actual runtime only
+    // returns `{ signedMessage, signerAddress }` in both the extension
+    // and web-wallet code paths. The `fullMessage` field is aspirational
+    // in the types — it's never populated.
+    //
+    // This means the connector can only surface `signedData = base64(utf8(message))`
+    // as a best-effort hypothesis — correct ONLY if xBull signs the raw
+    // message verbatim. If xBull prepends a header or transforms the
+    // message, server-side verification will fail, and the consumer must
+    // use a custom `verifySignatureFn` or a different wallet for SIWS.
     fakeSignMessageResult = {
       success: true,
       message,
-      fullMessage,
+      fullMessage: 'Stellar Wallet Sign Message:\n' + message, // included but IGNORED by the connector
       signedMessage: Buffer.alloc(64).fill(0x42).toString('base64'),
       signerAddress: address,
     };
@@ -94,12 +100,13 @@ describe('createXBullConnector — signMessage', () => {
 
     expect(result.signedMessage).toBe(Buffer.alloc(64).fill(0x42).toString('base64'));
     expect(result.signerAddress).toBe(address);
-    expect(result.signedData).toBe(Buffer.from(fullMessage, 'utf-8').toString('base64'));
-    // And NOT the plaintext message:
-    expect(result.signedData).not.toBe(Buffer.from(message, 'utf-8').toString('base64'));
+    // signedData is base64(utf8(message)) — NOT base64(utf8(fullMessage)),
+    // because the connector doesn't trust the SDK's fullMessage field
+    // (it's never populated in the runtime, only in the types).
+    expect(result.signedData).toBe(Buffer.from(message, 'utf-8').toString('base64'));
   });
 
-  test('falls back to result.message when fullMessage is missing (older xBull SDK)', async () => {
+  test('returns signedData even when the SDK response has no fullMessage (the real runtime behavior)', async () => {
     // Older versions of the xBull SDK may not return fullMessage. In that
     // case, the best we can do is fall back to the plaintext message —
     // which is correct for any version of xBull that signs the raw message

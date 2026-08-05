@@ -242,28 +242,36 @@ export function createXBullConnector(): WalletConnector {
           networkPassphrase: opts?.networkPassphrase,
           address: opts?.address ?? cachedAddress ?? undefined,
         });
-        // xBull's `ISignMessageResult` distinguishes `message` (the string
-        // we passed in) from `fullMessage` (the string the wallet actually
-        // signed — xBull prepends a wallet-defined header/warning banner to
-        // the message before signing, similar to how EVM wallets prefix
-        // personal_sign with "\x19Ethereum Signed Message:\n<length>").
+
+        // The xBull SDK's TypeScript interface (ISignMessageResult in
+        // interfaces.d.ts) declares `message` and `fullMessage` fields,
+        // but the ACTUAL RUNTIME (verified against v0.4.0 of the package)
+        // only returns `{ signedMessage, signerAddress }` in both the
+        // extension and web-wallet code paths. The `fullMessage` field
+        // is aspirational in the types — it's never populated.
         //
-        // The previous version of this connector returned only `signedMessage`
-        // and threw away `fullMessage`, which made server-side verification
-        // impossible: the verifier had no way to know what bytes xBull
-        // actually signed. We now surface `fullMessage` as `signedData`
-        // (base64 of its UTF-8 bytes), so the verifier can verify against
-        // the real signed payload.
+        // This means we CANNOT know what bytes xBull actually signed.
+        // The SDK doesn't surface them. If xBull prepends a header or
+        // transforms the message before signing (the existence of a
+        // `fullMessage` field in the types suggests it might), server-side
+        // verification will fail because the verifier can't reconstruct
+        // the signed bytes.
         //
-        // `fullMessage` was added to the xBull SDK's shipped types at v0.4.0
-        // — older versions may not return it. We fall back to the plaintext
-        // `message` if it's missing, which is the best we can do (and is
-        // correct for any version that signs the raw message verbatim).
-        const signedSource = result.fullMessage ?? result.message ?? message;
+        // We surface `signedData = base64(utf8(message))` as a best-effort
+        // hypothesis — correct ONLY if xBull signs the raw message verbatim.
+        // The verifier's multi-candidate fallback also tries SHA-256 and
+        // SHA-512 of the message, which may help if xBull pre-hashes.
+        //
+        // If xBull verification still fails, the consumer must either:
+        //   1. Use a custom `verifySignatureFn` in `verifySiws()` that
+        //      knows how to recover the signed bytes, OR
+        //   2. Contact xBull to expose `fullMessage` in the runtime
+        //      response (not just the types), OR
+        //   3. Use a different wallet for SIWS.
         return {
           signedMessage: result.signedMessage,
           signerAddress: result.signerAddress,
-          signedData: Buffer.from(signedSource, 'utf-8').toString('base64'),
+          signedData: Buffer.from(message, 'utf-8').toString('base64'),
         };
       });
     },
@@ -272,7 +280,16 @@ export function createXBullConnector(): WalletConnector {
   return connector;
 }
 
-/** Shape of the real `xBullWalletConnect` bridge — confirmed against the package's shipped .d.ts (v0.4.0). */
+/** Shape of the real `xBullWalletConnect` bridge — confirmed against the package's actual runtime (v0.4.0).
+ *
+ * NOTE: The SDK's TypeScript interface (ISignMessageResult in interfaces.d.ts)
+ * declares `message` and `fullMessage` fields, but the ACTUAL RUNTIME only
+ * returns `{ signedMessage, signerAddress }` in both the extension and
+ * web-wallet code paths. The `fullMessage` field is aspirational in the
+ * types — it's never populated. Our connector therefore does NOT read
+ * `fullMessage` and surfaces `signedData = base64(utf8(message))` as a
+ * best-effort hypothesis.
+ */
 interface XBullWalletConnectBridge {
   connect(params?: { canRequestPublicKey: boolean; canRequestSign: boolean }): Promise<string>;
   sign(params: { xdr: string; publicKey?: string; network?: string }): Promise<string>;
@@ -281,13 +298,11 @@ interface XBullWalletConnectBridge {
     opts?: { networkPassphrase?: string; address?: string }
   ): Promise<{
     success: true;
-    /** The original message string passed in. */
-    message: string;
-    /** The full string the wallet actually signed (may include a wallet-added prefix). Present in v0.4.0+. */
-    fullMessage?: string;
-    /** The signature. */
+    /** The signature (base64). */
     signedMessage: string;
     signerAddress: string;
+    // NOTE: `message` and `fullMessage` are declared in ISignMessageResult
+    // but are NOT populated in the actual runtime response. Do not rely on them.
   }>;
   closeConnections(): void;
 }
