@@ -515,7 +515,7 @@ The fee estimate from §8.8 is also surfaced in the preview — `Fee 0.00501 XLM
 | 2.0 | Soroban contract layer (§8.8) — typed contract client (`ContractClient<T>` from `stellar contract bindings`), RPC failover (`FailoverRpcServer` with health tracking + cooldown), contract verification badges (`PreviewOptions.contractMetadata` → `ContractBadge[]`), pre-simulate fee estimation (`FeeEstimate` on `previewInvoke()` + `estimateFee()`). 26 new tests (contract, rpc-failover, badges+fee). Total suite now 121 tests. | **done** |
 | 2.1 | UI polish (§8.9) — wallet-provided avatars (`getAvatar()` on `WalletConnector` + deterministic gradient fallback + opt-in Stellar Expert avatars), copy-to-clipboard on all address displays (connected, account picker, transaction preview), smooth loading spinner (border-radius: 50% fix for the square-wobble bug), contract verification badges + fee estimate rendered in the transaction preview UI. 8 new tests (avatar utilities). Total suite now 134 tests. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
-| 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
+| 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | **done** |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
 | 4 | Ledger Soroban auth-entry signing | next |
 | 5 | Smart-account/passkey signer as a native `WalletConnector` (Saganta embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline | later |

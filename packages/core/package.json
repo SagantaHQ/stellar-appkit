@@ -55,7 +55,8 @@
     "react": "^18.0.0 || ^19.0.0",
     "vue": "^3.3.0",
     "solid-js": "^1.7.0",
-    "svelte": "^4.0.0 || ^5.0.0"
+    "svelte": "^4.0.0 || ^5.0.0",
+    "@walletconnect/sign-client": "^2.0.0"
   },
   "peerDependenciesMeta": {
     "@stellar/freighter-api": {
@@ -86,6 +87,9 @@
       "optional": true
     },
     "svelte": {
+      "optional": true
+    },
+    "@walletconnect/sign-client": {
       "optional": true
     }
   },

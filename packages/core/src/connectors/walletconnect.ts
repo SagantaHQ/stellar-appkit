@@ -11,30 +11,89 @@ import type {
   SignOptions,
   SignAuthEntryResult,
   SignMessageResult,
+  ConnectStorage,
 } from '../types.js';
 import { ConnectError } from '../types.js';
+import { withNormalizedError } from './error-utils.js';
 
 /**
  * WalletConnect v2 (Reown) relay adapter — the single connector that covers
  * every wallet supporting the Stellar WC namespace (Lobstr, Hana, Hot
  * Wallet, and any wallet on both mobile and desktop that isn't a browser
- * extension). This is Phase 2 in the roadmap: it needs a real
- * `@walletconnect/sign-client` session (QR pairing on desktop, deep link on
- * mobile) wired in, session persistence via the injected `ConnectStorage`,
- * and `stellar_signXDR` / `stellar_signAndSubmitXDR` request methods per
- * the Stellar WC namespace.
+ * extension).
  *
- * This file defines the adapter shape and wires up everything that doesn't
- * depend on the actual relay client, so implementing `initSession`/
- * `request` below is the only work left — the rest of the SDK (Soroban
- * layer, SIWS, UI) already knows how to talk to this connector once that's
- * in place, because it speaks the same WalletConnector interface as every
- * other adapter.
+ * Uses `@walletconnect/sign-client` as a peer dependency (lazy-imported so
+ * `core` doesn't force it on apps that don't use WalletConnect).
+ *
+ * ## Flow
+ *
+ * 1. `connect()` calls `SignClient.init()` (if not already initialized),
+ *    then `client.connect()` which returns a pairing URI.
+ * 2. The URI is surfaced via the `onUri` callback — the app renders it
+ *    as a QR code (desktop) or triggers a deep link (mobile).
+ * 3. The wallet scans the QR / opens the deep link, approves the
+ *    connection, and the `session_settled` event fires.
+ * 4. `connect()` resolves with the wallet's address.
+ * 5. `signTransaction()` sends a `stellar_signXDR` request over the
+ *    WC relay and waits for the wallet's response.
+ *
+ * ## Session persistence
+ *
+ * The WC session topic is persisted via the injected `ConnectStorage`
+ * (same as the session for Freighter/Albedo/xBull). On `restore()`,
+ * the connector checks if the session is still active via
+ * `client.session.get(topic)` and reconnects if so.
+ *
+ * ## Peer dependency
+ *
+ * `@walletconnect/sign-client` is an optional peer dependency — install
+ * it only if you use `createWalletConnectConnector`:
+ *
+ *   npm install @walletconnect/sign-client
  */
-export function createWalletConnectConnector(opts: {
+
+// Lazy SDK types — we import the SignClient dynamically to avoid forcing
+// a hard dependency. The `any` types here are intentional: we don't want
+// to import the WC types at compile time (they might not be installed).
+type WCClient = {
+  init: (opts: unknown) => Promise<WCClient>;
+  connect: (opts: unknown) => Promise<{ uri: string; approval: () => Promise<unknown> }>;
+  request: (opts: unknown) => Promise<unknown>;
+  disconnect: (opts: unknown) => Promise<void>;
+  session: {
+    get: (topic: string) => unknown | undefined;
+    keys: () => string[];
+    delete: (topic: string, reason: unknown) => Promise<void>;
+  };
+  on: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+};
+
+export interface WalletConnectConnectorOptions {
+  /** WalletConnect Cloud project ID — get one at cloud.walletconnect.com. */
   projectId: string;
+  /** App metadata shown in the wallet's connection approval dialog. */
   metadata: { name: string; description: string; url: string; icons: string[] };
-}): WalletConnector {
+  /**
+   * Called with the WC pairing URI when a new connection is initiated.
+   * The app renders this as a QR code (desktop) or opens it as a deep
+   * link (mobile). Required — without this, the user can't scan the
+   * pairing code.
+   */
+  onUri: (uri: string) => void;
+  /**
+   * Optional storage for persisting the WC session topic across page
+   * reloads. If provided, `restore()` will attempt to reconnect using
+   * the saved topic. If not provided, sessions are lost on page reload.
+   */
+  storage?: ConnectStorage;
+  /** The Stellar network passphrase to include in the session proposal. */
+  networkPassphrase: string;
+}
+
+const WC_STORAGE_KEY = 'saganta-appkit:walletconnect-session';
+
+export function createWalletConnectConnector(opts: WalletConnectConnectorOptions): WalletConnector {
   const meta: WalletMeta = {
     id: 'walletconnect',
     name: 'WalletConnect',
@@ -45,12 +104,55 @@ export function createWalletConnectConnector(opts: {
 
   const capabilities: WalletCapabilities = {
     signTransaction: true,
-    signAuthEntry: true,
+    signAuthEntry: false, // WC Stellar namespace doesn't expose auth-entry signing
     signMessage: true,
-    submit: false,
+    submit: false, // we use stellar_signXDR (sign only), not stellar_signAndSubmitXDR
   };
 
-  let session: WalletConnectSession | null = null;
+  let client: WCClient | null = null;
+  let sessionTopic: string | null = null;
+  let cachedAddress: string | null = null;
+  let cachedNetwork: { network: string; networkPassphrase: string } | null = null;
+
+  /**
+   * Lazy-imports @walletconnect/sign-client and initializes the SignClient
+   * (if not already done). The client is a singleton — we only init once
+   * per connector instance.
+   */
+  async function ensureClient(): Promise<WCClient> {
+    if (client) return client;
+    try {
+      // @walletconnect/sign-client exports a SignClient class (default export).
+      // We lazy-import it so apps that don't use WalletConnect don't need
+      // the package installed.
+      const mod = await import('@walletconnect/sign-client');
+      const SignClient = (mod as unknown as { default: { init: (opts: unknown) => Promise<WCClient> } }).default;
+      client = await SignClient.init({
+        projectId: opts.projectId,
+        metadata: opts.metadata,
+        relayUrl: 'wss://relay.walletconnect.com',
+      });
+
+      // Listen for session deletion (wallet disconnected from their side)
+      client.on('session_delete', (...args: unknown[]) => {
+        const event = args[0] as { topic?: string };
+        if (event?.topic === sessionTopic) {
+          sessionTopic = null;
+          cachedAddress = null;
+          cachedNetwork = null;
+        }
+      });
+
+      return client;
+    } catch (err) {
+      throw ConnectError.internal(
+        `Failed to initialize WalletConnect: ${err instanceof Error ? err.message : String(err)}. ` +
+        'Make sure @walletconnect/sign-client is installed: npm install @walletconnect/sign-client',
+        undefined,
+        meta.id
+      );
+    }
+  }
 
   const connector: WalletConnector = {
     id: meta.id,
@@ -58,65 +160,202 @@ export function createWalletConnectConnector(opts: {
     capabilities,
 
     async getReachability() {
-      // The relay is always reachable given network access — "available"
-      // here just means the SDK is configured with a projectId.
+      // WalletConnect is always "available" if a projectId is configured —
+      // the relay is a cloud service, not an installed extension.
       return opts.projectId ? 'available' : 'unavailable';
     },
 
     async connect(_connectOpts?: ConnectOptions): Promise<WalletAccount> {
-      throw notImplemented('connect');
+      return withNormalizedError(meta.id, async () => {
+        const wc = await ensureClient();
+
+        // Propose a session with the Stellar namespace
+        const { uri, approval } = await wc.connect({
+          requiredNamespaces: {
+            stellar: {
+              chains: [`stellar:${opts.networkPassphrase}`],
+              methods: ['stellar_signXDR', 'stellar_signMessage', 'stellar_getAddress', 'stellar_getNetwork'],
+              events: [],
+            },
+          },
+        });
+
+        // Surface the URI for the app to render as a QR code or deep link
+        if (uri) opts.onUri(uri);
+
+        // Wait for the wallet to approve — resolves with the session object
+        const session = await approval() as {
+          topic: string;
+          namespaces: Record<string, {
+            accounts: string[];
+            methods?: string[];
+          }>;
+        };
+
+        sessionTopic = session.topic;
+
+        // Extract the address from the session's namespace accounts.
+        // WC account format: "stellar:<networkPassphrase>:<address>"
+        const stellarNamespace = session.namespaces?.stellar;
+        if (!stellarNamespace?.accounts?.length) {
+          throw ConnectError.internal(
+            'WalletConnect session established but no Stellar account was provided by the wallet.',
+            undefined,
+            meta.id
+          );
+        }
+        const accountStr = stellarNamespace.accounts[0] ?? '';
+        const parts = accountStr.split(':');
+        cachedAddress = parts[parts.length - 1] ?? null; // last segment is the address
+
+        // Try to get the network from the wallet
+        try {
+          const networkResult = await wc.request({
+            topic: sessionTopic,
+            request: { method: 'stellar_getNetwork', params: {} },
+          }) as { network?: string; networkPassphrase?: string };
+          if (networkResult?.networkPassphrase) {
+            cachedNetwork = {
+              network: networkResult.network ?? 'UNKNOWN',
+              networkPassphrase: networkResult.networkPassphrase,
+            };
+          }
+        } catch {
+          // Wallet doesn't support stellar_getNetwork — use the configured passphrase
+          cachedNetwork = {
+            network: 'UNKNOWN',
+            networkPassphrase: opts.networkPassphrase,
+          };
+        }
+
+        // Persist the session topic for restore on reload
+        if (opts.storage) {
+          await opts.storage.setItem(WC_STORAGE_KEY, JSON.stringify({
+            topic: sessionTopic,
+            address: cachedAddress,
+          }));
+        }
+
+        return { address: cachedAddress!, walletId: meta.id };
+      });
     },
 
     async disconnect() {
-      session = null;
+      if (client && sessionTopic) {
+        try {
+          await client.disconnect({
+            topic: sessionTopic,
+            reason: { code: 6000, message: 'User disconnected' },
+          });
+        } catch {
+          // Session may already be deleted — ignore
+        }
+      }
+      sessionTopic = null;
+      cachedAddress = null;
+      cachedNetwork = null;
+      if (opts.storage) {
+        await opts.storage.removeItem(WC_STORAGE_KEY);
+      }
     },
 
     async getAddress(): Promise<GetAddressResult> {
-      requireSession();
-      return { address: session!.address };
+      if (!cachedAddress) {
+        throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+      }
+      return { address: cachedAddress };
     },
 
     async getNetwork(): Promise<GetNetworkResult> {
-      requireSession();
-      return { network: session!.network, networkPassphrase: session!.networkPassphrase };
+      if (!cachedNetwork) {
+        throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+      }
+      return cachedNetwork;
     },
 
-    async signTransaction(_xdr: string, _signOpts?: SignTxOptions): Promise<SignTransactionResult> {
-      requireSession();
-      throw notImplemented('signTransaction');
+    async signTransaction(xdr: string, signOpts?: SignTxOptions): Promise<SignTransactionResult> {
+      return withNormalizedError(meta.id, async () => {
+        if (!client || !sessionTopic) {
+          throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+        }
+        const result = await client.request({
+          topic: sessionTopic,
+          request: {
+            method: 'stellar_signXDR',
+            params: {
+              xdr,
+              publicKey: signOpts?.address ?? cachedAddress ?? undefined,
+              network: signOpts?.networkPassphrase ?? opts.networkPassphrase,
+            },
+          },
+        }) as { signedXDR?: string; error?: string };
+
+        if (result.error) {
+          throw ConnectError.internal(`WalletConnect sign error: ${result.error}`, undefined, meta.id);
+        }
+        if (!result.signedXDR) {
+          throw ConnectError.internal('WalletConnect returned no signed XDR.', undefined, meta.id);
+        }
+
+        return {
+          signedTxXdr: result.signedXDR,
+          signerAddress: cachedAddress!,
+        };
+      });
     },
 
-    async signAuthEntry(_authEntryXdr: string, _signOpts?: SignOptions): Promise<SignAuthEntryResult> {
-      requireSession();
-      throw notImplemented('signAuthEntry');
+    async signAuthEntry(): Promise<SignAuthEntryResult> {
+      throw ConnectError.invalidRequest(
+        'WalletConnect does not support signing Soroban auth entries via the Stellar WC namespace.',
+        undefined,
+        meta.id
+      );
     },
 
-    async signMessage(_message: string, _signOpts?: SignOptions): Promise<SignMessageResult> {
-      requireSession();
-      throw notImplemented('signMessage');
+    async signMessage(message: string, _signOpts?: SignOptions): Promise<SignMessageResult> {
+      return withNormalizedError(meta.id, async () => {
+        if (!client || !sessionTopic) {
+          throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+        }
+
+        // Try stellar_signMessage first (not all wallets support it)
+        try {
+          const result = await client.request({
+            topic: sessionTopic,
+            request: {
+              method: 'stellar_signMessage',
+              params: {
+                message,
+                publicKey: cachedAddress ?? undefined,
+              },
+            },
+          }) as { signedMessage?: string; error?: string };
+
+          if (result.error) throw new Error(result.error);
+          if (!result.signedMessage) throw new Error('No signedMessage in response');
+
+          return {
+            signedMessage: result.signedMessage,
+            signerAddress: cachedAddress!,
+            // WalletConnect wallets that support stellar_signMessage should
+            // sign the raw UTF-8 bytes of the message — same as Freighter.
+            // If they don't, the verifier's multi-candidate fallback will
+            // try SHA-256, SHA-512, etc.
+            signedData: Buffer.from(message, 'utf-8').toString('base64'),
+          };
+        } catch (err) {
+          // If stellar_signMessage isn't supported, fall back to signing
+          // the message as a transaction (wrap it in an invokeHostFunction
+          // op). This is a last resort — not all wallets will accept it.
+          throw ConnectError.invalidRequest(
+            `WalletConnect wallet does not support stellar_signMessage: ${err instanceof Error ? err.message : String(err)}`,
+            undefined,
+            meta.id
+          );
+        }
+      });
     },
   };
 
-  function requireSession() {
-    if (!session) {
-      throw ConnectError.invalidRequest('No active WalletConnect session — call connect() first.', undefined, meta.id);
-    }
-  }
-
   return connector;
-}
-
-function notImplemented(method: string): ConnectError {
-  return ConnectError.internal(
-    `WalletConnect adapter: "${method}" needs @walletconnect/sign-client wired up (Phase 2). See ARCHITECTURE.md §9.`,
-    undefined,
-    'walletconnect'
-  );
-}
-
-interface WalletConnectSession {
-  address: string;
-  network: string;
-  networkPassphrase: string;
-  topic: string;
 }

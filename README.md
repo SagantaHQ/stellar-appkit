@@ -216,7 +216,7 @@ That's a working wallet connect flow. Everything past here is what you reach for
 | Albedo | `createAlbedoConnector()` | Ready — no install required (popup-based) |
 | xBull | `createXBullConnector()` | Ready — extension + PWA |
 | Ledger | `createLedgerConnector()` | Ready for pubkey + plain tx signing; Soroban auth-entry signing is stubbed (see [Known limitations](#known-limitations)) |
-| WalletConnect (Lobstr, Hana, Hot Wallet, mobile) | `createWalletConnectConnector()` | **Not yet implemented** — the adapter shape exists but every method throws; see the roadmap |
+| WalletConnect (Lobstr, Hana, Hot Wallet, mobile) | `createWalletConnectConnector()` | Ready — QR pairing + `stellar_signXDR` / `stellar_signMessage` via `@walletconnect/sign-client` (peer dep) |
 
 ---
 
@@ -670,7 +670,6 @@ The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-ap
 
 Flagged explicitly rather than silently half-working:
 
-- **WalletConnect adapter isn't implemented** — the shape exists (`createWalletConnectConnector`), every method throws with a pointer to what's needed. Blocks Lobstr, Hana, Hot Wallet, and mobile deep-linking.
 - **Ledger Soroban auth-entry signing is stubbed** — reconstructing a valid `SorobanAuthorizationEntry` from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at rather than risk shipping something that produces invalid auth entries. Plain transaction signing and public-key/multi-account derivation both work. (Standalone `signAuthEntry()` from app-supplied XDR works end-to-end with preview — only the *production* of signed auth entries inside `SorobanConnection.invoke()` is stubbed.)
 - **Ledger's `signTransaction` payload shape** is implemented against the most standard pattern but isn't 100% confirmed from published docs alone — worth checking against your installed `@ledgerhq/hw-app-str` version before production use.
 - **"Locked" reachability isn't detected for Freighter** — the freighter-api SDK doesn't expose a distinct unlock-state check, so it reports `'available'` once installed, even if locked. xBull's reachability now correctly reports `'not-installed'` when the extension isn't detected (previously always reported `'available'` due to the web-wallet fallback).
@@ -682,10 +681,9 @@ Flagged explicitly rather than silently half-working:
 
 ## Roadmap
 
-1. WalletConnect v2 relay adapter — Lobstr, Hana, Hot Wallet, mobile deep-linking
-2. `ui-react-native` — bottom sheet, Expo compatibility
-3. Ledger Soroban auth-entry signing
-4. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
+1. `ui-react-native` — bottom sheet, Expo compatibility
+2. Ledger Soroban auth-entry signing
+3. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
 
 Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
