@@ -42,8 +42,37 @@ export interface TransactionPreview {
   raw: { xdr: string; networkPassphrase: string };
 }
 
+/**
+ * Preview for a standalone Soroban auth-entry signature request (NOT a
+ * full transaction). Auth entries are signed separately from the outer
+ * transaction envelope in delegated / multi-party flows — a standalone
+ * signAuthEntry() call grants one or more contracts permission to act on
+ * the user's behalf, so this preview surfaces exactly which contracts
+ * and functions are being authorized.
+ *
+ * The previous version of the SDK skipped the preview flow for
+ * signAuthEntry() entirely, which meant a malicious app could quietly
+ * obtain broad authorizations across multiple contracts without ever
+ * showing the user what they were approving. This closes that gap.
+ */
+export interface AuthEntryPreview {
+  /** Contract IDs the auth entry grants permission to (one per rootInvocation + sub-invocation). */
+  authorizedContracts: string[];
+  /** Functions being authorized (e.g. ['transfer', 'approve']). */
+  authorizedFunctions: string[];
+  /** Total invocation count (root + sub-invocations). >3 is flagged as a broad grant. */
+  invocationCount: number;
+  /** Risk flags derived from the auth tree — broad grants, unverified contracts, etc. */
+  riskFlags: RiskFlag[];
+  /** The raw auth entry XDR, for callers that want to log or display it. */
+  raw: { authEntryXdr: string };
+}
+
 /** Return true to proceed with the actual wallet signature request, false to cancel it (surfaces to the caller as a normal user-rejected error). */
 export type PreviewHandler = (preview: TransactionPreview) => Promise<boolean>;
+
+/** Return true to proceed with the auth-entry signature request, false to cancel. */
+export type AuthEntryPreviewHandler = (preview: AuthEntryPreview) => Promise<boolean>;
 
 export interface PreviewOptions {
   /** Contract IDs considered known/verified. Anything else touched by an invokeHostFunction op is flagged — omit entirely to skip this check (there's no built-in registry to fall back on). */
@@ -83,6 +112,285 @@ export async function buildTransactionPreview(
     riskFlags: txRiskFlags,
     raw: { xdr, networkPassphrase },
   };
+}
+
+/**
+ * A single balance delta extracted from a Soroban simulation's
+ * `stateChanges` array. Each entry describes what changed for one
+ * account/contract/trustline/etc. — e.g. "your XLM balance went from
+ * 1000 to 900 (−100)" or "trustline for USDC was created".
+ *
+ * For SEP-41 contract token balances, the contract ID and the holder
+ * address are surfaced separately so the UI can render "Send 100 USDC
+ * to G..." rather than "contract storage was modified".
+ */
+export interface BalanceDelta {
+  /** What kind of ledger entry changed: 'account' (native XLM), 'trustline' (asset), 'contract' (contract data — incl. SEP-41 token balances), 'offer', 'data', 'claimableBalance', 'liquidityPool'. */
+  kind: 'account' | 'trustline' | 'contract' | 'offer' | 'data' | 'claimableBalance' | 'liquidityPool' | 'unknown';
+  /** Human-readable description of the change, e.g. "XLM balance: 1000 → 900 (−100)". */
+  summary: string;
+  /** The account/contract address affected, if applicable. */
+  address?: string;
+  /** Asset label for trustline changes, e.g. "USDC:G...". */
+  asset?: string;
+  /** Numeric delta (positive = increase, negative = decrease), when computable. */
+  delta?: string;
+  /** 'created' | 'updated' | 'deleted' — corresponds to the state change type. */
+  change: 'created' | 'updated' | 'deleted';
+}
+
+/**
+ * Extracts human-readable balance deltas from a Soroban
+ * `simulateTransaction` success response.
+ *
+ * The previous version of the SDK surfaced only the *intended* amount
+ * for SEP-41 token calls (decoded from call args), not the actual
+ * balance changes the network would apply. This function walks the
+ * simulation's `stateChanges` array — which is the network's own
+ * authoritative statement of what would change — and produces a list
+ * of deltas that can be shown in a preview UI as "your balance will
+ * go from X to Y".
+ *
+ * Pass the simulation response object (the same one
+ * `server.simulateTransaction()` returns, or that
+ * `SorobanConnection.previewInvoke()` already calls internally).
+ * Returns an empty array if the simulation has no state changes (e.g.
+ * a read-only call) or if the response shape isn't recognized.
+ */
+export async function decodeSimulationDeltas(simulation: unknown): Promise<BalanceDelta[]> {
+  if (!simulation || typeof simulation !== 'object') return [];
+
+  const sim = simulation as { stateChanges?: unknown[] };
+  if (!Array.isArray(sim.stateChanges)) return [];
+
+  const sdk = await import('@stellar/stellar-sdk');
+  const deltas: BalanceDelta[] = [];
+
+  for (const raw of sim.stateChanges) {
+    if (!raw || typeof raw !== 'object') continue;
+    const change = raw as { type: number; key: unknown; before: unknown; after: unknown };
+
+    // Skip entries with no key — the decoder can't do anything useful
+    // without one, and a null key in the simulation response usually
+    // means the server couldn't resolve the entry (which we shouldn't
+    // crash on, just skip).
+    if (change.key == null) continue;
+
+    // The SDK's parsed response gives us xdr.LedgerKey / xdr.LedgerEntry
+    // objects. The raw (un-parsed) response gives base64 strings —
+    // handle both so this works regardless of which form the caller
+    // passes (server.simulateTransaction returns the parsed form).
+    let key: import('@stellar/stellar-sdk').xdr.LedgerKey;
+    try {
+      key = typeof change.key === 'string'
+        ? sdk.xdr.LedgerKey.fromXDR(change.key, 'base64')
+        : (change.key as import('@stellar/stellar-sdk').xdr.LedgerKey);
+    } catch {
+      continue;
+    }
+
+    let before: import('@stellar/stellar-sdk').xdr.LedgerEntry | null = null;
+    let after: import('@stellar/stellar-sdk').xdr.LedgerEntry | null = null;
+    try {
+      before = change.before == null
+        ? null
+        : typeof change.before === 'string'
+          ? sdk.xdr.LedgerEntry.fromXDR(change.before, 'base64')
+          : (change.before as import('@stellar/stellar-sdk').xdr.LedgerEntry);
+      after = change.after == null
+        ? null
+        : typeof change.after === 'string'
+          ? sdk.xdr.LedgerEntry.fromXDR(change.after, 'base64')
+          : (change.after as import('@stellar/stellar-sdk').xdr.LedgerEntry);
+    } catch {
+      // Malformed before/after — skip this entry rather than failing the whole list.
+      continue;
+    }
+
+    const delta = decodeStateChange(key, before, after, change.type, sdk);
+    if (delta) deltas.push(delta);
+  }
+
+  return deltas;
+}
+
+/**
+ * Maps a single state change (key + before + after + type) into a
+ * human-readable BalanceDelta. The XDR shape varies by entry kind
+ * (account, trustline, contractData, offer, ...), so this switches on
+ * `key.switch().name` and pulls the relevant fields off each.
+ *
+ * Note on types: stellar-sdk's `Int64` is a BigInt-like wrapper (extends
+ * `Hyper` from `@stellar/js-xdr`) — call `.toBigInt()` to get a real
+ * bigint out of it. Switching on `.name` returns the union of all
+ * LedgerEntryType variants ('account' | 'trustline' | 'offer' | ...),
+ * NOT a 'ledgerKey*' prefixed string.
+ */
+function decodeStateChange(
+  key: import('@stellar/stellar-sdk').xdr.LedgerKey,
+  before: import('@stellar/stellar-sdk').xdr.LedgerEntry | null,
+  after: import('@stellar/stellar-sdk').xdr.LedgerEntry | null,
+  type: number,
+  sdk: typeof import('@stellar/stellar-sdk')
+): BalanceDelta | null {
+  // Guard against non-XDR key objects (e.g. a plain JS object that
+  // doesn't have the .switch() method the XDR union types do). The
+  // caller already filtered null/undefined, but a malformed entry with
+  // a non-XDR object key can still slip through — better to skip it
+  // than crash the whole decoder.
+  if (typeof (key as { switch?: unknown }).switch !== 'function') return null;
+
+  // type: 0 = create, 1 = update, 2 = delete (per stellar-xdr's LedgerEntryChangeType)
+  const change: BalanceDelta['change'] = type === 0 ? 'created' : type === 2 ? 'deleted' : 'updated';
+
+  const kind = key.switch().name;
+
+  if (kind === 'account') {
+    const accountKey = key.account();
+    // accountId is a PublicKey; .ed25519() returns the 32-byte raw key Buffer.
+    // StrKey.encodeEd25519PublicKey converts that to the G... string form.
+    const pubKeyBuf = accountKey.accountId().ed25519();
+    const address = sdk.StrKey.encodeEd25519PublicKey(pubKeyBuf);
+    const beforeBal = int64ToBigInt(before?.data()?.account()?.balance());
+    const afterBal = int64ToBigInt(after?.data()?.account()?.balance());
+    return {
+      kind: 'account',
+      address,
+      asset: 'XLM',
+      change,
+      summary: formatAccountDelta(address, beforeBal, afterBal, change),
+      delta: beforeBal !== undefined && afterBal !== undefined
+        ? (afterBal - beforeBal).toString()
+        : undefined,
+    };
+  }
+
+  if (kind === 'trustline') {
+    const tlKey = key.trustLine();
+    const account = sdk.StrKey.encodeEd25519PublicKey(tlKey.accountId().ed25519());
+    const tlAsset = tlKey.asset();
+    const assetKind = tlAsset.switch().name;
+    let asset: string;
+    if (assetKind === 'assetTypeCreditAlphanum4') {
+      const alpha = tlAsset.alphaNum4();
+      asset = `${alpha.assetCode().toString('utf8')}:${short(sdk.StrKey.encodeEd25519PublicKey(alpha.issuer().ed25519()))}`;
+    } else if (assetKind === 'assetTypeCreditAlphanum12') {
+      const alpha = tlAsset.alphaNum12();
+      asset = `${alpha.assetCode().toString('utf8')}:${short(sdk.StrKey.encodeEd25519PublicKey(alpha.issuer().ed25519()))}`;
+    } else {
+      asset = 'liquidity pool share';
+    }
+    const beforeBal = int64ToBigInt(before?.data()?.trustLine()?.balance());
+    const afterBal = int64ToBigInt(after?.data()?.trustLine()?.balance());
+    return {
+      kind: 'trustline',
+      address: account,
+      asset,
+      change,
+      summary: formatTrustlineDelta(account, asset, beforeBal, afterBal, change),
+      delta: beforeBal !== undefined && afterBal !== undefined
+        ? (afterBal - beforeBal).toString()
+        : undefined,
+    };
+  }
+
+  if (kind === 'contractData') {
+    const cdKey = key.contractData();
+    const contract = sdk.Address.fromScAddress(cdKey.contract()).toString();
+    return {
+      kind: 'contract',
+      address: contract,
+      change,
+      summary: change === 'created'
+        ? `Contract ${short(contract)}: storage entry created`
+        : change === 'deleted'
+          ? `Contract ${short(contract)}: storage entry deleted`
+          : `Contract ${short(contract)}: storage entry updated`,
+    };
+  }
+
+  if (kind === 'offer') {
+    const offerId = key.offer().offerId().toString();
+    return {
+      kind: 'offer',
+      change,
+      summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Deleted' : 'Updated'} offer #${offerId}`,
+    };
+  }
+
+  if (kind === 'data') {
+    const dataKey = key.data().dataName().toString('utf8');
+    return {
+      kind: 'data',
+      change,
+      summary: `${change === 'created' ? 'Set' : change === 'deleted' ? 'Removed' : 'Updated'} account data entry "${dataKey}"`,
+    };
+  }
+
+  if (kind === 'claimableBalance') {
+    const balanceId = key.claimableBalance().balanceId().toXDR('base64');
+    return {
+      kind: 'claimableBalance',
+      change,
+      summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Claimed' : 'Updated'} claimable balance ${short(balanceId)}`,
+    };
+  }
+
+  if (kind === 'liquidityPool') {
+    return {
+      kind: 'liquidityPool',
+      change,
+      summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Deleted' : 'Updated'} liquidity pool`,
+    };
+  }
+
+  return {
+    kind: 'unknown',
+    change,
+    summary: `${change} an unrecognized ledger entry (${kind})`,
+  };
+}
+
+/**
+ * Coerces a stellar-sdk `Int64` (a Hyper wrapper) into a native bigint.
+ * Returns undefined if the input is undefined (the optional-chaining on
+ * `before?.data()?.account()?.balance()` can legitimately produce undefined).
+ */
+function int64ToBigInt(value: { toBigInt(): bigint } | undefined): bigint | undefined {
+  return value === undefined ? undefined : value.toBigInt();
+}
+
+function formatAccountDelta(address: string, before: bigint | undefined, after: bigint | undefined, change: BalanceDelta['change']): string {
+  if (change === 'created') return `New account ${short(address)} created with ${after !== undefined ? formatStroops(after) + ' XLM' : 'funding'}`;
+  if (change === 'deleted') return `Account ${short(address)} merged away`;
+  if (before !== undefined && after !== undefined) {
+    const diff = after - before;
+    const sign = diff >= 0n ? '+' : '';
+    return `XLM balance ${short(address)}: ${formatStroops(before)} → ${formatStroops(after)} (${sign}${formatStroops(diff)})`;
+  }
+  return `XLM balance ${short(address)} updated`;
+}
+
+function formatTrustlineDelta(account: string, asset: string, before: bigint | undefined, after: bigint | undefined, change: BalanceDelta['change']): string {
+  if (change === 'created') return `New trustline for ${asset} on ${short(account)}`;
+  if (change === 'deleted') return `Removed trustline for ${asset} on ${short(account)}`;
+  if (before !== undefined && after !== undefined) {
+    const diff = after - before;
+    const sign = diff >= 0n ? '+' : '';
+    return `${asset} balance ${short(account)}: ${formatStroops(before)} → ${formatStroops(after)} (${sign}${formatStroops(diff)})`;
+  }
+  return `${asset} balance ${short(account)} updated`;
+}
+
+/** Formats an integer amount of stroops as a decimal XLM/asset-unit string (1 XLM = 10,000,000 stroops). */
+function formatStroops(stroops: bigint): string {
+  const negative = stroops < 0n;
+  const abs = negative ? -stroops : stroops;
+  const whole = abs / 10_000_000n;
+  const frac = abs % 10_000_000n;
+  const fracStr = frac.toString().padStart(7, '0').replace(/0+$/, '');
+  const value = fracStr ? `${whole}.${fracStr}` : whole.toString();
+  return negative ? `-${value}` : value;
 }
 
 function decodeOperation(op: import('@stellar/stellar-sdk').Operation, sdk: typeof import('@stellar/stellar-sdk'), opts: PreviewOptions): DecodedOperation {
@@ -289,6 +597,83 @@ function decodeInvokeHostFunction(
   }
 
   return { type: op.type, summary, details, riskFlags: flags };
+}
+
+/**
+ * Builds a preview for a single Soroban auth entry (used when an app
+ * calls signAuthEntry() standalone, rather than signing the whole
+ * transaction). Surfaces the contract IDs and functions being
+ * authorized, plus risk flags for broad grants and unverified
+ * contracts.
+ *
+ * Auth entries are signed separately from the outer transaction
+ * envelope in delegated / multi-party flows — a standalone
+ * signAuthEntry() call can grant one or more contracts permission to
+ * act on the user's behalf, so this preview is critical for not
+ * silently approving broad authorization grants.
+ */
+export async function buildAuthEntryPreview(
+  authEntryXdr: string,
+  opts: PreviewOptions = {}
+): Promise<AuthEntryPreview> {
+  const sdk = await import('@stellar/stellar-sdk');
+  // Try base64 first (the most common encoding for XDR strings in
+  // Stellar), fall back to hex if base64 fails. This matches what
+  // SorobanAuthorizationEntry.fromXDR's auto-detection would do if the
+  // TS overloads allowed omitting the format with a string input.
+  let entry: import('@stellar/stellar-sdk').xdr.SorobanAuthorizationEntry;
+  try {
+    entry = sdk.xdr.SorobanAuthorizationEntry.fromXDR(authEntryXdr, 'base64');
+  } catch {
+    entry = sdk.xdr.SorobanAuthorizationEntry.fromXDR(authEntryXdr, 'hex');
+  }
+
+  const contractIds = new Set<string>();
+  const functionNames: string[] = [];
+  const riskFlags: RiskFlag[] = [];
+  let invocationCount = 0;
+
+  function walk(invocation: import('@stellar/stellar-sdk').xdr.SorobanAuthorizedInvocation) {
+    invocationCount++;
+    const fn = invocation.function();
+    if (fn.switch().name === 'sorobanAuthorizedFunctionTypeContractFn') {
+      const call = fn.contractFn();
+      const contractId = sdk.Address.fromScAddress(call.contractAddress()).toString();
+      const functionName = typeof call.functionName() === 'string'
+        ? (call.functionName() as string)
+        : call.functionName().toString();
+      contractIds.add(contractId);
+      functionNames.push(functionName);
+
+      const verified = checkVerified(contractId, opts.verifiedContracts);
+      if (verified === false) {
+        riskFlags.push({
+          severity: 'warning',
+          code: 'unverified-contract',
+          message: `Authorization grants permission to contract ${short(contractId)}, which isn't in your list of verified contracts.`,
+        });
+      }
+    }
+    invocation.subInvocations().forEach(walk);
+  }
+
+  walk(entry.rootInvocation());
+
+  if (contractIds.size > 1 || invocationCount > 3) {
+    riskFlags.push({
+      severity: 'warning',
+      code: 'broad-auth-grant',
+      message: `This authorization spans ${contractIds.size} contract(s) across ${invocationCount} call(s) — review carefully if you expected a single, narrow action.`,
+    });
+  }
+
+  return {
+    authorizedContracts: Array.from(contractIds),
+    authorizedFunctions: functionNames,
+    invocationCount,
+    riskFlags,
+    raw: { authEntryXdr },
+  };
 }
 
 function assessAuthEntries(auth: import('@stellar/stellar-sdk').xdr.SorobanAuthorizationEntry[], sdk: typeof import('@stellar/stellar-sdk')): RiskFlag | null {

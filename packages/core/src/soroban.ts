@@ -1,6 +1,11 @@
 import type { StellarAppKit } from './client.js';
 import { ConnectError } from './types.js';
-import { buildTransactionPreview, type TransactionPreview } from './decode.js';
+import {
+  buildTransactionPreview,
+  decodeSimulationDeltas,
+  type TransactionPreview,
+  type BalanceDelta,
+} from './decode.js';
 
 // Peer dependency — imported lazily (see `sdk()` below) so `core` doesn't
 // force a specific @stellar/stellar-sdk version on apps that only need the
@@ -140,18 +145,36 @@ export class SorobanConnection {
 
   /**
    * Builds and simulates like invoke() does, but stops there — returns a
-   * decoded preview (see decode.ts) with a simulation status attached,
-   * instead of executing the full sign/submit pipeline. Useful for showing
-   * "here's what this call will do, and whether it would even succeed"
-   * before the user commits to it.
+   * decoded preview (see decode.ts) with a simulation status AND balance
+   * deltas attached, instead of executing the full sign/submit pipeline.
+   * Useful for showing "here's what this call will do, whether it would
+   * even succeed, and how balances will change" before the user commits
+   * to it.
+   *
+   * Balance deltas are extracted from the simulation's `stateChanges`
+   * array — the network's own authoritative statement of what would
+   * change. For account/trustline entries this surfaces "XLM balance:
+   * 1000 → 900 (−100)" rather than just "you're calling transfer". For
+   * contract storage changes (including SEP-41 token balances), it
+   * surfaces "Contract C...: storage entry updated" — the previous
+   * version only decoded the *intended* amount from call args, not the
+   * actual deltas.
    *
    * Note invoke() itself already runs every signature through the preview
    * flow automatically (it calls wallet.signTransaction() under the hood,
    * which is where StellarAppKit's onPreviewTransaction hook lives) — this
    * method is for showing a preview earlier, e.g. inline in a confirm
-   * button, without needing to actually call invoke() first.
+   * button, without needing to actually call invoke() first. The balance
+   * deltas here are NOT included in the onPreviewTransaction hook (which
+   * fires at sign time, after the simulation has gone stale) — call this
+   * method explicitly if you want deltas.
    */
-  async previewInvoke(opts: InvokeOptions): Promise<TransactionPreview & { simulationStatus: 'success' | 'failed'; simulationError?: string }> {
+  async previewInvoke(opts: InvokeOptions): Promise<TransactionPreview & {
+    simulationStatus: 'success' | 'failed';
+    simulationError?: string;
+    /** Balance deltas extracted from the simulation's stateChanges — empty for failed simulations or read-only calls. */
+    balanceDeltas: BalanceDelta[];
+  }> {
     const sdk = await this.sdk();
     const rpc = await this.rpc();
     const server = await this.server();
@@ -177,10 +200,15 @@ export class SorobanConnection {
 
     const preview = await buildTransactionPreview(tx.toXDR(), this.networkPassphrase, this.wallet.previewOptions);
 
+    // Only decode deltas from successful simulations — failed ones don't
+    // have a stateChanges array, and decoding would just return [].
+    const balanceDeltas = isFailure ? [] : await decodeSimulationDeltas(simulation);
+
     return {
       ...preview,
       simulationStatus: isFailure ? 'failed' : 'success',
       simulationError: isFailure ? simulation.error : undefined,
+      balanceDeltas,
     };
   }
 

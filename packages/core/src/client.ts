@@ -19,7 +19,15 @@ import {
   type WalletReachability,
 } from './types.js';
 import { signInWithStellar, type SignInOptions, type SignInResult } from './siws.js';
-import { buildTransactionPreview, type PreviewHandler, type PreviewOptions, type TransactionPreview } from './decode.js';
+import {
+  buildTransactionPreview,
+  buildAuthEntryPreview,
+  type PreviewHandler,
+  type AuthEntryPreviewHandler,
+  type PreviewOptions,
+  type TransactionPreview,
+  type AuthEntryPreview,
+} from './decode.js';
 
 export interface StellarAppKitConfig {
   connectors: WalletConnector[];
@@ -35,7 +43,9 @@ export interface StellarAppKitConfig {
   syncAcrossTabs?: boolean;
   /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
   onPreviewTransaction?: PreviewHandler;
-  /** Passed through to buildTransactionPreview() — verifiedContracts, largeTransferThreshold. */
+  /** Called before every signAuthEntry() with a decoded preview of the auth tree — return false to cancel before the wallet ever sees the request. Standalone auth-entry signing can grant broad contract permissions, so this preview is critical. */
+  onPreviewAuthEntry?: AuthEntryPreviewHandler;
+  /** Passed through to buildTransactionPreview() / buildAuthEntryPreview() — verifiedContracts, largeTransferThreshold. */
   previewOptions?: PreviewOptions;
 }
 
@@ -76,6 +86,8 @@ export class StellarAppKit {
 
   /** Called before every signTransaction() — set by ui-web automatically, or assign your own for a non-UI preview flow (e.g. logging, a CLI confirmation prompt). */
   onPreviewTransaction: PreviewHandler | null = null;
+  /** Called before every signAuthEntry() — same contract as onPreviewTransaction, but for standalone auth-entry signing. Returns false to cancel before the wallet sees the request. */
+  onPreviewAuthEntry: AuthEntryPreviewHandler | null = null;
   previewOptions: PreviewOptions;
 
   private storage: ConnectStorage;
@@ -96,6 +108,7 @@ export class StellarAppKit {
     this.storage = config.storage ?? createWebStorage();
     this.customNetworkPassphrase = config.networkPassphrase;
     this.onPreviewTransaction = config.onPreviewTransaction ?? null;
+    this.onPreviewAuthEntry = config.onPreviewAuthEntry ?? null;
     this.previewOptions = config.previewOptions ?? {};
 
     if (config.syncAcrossTabs !== false) {
@@ -472,9 +485,32 @@ export class StellarAppKit {
     });
   }
 
-  /** Queued alongside signTransaction()/signMessage() — see enqueueSign. Doesn't currently go through the preview flow (see README's "known gaps"). */
-  signAuthEntry(authEntryXdr: string, opts?: SignOptions): Promise<SignAuthEntryResult> {
-    return this.enqueueSign(() => this.requireActiveConnector().signAuthEntry(authEntryXdr, opts));
+  /**
+   * Signs a Soroban auth entry. Queued alongside every other sign* call
+   * (see enqueueSign). If `onPreviewAuthEntry` is set, the auth entry is
+   * decoded and the handler is awaited *before* the wallet ever sees the
+   * request — rejecting there throws the same way a wallet-side rejection
+   * would, so callers don't need to special-case it. Pass `skipPreview:
+   * true` to bypass for a specific call (e.g. a flow already confirmed
+   * through some other UI).
+   *
+   * The preview surfaces the contract IDs and functions being authorized,
+   * plus risk flags for broad grants and unverified contracts — this
+   * closes a previous gap where standalone signAuthEntry() calls could
+   * silently grant broad contract permissions without user review.
+   */
+  signAuthEntry(authEntryXdr: string, opts?: SignOptions & { skipPreview?: boolean }): Promise<SignAuthEntryResult> {
+    return this.enqueueSign(async () => {
+      const connector = this.requireActiveConnector();
+
+      if (this.onPreviewAuthEntry && !opts?.skipPreview) {
+        const preview: AuthEntryPreview = await buildAuthEntryPreview(authEntryXdr, this.previewOptions);
+        const approved = await this.onPreviewAuthEntry(preview);
+        if (!approved) throw ConnectError.rejected(connector.id);
+      }
+
+      return connector.signAuthEntry(authEntryXdr, opts);
+    });
   }
 
   /** Queued alongside signTransaction()/signAuthEntry() — see enqueueSign. */
