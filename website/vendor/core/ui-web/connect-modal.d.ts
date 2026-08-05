@@ -1,4 +1,4 @@
-import type { StellarAppKit } from '@saganta/stellar-appkit';
+import type { StellarAppKit } from '../index.js';
 export type PresentationMode = 'auto' | 'modal' | 'bottom-sheet' | 'inline';
 /**
  * `<saganta-appkit-modal>` — the single UI entry point. Attach a

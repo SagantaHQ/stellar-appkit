@@ -132,7 +132,7 @@
       <p>Every connector tree-shakes independently. See <a class="inline-link" href="./index.html#">the landing page</a> for the verified bundle-size numbers.</p>
 
       <h2 id="installation">Installation</h2>
-      <pre class="code-block">npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web</pre>
+      <pre class="code-block">npm install @saganta/stellar-appkit</pre>
       <p>Wallet SDKs are peer dependencies — install the ones for the connectors you actually use:</p>
       <pre class="code-block">npm install @stellar/stellar-sdk              <span class="cm"># always — the base Stellar/Soroban SDK</span>
 npm install @stellar/freighter-api            <span class="cm"># if using createFreighterConnector</span>
@@ -149,7 +149,7 @@ npm install @ledgerhq/hw-app-str \
   createAlbedoConnector,
   createXBullConnector,
 } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
-<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit-ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
+<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
 
 <span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
   network: <span class="str">'PUBLIC'</span>,

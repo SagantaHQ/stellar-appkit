@@ -12,19 +12,17 @@ website/
   assets/
     site.css          # shared design tokens + component styles
   vendor/
-    core/               # vendored build of @saganta/stellar-appkit
-    ui-web/               # vendored build of @saganta/stellar-appkit-ui-web
+    core/               # vendored build of @saganta/stellar-appkit (ui-web/ lives inside it — see below)
 ```
 
-`vendor/` is a **copied build output**, not a symlink — this directory needs to be self-contained for static hosting. Regenerate it after any change to `packages/core` or `packages/ui-web`:
+`vendor/` is a **copied build output**, not a symlink — this directory needs to be self-contained for static hosting. `@saganta/stellar-appkit/ui-web` is a subpath of the core package (not a separate one — see ARCHITECTURE.md §8), so `vendor/core/ui-web/` comes along automatically when you copy `packages/core/dist/`. Regenerate after any change to `packages/core`:
 
 ```bash
 # from the repo root
 npm run build
-rm -rf website/vendor/core website/vendor/ui-web
-mkdir -p website/vendor/core website/vendor/ui-web
+rm -rf website/vendor/core
+mkdir -p website/vendor/core
 cp -r packages/core/dist/* website/vendor/core/
-cp -r packages/ui-web/dist/* website/vendor/ui-web/
 ```
 
 ## Local preview

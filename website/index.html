@@ -199,7 +199,7 @@
           <a class="btn" href="./docs.html">Read the docs</a>
           <a class="btn" href="./demo.html">See the full demo</a>
         </div>
-        <p class="hero-note"><code>npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web</code></p>
+        <p class="hero-note"><code>npm install @saganta/stellar-appkit</code></p>
       </div>
 
       <div class="decode-panel" aria-hidden="true">
@@ -284,16 +284,20 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
       </div>
       <div class="stat-row">
         <div class="stat">
-          <div class="num">14.1kb</div>
-          <div class="lbl">Bundled with only the Freighter connector imported</div>
+          <div class="num">36.9kb</div>
+          <div class="lbl">Initial chunk with only the Freighter connector imported (real code-splitting build, not a single-file one)</div>
         </div>
         <div class="stat">
-          <div class="num">20.2kb</div>
+          <div class="num">43.3kb</div>
           <div class="lbl">With Freighter, Albedo, and xBull all imported together</div>
         </div>
         <div class="stat">
           <div class="num">0kb</div>
-          <div class="lbl">For any connector you don't import — checked by grepping the actual output bundle for wallet-specific code, not assumed</div>
+          <div class="lbl">For any connector you don't import — checked by grepping the actual output chunk for wallet-specific code, not assumed</div>
+        </div>
+        <div class="stat">
+          <div class="num">~1.4mb</div>
+          <div class="lbl"><code>@stellar/stellar-sdk</code> — a separate lazy chunk, only loaded on the first actual sign or Soroban call, not part of the numbers above</div>
         </div>
       </div>
     </div>
@@ -311,7 +315,7 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
   createFreighterConnector,
   createAlbedoConnector,
 } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
-<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit-ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
+<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
 
 <span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
   network: <span class="str">'PUBLIC'</span>,
@@ -367,7 +371,7 @@ connectButton.addEventListener(<span class="str">'click'</span>, () =&gt; modal.
 </script>
 <script type="module">
   import { StellarAppKit, createFreighterConnector, createAlbedoConnector, createXBullConnector } from './vendor/core/index.js';
-  import './vendor/ui-web/index.js';
+  import './vendor/core/ui-web/index.js';
 
   const appkit = new StellarAppKit({
     network: 'PUBLIC',

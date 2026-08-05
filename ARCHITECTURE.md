@@ -31,13 +31,16 @@ Two build strategies are viable for the connector layer itself:
 ## 1. Monorepo layout
 
 ```
-saganta-connect/
+saganta-stellar-appkit/
 ├── packages/
 │   ├── core/                 # framework-agnostic: adapters, unified API, Soroban, SIWS, state
-│   ├── react/                 # React hooks + <ConnectProvider> (web)
-│   ├── react-native/          # RN hooks + <ConnectProvider> (Expo-compatible)
-│   ├── ui-web/                 # Web Components (Shadow DOM), modal/inline/bottom-sheet, themeable
-│   ├── ui-react-native/         # RN bottom-sheet + modal + inline, themeable
+│   │   └── src/ui-web/        # Web Components (Shadow DOM), modal/inline/bottom-sheet, themeable —
+│   │                            published as the @saganta/stellar-appkit/ui-web subpath, not a
+│   │                            separate package (see §8) — merging it eliminated a whole class of
+│   │                            version-drift bug between two packages that were never used apart
+│   ├── react/                 # React hooks + <ConnectProvider> (web) — not yet built
+│   ├── react-native/          # RN hooks + <ConnectProvider> (Expo-compatible) — not yet built
+│   ├── ui-react-native/         # RN bottom-sheet + modal + inline, themeable — not yet built
 │   └── siws-verify/              # tiny server-side verifier for Sign-In With Stellar (Node/edge)
 ├── examples/
 │   ├── next-app/
@@ -239,7 +242,7 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 
 ## 8. Naming
 
-**Decided:** `@saganta/stellar-appkit` (core), `@saganta/stellar-appkit-ui-web`, `@saganta/stellar-appkit-siws-verify`. Product name in prose/UI: **Stellar AppKit**. Scoped under `@saganta` — positions this as part of the existing Saganta product line (embedded wallets, gas sponsorship, smart accounts, payment APIs) rather than a fully independent brand, while "Stellar AppKit" itself reads cleanly on its own in READMEs, the modal's branding footer, and anywhere it's mentioned without the `@saganta/` scope attached.
+**Decided:** `@saganta/stellar-appkit` (core, including the `/ui-web` subpath) and `@saganta/stellar-appkit-siws-verify`. Originally shipped as three packages — `core`, `ui-web`, and `siws-verify` — but `ui-web` was never usable without `core` and depended on it via a version range, which is exactly the kind of seam that drifts. Merged into one package with a subpath export instead: `@saganta/stellar-appkit/ui-web` is still a separate module a bundler only evaluates if actually imported (verified — see §9), so nothing about tree-shaking changed, but there's no longer a version-compatibility question between two things that were always installed together anyway. `siws-verify` stayed separate — it's genuinely different (server-side Node code, not browser client code) and genuinely optional in a different way. Product name in prose/UI: **Stellar AppKit**. Scoped under `@saganta` — positions this as part of the existing Saganta product line (embedded wallets, gas sponsorship, smart accounts, payment APIs) rather than a fully independent brand, while "Stellar AppKit" itself reads cleanly on its own in READMEs, the modal's branding footer, and anywhere it's mentioned without the `@saganta/` scope attached.
 
 ---
 
@@ -261,6 +264,6 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 
 ## 10. What's scaffolded in this pass
 
-`packages/core` — fully typed, working TypeScript for: unified types, the SEP-43-aligned error model, the connector registry, four real adapters (Freighter, Albedo, xBull, Ledger) plus a stub WalletConnect adapter to fill in with the relay client, the `StellarAppKit` unified facade (now multi-session — see §1.5 above), `SorobanConnection`, and the SIWS client. `packages/ui-web` implements the full modal/bottom-sheet/inline UI including the new network-mismatch and account-switcher/picker views. This is the foundation every remaining UI package will sit on — worth reviewing the interface shapes in `types.ts` before further UI work, since changing them later is the expensive kind of change.
+`packages/core` — fully typed, working TypeScript for: unified types, the SEP-43-aligned error model, the connector registry, four real adapters (Freighter, Albedo, xBull, Ledger) plus a stub WalletConnect adapter to fill in with the relay client, the `StellarAppKit` unified facade (now multi-session — see §1.5 above), `SorobanConnection`, and the SIWS client. Its `ui-web/` subdirectory (published as the `@saganta/stellar-appkit/ui-web` subpath — see §8) implements the full modal/bottom-sheet/inline UI including the network-mismatch and account-switcher/picker views. This is the foundation every remaining UI package will sit on — worth reviewing the interface shapes in `types.ts` before further UI work, since changing them later is the expensive kind of change.
 
 Two things are stubbed rather than faked, flagged clearly in code comments rather than silently half-working: `SorobanConnection`'s auth-entry signing within the `invoke()` pipeline, and Ledger's Soroban auth-entry signing specifically (`signAuthEntry` in `ledger.ts`) — both need the same underlying piece (constructing a valid `SorobanAuthorizationEntry` credentials structure from a raw signature), which is real Soroban-specific XDR work worth doing carefully rather than guessing at.

@@ -15,7 +15,7 @@ Stellar already has solid wallet-connection plumbing — [SEP-43](https://github
 - A **first-class Soroban layer** — simulate → prepare → sign → submit as one call, with typed contract clients, instead of hand-rolling `rpc.Server` calls per app.
 - **Multi-wallet sessions**, hardware wallet support, and network-mismatch recovery that goes further than "fail with a generic error."
 
-Every connector is its own independently tree-shakeable module — pick one wallet or all of them, nothing you don't import ships in your bundle (verified: a Freighter-only build is 14.1kb; adding Albedo and xBull brings it to 20.2kb, with zero code for either when they're not imported).
+Every connector is its own independently tree-shakeable module — pick one wallet or all of them, nothing you don't import ships in your bundle. Verified with a real code-splitting bundler config, not a naive single-file one: the initial chunk is 36.9kb with only Freighter imported and 43.3kb with Freighter, Albedo, and xBull all imported together — zero code for a wallet you don't import. The bigger weight (`@stellar/stellar-sdk`, ~1.4MB) is a separate chunk that only loads on the first actual sign or Soroban call, not part of that initial number.
 
 ---
 
@@ -55,8 +55,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 
 | Package | What it is |
 |---|---|
-| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. |
-| [`@saganta/stellar-appkit-ui-web`](./packages/ui-web) | The themeable `<saganta-appkit-modal>` Web Component. |
+| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath — separate entry point, so importing only the core client never pulls in UI code. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 
 See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap.
@@ -66,7 +65,7 @@ See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, posi
 ## Installation
 
 ```bash
-npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web
+npm install @saganta/stellar-appkit
 ```
 
 Wallet SDKs are peer dependencies — install the ones for the connectors you actually use:
@@ -92,7 +91,7 @@ import {
   createAlbedoConnector,
   createXBullConnector,
 } from '@saganta/stellar-appkit';
-import '@saganta/stellar-appkit-ui-web'; // registers <saganta-appkit-modal>
+import '@saganta/stellar-appkit/ui-web'; // registers <saganta-appkit-modal>
 
 const appkit = new StellarAppKit({
   network: 'PUBLIC',
@@ -292,11 +291,10 @@ packages/
       siws.ts                      # Sign-In With Stellar client
       tab-sync.ts                    # BroadcastChannel cross-tab sync
       storage.ts, events.ts            # session persistence, typed event emitter
-  ui-web/                # @saganta/stellar-appkit-ui-web
-    src/
-      connect-modal.ts    # the <saganta-appkit-modal> custom element
-      tokens.ts, styles.ts  # design tokens and the generated stylesheet
-      icons.ts, a11y.ts       # inline SVG icons, focus trap
+      ui-web/                            # @saganta/stellar-appkit/ui-web — separate subpath export, not bundled into the main entry
+        connect-modal.ts                   # the <saganta-appkit-modal> custom element
+        tokens.ts, styles.ts                 # design tokens and the generated stylesheet
+        icons.ts, a11y.ts                      # inline SVG icons, focus trap
   siws-verify/           # @saganta/stellar-appkit-siws-verify
     src/index.ts          # server-side SIWS verification
 examples/
@@ -318,7 +316,7 @@ npm run typecheck   # typechecks every package
 
 Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`.
 
-The workspace-internal dependency (`ui-web` and `siws-verify` both depend on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on real packages, not just something that happens to resolve inside this monorepo via workspace linking.
+The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
 
 ---
 

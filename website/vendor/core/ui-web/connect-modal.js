@@ -1,4 +1,4 @@
-import { ConnectError, NetworkMismatchError } from '@saganta/stellar-appkit';
+import { ConnectError, NetworkMismatchError } from '../index.js';
 import { darkTheme, lightTheme, themeToCssDeclarations } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon } from './icons.js';
