@@ -162,8 +162,31 @@ export interface SignAuthEntryResult {
 }
 
 export interface SignMessageResult {
+  /** The signature itself — encoding varies per wallet (base64 for Freighter/Ledger, hex for Albedo). Decoded by the verifier. */
   signedMessage: string;
   signerAddress: string;
+  /**
+   * Base64 of the exact byte sequence that was passed to the wallet's
+   * signing function. This is what the verifier must hash/verify against —
+   * NOT necessarily the plaintext `message` argument the caller passed in.
+   *
+   * Why this exists: wallets do not all sign the same thing.
+   *  - Freighter, Ledger, and SEP-43-compliant wallets sign the raw UTF-8
+   *    bytes of the message string — `signedData` is just `base64(utf8(message))`.
+   *  - Albedo signs a derived value (`signed_message`, a hash of pubkey +
+   *    message produced server-side) rather than the raw message bytes —
+   *    `signedData` is `base64(hexDecode(signed_message))`.
+   *  - xBull signs a `fullMessage` that may include a wallet-added prefix —
+   *    `signedData` is `base64(utf8(fullMessage))`.
+   *
+   * The connector is the only code that knows what bytes the wallet actually
+   * signed; surfacing it here makes the verifier wallet-agnostic.
+   *
+   * Optional for backward compatibility with third-party connectors that
+   * haven't been updated yet — the verifier falls back to
+   * `Buffer.from(message, 'utf-8')` when `signedData` is absent.
+   */
+  signedData?: string;
 }
 
 /**

@@ -8,6 +8,9 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "bun test",
+    "test:core": "bun test --cwd packages/core",
+    "test:siws-verify": "bun test --cwd packages/siws-verify",
     "version": "npm --workspaces version",
     "publish": "npm --workspaces publish --access public"
   },
@@ -21,6 +24,7 @@
     "@ledgerhq/hw-transport-webhid": "^6.36.0",
     "@ledgerhq/hw-transport-webusb": "^6.35.0",
     "@stellar/freighter-api": "^4.1.0",
+    "@stellar/stellar-sdk": "^13.0.0",
     "@types/node": "^26.1.2",
     "typescript": "^7.0.2"
   }

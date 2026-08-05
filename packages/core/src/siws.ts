@@ -27,6 +27,19 @@ export interface SignInResult {
   message: string;
   signedMessage: string;
   signerAddress: string;
+  /**
+   * Base64 of the exact byte sequence the wallet signed — see
+   * `SignMessageResult.signedData`. Forward this to the server alongside
+   * `message`/`signedMessage`/`signerAddress` so `verifySiws` can verify
+   * against the bytes the wallet actually signed, regardless of which
+   * wallet the user picked.
+   *
+   * Optional: omitted when the connector is a legacy/third-party one that
+   * doesn't populate it. The verifier falls back to verifying against
+   * `Buffer.from(message, 'utf-8')` in that case (correct for any
+   * SEP-43-style direct signer like Freighter or Ledger).
+   */
+  signedData?: string;
   issuedAt: string;
   expirationTime: string;
 }
@@ -48,7 +61,7 @@ export async function signInWithStellar(opts: SignInOptions): Promise<SignInResu
 
   const message = buildSiwsMessage({ ...opts, address, issuedAt, expirationTime });
 
-  const { signedMessage, signerAddress } = await connector.signMessage(message);
+  const { signedMessage, signerAddress, signedData } = await connector.signMessage(message);
 
   if (signerAddress !== address) {
     // Defends against a wallet returning a different signer than the one
@@ -65,6 +78,7 @@ export async function signInWithStellar(opts: SignInOptions): Promise<SignInResu
     message,
     signedMessage,
     signerAddress,
+    signedData,
     issuedAt: issuedAt.toISOString(),
     expirationTime: expirationTime.toISOString(),
   };

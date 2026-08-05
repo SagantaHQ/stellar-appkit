@@ -151,9 +151,13 @@ export function createFreighterConnector(): WalletConnector {
         if (!res.signedMessage) {
           throw ConnectError.internal('Freighter returned an empty signed message.', undefined, meta.id);
         }
+        // Freighter is a SEP-43-style direct signer: it signs the raw UTF-8
+        // bytes of the `message` string. Surface that as `signedData` so the
+        // verifier doesn't have to guess.
         return {
           signedMessage: bufferLikeToBase64(res.signedMessage),
           signerAddress: res.signerAddress,
+          signedData: Buffer.from(message, 'utf-8').toString('base64'),
         };
       });
     },

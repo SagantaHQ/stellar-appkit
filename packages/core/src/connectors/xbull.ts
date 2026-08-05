@@ -66,7 +66,13 @@ export function createXBullConnector(): WalletConnector {
   async function ensureBridge(): Promise<XBullWalletConnectBridge> {
     if (bridge) return bridge;
     const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
-    bridge = new xBullWalletConnect() as XBullWalletConnectBridge;
+    // Cast through `unknown` because the upstream SDK's shipped `.d.ts`
+    // declares `signMessage()` as returning `{ signedMessage; signerAddress }`,
+    // but the actual runtime return (verified against v0.4.0 of the package)
+    // is the richer `ISignMessageResult` shape with `message`, `fullMessage`,
+    // `success`, etc. Our bridge type reflects the real runtime shape so we
+    // can surface `fullMessage` to the verifier.
+    bridge = new xBullWalletConnect() as unknown as XBullWalletConnectBridge;
     return bridge;
   }
 
@@ -153,7 +159,29 @@ export function createXBullConnector(): WalletConnector {
           networkPassphrase: opts?.networkPassphrase,
           address: opts?.address ?? cachedAddress ?? undefined,
         });
-        return { signedMessage: result.signedMessage, signerAddress: result.signerAddress };
+        // xBull's `ISignMessageResult` distinguishes `message` (the string
+        // we passed in) from `fullMessage` (the string the wallet actually
+        // signed — xBull prepends a wallet-defined header/warning banner to
+        // the message before signing, similar to how EVM wallets prefix
+        // personal_sign with "\x19Ethereum Signed Message:\n<length>").
+        //
+        // The previous version of this connector returned only `signedMessage`
+        // and threw away `fullMessage`, which made server-side verification
+        // impossible: the verifier had no way to know what bytes xBull
+        // actually signed. We now surface `fullMessage` as `signedData`
+        // (base64 of its UTF-8 bytes), so the verifier can verify against
+        // the real signed payload.
+        //
+        // `fullMessage` was added to the xBull SDK's shipped types at v0.4.0
+        // — older versions may not return it. We fall back to the plaintext
+        // `message` if it's missing, which is the best we can do (and is
+        // correct for any version that signs the raw message verbatim).
+        const signedSource = result.fullMessage ?? result.message ?? message;
+        return {
+          signedMessage: result.signedMessage,
+          signerAddress: result.signerAddress,
+          signedData: Buffer.from(signedSource, 'utf-8').toString('base64'),
+        };
       });
     },
   };
@@ -168,6 +196,15 @@ interface XBullWalletConnectBridge {
   signMessage(
     message: string,
     opts?: { networkPassphrase?: string; address?: string }
-  ): Promise<{ signedMessage: string; signerAddress: string }>;
+  ): Promise<{
+    success: true;
+    /** The original message string passed in. */
+    message: string;
+    /** The full string the wallet actually signed (may include a wallet-added prefix). Present in v0.4.0+. */
+    fullMessage?: string;
+    /** The signature. */
+    signedMessage: string;
+    signerAddress: string;
+  }>;
   closeConnections(): void;
 }

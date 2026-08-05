@@ -243,9 +243,18 @@ export function createLedgerConnector(options: LedgerConnectorOptions = {}): Wal
         if (!currentAddress) throw ConnectError.invalidRequest('Ledger is not connected.', undefined, meta.id);
         const str = await ensureStrApp();
         const path = pathForIndex(accountCache.get(currentAddress) ?? currentIndex);
-        const result = await str.signMessage(path, Buffer.from(message, 'utf-8'));
+        // Ledger's Stellar app signs the raw UTF-8 bytes of `message` directly
+        // (it's a SEP-43-style direct signer, same as Freighter). Surface that
+        // as `signedData` so the verifier uses the same code path as every
+        // other direct signer.
+        const messageBuffer = Buffer.from(message, 'utf-8');
+        const result = await str.signMessage(path, messageBuffer);
         const signatureBuffer = 'signature' in result ? result.signature : (result as Buffer);
-        return { signedMessage: signatureBuffer.toString('base64'), signerAddress: currentAddress };
+        return {
+          signedMessage: signatureBuffer.toString('base64'),
+          signerAddress: currentAddress,
+          signedData: messageBuffer.toString('base64'),
+        };
       });
     },
 
