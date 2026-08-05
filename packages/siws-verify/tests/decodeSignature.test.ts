@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'bun:test';
 import { Keypair } from '@stellar/stellar-sdk';
 import { verifySiws, type SiwsPayload } from '../src/index.js';
-import { buildSiwsMessage, makeSiwsFixture } from '../../core/tests/helpers';
+import { buildSiwsMessage, makeSiwsFixture } from './helpers';
 
 /**
  * `decodeSignature` is internal to the verifier — it accepts either

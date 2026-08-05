@@ -5,7 +5,7 @@ import {
   type SiwsPayload,
   type VerifySiwsOptions,
 } from '../src/index.js';
-import { buildSiwsMessage, makeSiwsFixture } from '../../core/tests/helpers';
+import { buildSiwsMessage, makeSiwsFixture } from './helpers';
 
 /**
  * End-to-end tests for `verifySiws` — the server-side function that

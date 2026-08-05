@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --cwd packages/core typecheck && bun run --cwd packages/core build && bun run --cwd packages/siws-verify typecheck",
     "test": "bun test",
     "test:core": "bun test --cwd packages/core",
     "test:siws-verify": "bun test --cwd packages/siws-verify",
