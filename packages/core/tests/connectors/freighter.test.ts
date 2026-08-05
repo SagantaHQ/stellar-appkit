@@ -61,11 +61,14 @@ describe('createFreighterConnector — signMessage', () => {
   const message = 'localhost wants you to sign in with your Stellar account:\nG...\n\nStatement: x';
   const address = 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA';
 
-  test('returns signedData = base64(utf8(message)) — the raw bytes the wallet signed', async () => {
-    // Freighter signs the UTF-8 bytes of `message` directly. The connector
-    // must surface exactly those bytes as `signedData` so the verifier can
-    // verify against them without guessing.
-    const fakeSig = Buffer.from('a'.repeat(64), 'ascii'); // 64-byte signature
+  test('returns signedData = base64(sha256("Stellar Signed Message:\\n" + message)) — SEP-0053', async () => {
+    // Freighter uses SEP-0053 message encoding (confirmed by reading the
+    // extension source at extension/src/helpers/stellar.ts):
+    //   SIGN_MESSAGE_PREFIX = "Stellar Signed Message:\n"
+    //   encodeSep53Message = (message) => sha256(prefix + utf8(message))
+    // The connector must surface the SHA-256 hash of the prefixed message
+    // as `signedData`, so the verifier can verify against it directly.
+    const fakeSig = Buffer.from('a'.repeat(64), 'ascii');
     fakeApi.signMessage = async () => ({
       signedMessage: fakeSig,
       signerAddress: address,
@@ -76,7 +79,13 @@ describe('createFreighterConnector — signMessage', () => {
 
     expect(result.signedMessage).toBe(fakeSig.toString('base64'));
     expect(result.signerAddress).toBe(address);
-    expect(result.signedData).toBe(Buffer.from(message, 'utf-8').toString('base64'));
+
+    // signedData = base64(sha256("Stellar Signed Message:\n" + utf8(message)))
+    const { createHash } = await import('crypto');
+    const prefix = Buffer.from('Stellar Signed Message:\n', 'utf-8');
+    const msgBytes = Buffer.from(message, 'utf-8');
+    const expectedHash = createHash('sha256').update(Buffer.concat([prefix, msgBytes])).digest();
+    expect(result.signedData).toBe(expectedHash.toString('base64'));
   });
 
   test('passes the message and opts through to freighter-api', async () => {
@@ -115,7 +124,12 @@ describe('createFreighterConnector — signMessage', () => {
     const result = await connector.signMessage(message);
 
     expect(result.signedMessage).toBe(sigB64);
-    expect(result.signedData).toBe(Buffer.from(message, 'utf-8').toString('base64'));
+    // signedData is the SEP-0053 hash, not raw utf8(message)
+    const { createHash } = await import('crypto');
+    const prefix = Buffer.from('Stellar Signed Message:\n', 'utf-8');
+    const msgBytes = Buffer.from(message, 'utf-8');
+    const expectedHash = createHash('sha256').update(Buffer.concat([prefix, msgBytes])).digest();
+    expect(result.signedData).toBe(expectedHash.toString('base64'));
   });
 
   test('throws ConnectError when freighter returns an empty signedMessage', async () => {

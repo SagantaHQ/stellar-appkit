@@ -277,6 +277,21 @@ async function defaultVerifySignature(opts: {
       candidates.push({ label: 'signedData', buffer: Buffer.from(opts.signedData, 'base64') });
     }
     candidates.push({ label: 'utf8(message)', buffer: messageUtf8 });
+
+    // SEP-0053: Freighter signs sha256("Stellar Signed Message:\n" + message)
+    // This is the EXACT prefix Freighter uses (confirmed by reading the
+    // extension source at extension/src/helpers/stellar.ts):
+    //   export const SIGN_MESSAGE_PREFIX = "Stellar Signed Message:\n";
+    //   export const encodeSep53Message = (message) => {
+    //     const messageBytes = Buffer.from(message, "utf8");
+    //     const prefixBytes = Buffer.from(SIGN_MESSAGE_PREFIX, "utf8");
+    //     return hash(Buffer.concat([prefixBytes, messageBytes]));  // SHA-256
+    //   };
+    // The signature is over the SHA-256 hash, not the raw prefixed bytes.
+    const SEP53_PREFIX = 'Stellar Signed Message:\n';
+    const sep53Prefixed = Buffer.concat([Buffer.from(SEP53_PREFIX, 'utf-8'), messageUtf8]);
+    candidates.push({ label: 'sha256("Stellar Signed Message:\\n" + message) [SEP-0053]', buffer: createHash('sha256').update(sep53Prefixed).digest() });
+
     candidates.push({ label: 'sha256(message)', buffer: createHash('sha256').update(messageUtf8).digest() });
     candidates.push({ label: 'sha512(message)', buffer: createHash('sha512').update(messageUtf8).digest() });
     candidates.push({ label: 'sha512(message) truncated', buffer: createHash('sha512').update(messageUtf8).digest().subarray(0, 32) });

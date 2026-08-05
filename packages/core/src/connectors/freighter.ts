@@ -151,13 +151,21 @@ export function createFreighterConnector(): WalletConnector {
         if (!res.signedMessage) {
           throw ConnectError.internal('Freighter returned an empty signed message.', undefined, meta.id);
         }
-        // Freighter is a SEP-43-style direct signer: it signs the raw UTF-8
-        // bytes of the `message` string. Surface that as `signedData` so the
-        // verifier doesn't have to guess.
+        // Freighter uses SEP-0053 message encoding (confirmed by reading
+        // the extension source at extension/src/helpers/stellar.ts):
+        //   SIGN_MESSAGE_PREFIX = "Stellar Signed Message:\n"
+        //   encodeSep53Message = (message) => sha256(prefix + utf8(message))
+        // The signature is over the SHA-256 hash of the prefixed message,
+        // NOT the raw message bytes. We surface this hash as `signedData`
+        // so the verifier can verify against it directly.
+        const { createHash } = await import('crypto');
+        const sep53Prefix = Buffer.from('Stellar Signed Message:\n', 'utf-8');
+        const messageBytes = Buffer.from(message, 'utf-8');
+        const sep53Hash = createHash('sha256').update(Buffer.concat([sep53Prefix, messageBytes])).digest();
         return {
           signedMessage: bufferLikeToBase64(res.signedMessage),
           signerAddress: res.signerAddress,
-          signedData: Buffer.from(message, 'utf-8').toString('base64'),
+          signedData: sep53Hash.toString('base64'),
         };
       });
     },
