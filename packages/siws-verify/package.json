@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "prepare": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@saganta/stellar-appkit": "^0.1.0"

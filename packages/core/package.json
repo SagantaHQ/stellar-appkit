@@ -26,7 +26,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "prepare": "tsc -p tsconfig.json"
   },
   "peerDependencies": {
     "@stellar/stellar-sdk": "^13.0.0",

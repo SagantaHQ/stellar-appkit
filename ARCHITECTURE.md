@@ -229,6 +229,28 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 
 `packages/siws-verify` provides the server-side counterpart — `verifySIWS(payload, { expectedDomain, expectedNonce })` — which checks expiry, domain binding, and the ed25519 signature against the claimed address, returning a plain boolean/claims object so it can sit in front of any session/JWT layer without dictating one. Apps that already run a SEP-10 anchor auth server can opt into that flow instead; `signIn()` accepts a `strategy: 'siws' | 'sep10'` flag.
 
+### 6.1 The `signedData` contract — unified signature verification across wallets
+
+The first version of `signIn()` returned `{ message, signedMessage, signerAddress }` but **not** the bytes the wallet actually signed. The verifier then guessed those bytes were `utf8(message)` — true for Freighter and Ledger (direct signers), but **wrong for Albedo** (signs a server-derived `signed_message` that the connector was discarding) and **wrong for xBull** (signs a `fullMessage` that may include a wallet-added prefix, also discarded). Result: SIWS verification failed for any transformative-signer wallet.
+
+The fix is a unified four-field contract. Every connector now returns a fourth field on `SignMessageResult`:
+
+```ts
+interface SignMessageResult {
+  signedMessage: string;  // signature (base64 or hex)
+  signerAddress: string;  // G... address
+  signedData?: string;    // base64 of the exact byte sequence the wallet signed
+}
+```
+
+- **Freighter, Ledger** (direct signers): `signedData = base64(utf8(message))`
+- **Albedo** (transformative): `signedData = base64(hexDecode(res.signed_message))` — the connector now surfaces what Albedo actually signed, instead of discarding it
+- **xBull** (prefixed): `signedData = base64(utf8(result.fullMessage))` — the connector now surfaces the prefixed message, instead of discarding it
+
+`signInWithStellar()` threads `signedData` through into `SignInResult`, and the verifier (`verifySiws`) uses `signedData` when present, falling back to `utf8(message)` for backward compatibility with third-party connectors that haven't been updated yet. The fallback is correct for any direct signer (Freighter, Ledger, SEP-43) and fails loudly for transformative signers (Albedo, xBull) — which is the right thing to do rather than silently passing. No custom `verifySignatureFn` is needed for any supported wallet anymore.
+
+Also fixes `decodeSignature`: the old regex heuristic could misfire on pure-alphanumeric base64 strings of even length. The new implementation tries base64 first (with a 64-byte length check), falls back to hex (also 64-byte length check).
+
 ---
 
 ## 7. Mobile wallet connectivity
@@ -246,6 +268,34 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 
 ---
 
+## 8.5 Transaction preview & risk architecture
+
+The preview layer is the actual differentiator over passing raw XDR through to a signature popup. Three pieces compose it, all in `packages/core/src/decode.ts`:
+
+**1. `buildTransactionPreview(xdr, networkPassphrase, opts)`** — decodes every operation in a transaction into a human-readable `DecodedOperation` with `summary`, `details`, and per-op `riskFlags`. Covers 12 operation types: payment, createAccount, pathPaymentStrictSend/Receive, changeTrust, manageSell/BuyOffer, accountMerge, setOptions, clawback, bumpSequence, manageData, createClaimableBalance, claimClaimableBalance, invokeHostFunction. Risk flags include:
+
+- `account-merge` (danger) — always flagged; permanently closes the source account
+- `signer-change` (danger) — always flagged; common account-takeover pattern
+- `threshold-change` (warning) — changes future signing requirements
+- `large-transfer` (warning) — opt-in via `previewOptions.largeTransferThreshold`
+- `unverified-contract` (warning) — opt-in via `previewOptions.verifiedContracts`
+- `broad-auth-grant` (warning) — auto-flagged when an auth tree spans >1 contract or >3 invocations
+- `fee-bump` (info), `unrecognized-operation` (info)
+
+The preview is wired into `signTransaction()` via the `onPreviewTransaction` hook (set automatically when `<saganta-appkit-modal>` is attached, or assignable directly for non-UI flows). Returning `false` cancels the request before the wallet ever sees it, surfacing as a normal user-rejected error.
+
+**2. `decodeSimulationDeltas(simulation)`** — extracts human-readable `BalanceDelta[]` from a Soroban `simulateTransaction` success response's `stateChanges` array. Each delta describes what changed for one ledger entry: account balances (XLM), trustline balances (assets), contract storage, offers, data entries, claimable balances, liquidity pools. For balance updates, the delta includes the before → after transition and the signed difference, e.g. `"XLM balance GA...: 1000 → 900 (−100)"`. This is the network's own authoritative statement of what would change — far more reliable than the previous approach of decoding intended amounts from call args.
+
+`SorobanConnection.previewInvoke()` calls this internally and returns `balanceDeltas` alongside `simulationStatus` and `simulationError`.
+
+**3. `buildAuthEntryPreview(authEntryXdr, opts)`** — decodes a standalone Soroban `SorobanAuthorizationEntry` into an `AuthEntryPreview` surfacing `authorizedContracts`, `authorizedFunctions`, `invocationCount`, plus risk flags for broad grants and unverified contracts. This closes a previous gap where standalone `signAuthEntry()` calls bypassed the preview flow entirely — exactly the case where a risk preview matters most, since auth entries grant contracts permission to act on the user's behalf.
+
+Wired into `signAuthEntry()` via the `onPreviewAuthEntry` hook, with the same `skipPreview: true` escape hatch as `signTransaction`. The `previewOptions` (verifiedContracts, largeTransferThreshold) are shared between the transaction preview and the auth-entry preview.
+
+**4. Signature-request queueing** — every `sign*` call (`signTransaction`, `signAuthEntry`, `signMessage`, `signIn`) goes through `enqueueSign()`, which serializes requests via a Promise chain so concurrent calls resolve in call order rather than racing the wallet extension. The `signQueueChange` event and `pendingSignCount` getter expose queue depth — useful for showing "1 of 3 signing requests in progress" in the UI.
+
+---
+
 ## 9. Phased roadmap
 
 | Phase | Scope | Status |
@@ -254,6 +304,7 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 | 1 | `core`: `SorobanConnection` (invoke pipeline, typed contract client), SIWS client + `siws-verify` | **done** (auth-entry signing within the pipeline is still a stub — see §10) |
 | 1.5 | Multi-session client (connect several wallets at once, switch active), richer `getReachability()`, typed `NetworkMismatchError` with optional auto-retry, cross-tab session sync, Ledger hardware adapter with multi-account support | **done** |
 | 1.75 | Transaction decoding (`decode.ts`) — human-readable operations, risk flags (account-merge, signer-change, large-transfer, unverified-contract, broad-auth-grant), an opt-in `onPreviewTransaction` hook wired into `signTransaction()`, signature-request queueing, `SorobanConnection.previewInvoke()` | **done** |
+| 1.8 | Unified `signedData` SIWS contract (§6.1) — every connector surfaces the exact bytes the wallet signed; verifier works for Freighter/Ledger/Albedo/xBull with no custom `verifySignatureFn`. Simulation-based Soroban balance-delta preview (`decodeSimulationDeltas`). Auth-entry preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`) wired into `signAuthEntry()`. CI suite: 80 tests, typecheck + build + test on Linux + macOS. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | next |
 | 3 | React wrapper around `ui-web` (thin — the web component already owns all state) | next |
@@ -267,3 +318,5 @@ const { message, signedMessage, signerAddress } = await connect.signIn({
 `packages/core` — fully typed, working TypeScript for: unified types, the SEP-43-aligned error model, the connector registry, four real adapters (Freighter, Albedo, xBull, Ledger) plus a stub WalletConnect adapter to fill in with the relay client, the `StellarAppKit` unified facade (now multi-session — see §1.5 above), `SorobanConnection`, and the SIWS client. Its `ui-web/` subdirectory (published as the `@saganta/stellar-appkit/ui-web` subpath — see §8) implements the full modal/bottom-sheet/inline UI including the network-mismatch and account-switcher/picker views. This is the foundation every remaining UI package will sit on — worth reviewing the interface shapes in `types.ts` before further UI work, since changing them later is the expensive kind of change.
 
 Two things are stubbed rather than faked, flagged clearly in code comments rather than silently half-working: `SorobanConnection`'s auth-entry signing within the `invoke()` pipeline, and Ledger's Soroban auth-entry signing specifically (`signAuthEntry` in `ledger.ts`) — both need the same underlying piece (constructing a valid `SorobanAuthorizationEntry` credentials structure from a raw signature), which is real Soroban-specific XDR work worth doing carefully rather than guessing at.
+
+**Note (Phase 1.8):** standalone `signAuthEntry()` calls now go through a real preview flow (`buildAuthEntryPreview` + `onPreviewAuthEntry`, see §8.5) — what's still stubbed is the *signing* of those entries inside `SorobanConnection.invoke()`. The two are separate concerns: the preview decodes and risk-assesses whatever auth entry the app hands to `signAuthEntry()`, regardless of where it came from; the stub is about *producing* signed auth entries programmatically as part of the `invoke()` pipeline. A standalone `signAuthEntry()` call from app code (e.g. delegated auth flows where the app has the unsigned entry XDR in hand) now works end-to-end with preview.

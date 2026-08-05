@@ -34,14 +34,17 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Human-readable transaction previews — every operation decoded, not just a summary
 - Risk flags: account-merge and signer-changes are always flagged; large-transfer and unverified-contract checks are opt-in and app-configurable
 - Soroban call preview backed by real simulation — see "this would fail" before signing anything
+- **Soroban balance-delta preview** — surfaces the actual balance changes (XLM, trustline assets) the network would apply, not just the intended amount decoded from call args
+- **Auth-entry preview** — standalone `signAuthEntry()` calls are now decoded and risk-assessed before reaching the wallet, surfacing the contracts/functions being authorized
 - Signature-request queueing — concurrent sign calls resolve in order instead of racing the wallet
+
+**Identity**
+- Sign-In With Stellar (SIWS) — a self-issued, SEP-43-based message-signing flow analogous to Sign-In With Ethereum, with a server-side verifier package
+- **Unified `signedData` contract** — every connector surfaces the exact bytes the wallet signed, so SIWS verification works out of the box for Freighter, Albedo, xBull, and Ledger with no per-wallet custom verifier
 
 **Soroban**
 - One `invoke()` call covers build → simulate → prepare → sign → submit → poll
 - Low-level escape hatches (`simulate`, `prepare`, `submit`, `pollStatus`) for anything `invoke()` doesn't cover
-
-**Identity**
-- Sign-In With Stellar (SIWS) — a self-issued, SEP-43-based message-signing flow analogous to Sign-In With Ethereum, with a server-side verifier package
 
 **UI**
 - `<saganta-appkit-modal>` — a Shadow DOM Web Component, framework-agnostic, zero runtime dependency
@@ -79,6 +82,61 @@ npm install @ledgerhq/hw-app-str \
             @ledgerhq/hw-transport-webhid \
             @ledgerhq/hw-transport-webusb     # if using createLedgerConnector
 ```
+
+### Installing the dev version directly from git
+
+For testing an in-development version before it's published to npm, install directly from the GitHub repo. There are three patterns depending on what you're doing — **Pattern 3 is the recommended one** for active development, because monorepo workspace packages don't always install cleanly via direct git URLs.
+
+**Pattern 1 — Install a specific commit (most reproducible):**
+
+```bash
+npm install SagantaHQ/stellar-appkit#<commit-sha> --save
+```
+
+This clones the repo at that commit, runs `npm install` for its own dependencies, and (if the install succeeds) runs the per-package `prepare` script to build `dist/`. If you hit "Cannot find module './dist/index.js'", the build didn't run — fall back to Pattern 3.
+
+**Pattern 2 — Install from a branch (follows latest work):**
+
+```bash
+npm install SagantaHQ/stellar-appkit#main --save
+```
+
+Same as above but tracks `main`. Each `npm update @saganta/stellar-appkit` will pull the latest commit and rebuild. Useful for staying current, but your `package-lock.json` will point at whatever commit was current when you last ran install — commit it to lock a specific state.
+
+**Pattern 3 — Local development with live reload (recommended while iterating):**
+
+If you're modifying stellar-appkit and testing it in a separate consumer app, link the local checkout so changes rebuild and pick up instantly without reinstalling:
+
+```bash
+# In the stellar-appkit checkout:
+cd stellar-appkit
+bun install           # or npm install
+bun run build         # produces dist/ in packages/core and packages/siws-verify
+
+# Link the core package globally:
+cd packages/core
+npm link              # registers @saganta/stellar-appkit as a global symlink
+
+# In your consumer app:
+cd my-app
+npm link @saganta/stellar-appkit
+```
+
+Now `my-app`'s `import { StellarAppKit } from '@saganta/stellar-appkit'` resolves to your local checkout. To rebuild after editing the source:
+
+```bash
+# In stellar-appkit/packages/core:
+bun run build         # rebuilds dist/ — my-app picks up the change on next dev-server reload
+```
+
+For `@saganta/stellar-appkit-siws-verify`, repeat from `packages/siws-verify` instead. The siws-verify package depends on `@saganta/stellar-appkit` — linking both packages locally (or linking siws-verify and letting it find core via the workspace) works; trying to install siws-verify from a direct git URL alone will fail because the workspace dependency on core won't be set up.
+
+**Troubleshooting git installs:**
+
+- **"Cannot find module './dist/index.js'"** — the `prepare` script didn't run, so `dist/` wasn't built. This happens with `npm install` from git in some npm versions when the host has no build tooling, or when the install runs as root with `--unsafe-perm` off. Fix: clone the repo manually, run `bun install && bun run build` inside, then `npm link` as in Pattern 3.
+- **"Cannot find module '@stellar/freighter-api'"** — the wallet SDK peer dependencies aren't auto-installed. Install them in your consumer app as listed above.
+- **TypeScript types not picked up** — make sure your consumer app's `tsconfig.json` has `"moduleResolution": "Bundler"` or `"Node16"`/`"NodeNext"` (the package uses subpath exports that older resolutions don't follow).
+- **`@saganta/stellar-appkit-siws-verify` fails to resolve `@saganta/stellar-appkit`** — the siws-verify package depends on core, but a direct git install doesn't set up the workspace symlink between them. Use Pattern 3 (local link) for siws-verify, or wait for the next npm publish.
 
 ---
 
@@ -168,7 +226,7 @@ Sessions persist across browser tabs automatically via `BroadcastChannel` where 
 
 ### Signing, transaction preview, and risk flags
 
-Every `signTransaction()` call is decoded and shown to the user *before* the wallet's own signature prompt — this is the actual point of departure from "pass raw XDR to a popup." Attaching `<saganta-appkit-modal>` wires this up automatically.
+Every `signTransaction()` call is decoded and shown to the user *before* the wallet's own signature prompt — this is the actual point of departure from "pass raw XDR to a popup." Every `signAuthEntry()` call gets the same treatment, decoding the auth tree to surface the contracts/functions being authorized. Attaching `<saganta-appkit-modal>` wires both up automatically.
 
 ```ts
 const appkit = new StellarAppKit({
@@ -180,15 +238,23 @@ const appkit = new StellarAppKit({
   },
 });
 
-// Without a UI package, supply your own handler — a CLI prompt, a log line, whatever fits:
+// Without a UI package, supply your own handlers — a CLI prompt, a log line, whatever fits:
 appkit.onPreviewTransaction = async (preview) => {
   console.log(preview.operations.map((op) => op.summary));
   console.log(preview.riskFlags); // account-merge and signer-change are always flagged, regardless of config
   return userConfirmedSomehow();
 };
+appkit.onPreviewAuthEntry = async (preview) => {
+  // Standalone auth-entry signing grants contracts permission to act on
+  // the user's behalf — this preview surfaces which contracts and functions.
+  console.log(preview.authorizedContracts, preview.authorizedFunctions);
+  console.log(preview.riskFlags); // broad-auth-grant + unverified-contract
+  return userConfirmedSomehow();
+};
 
 await appkit.signTransaction(xdr);                      // decoded, previewed, then sent to the wallet
 await appkit.signTransaction(xdr, { skipPreview: true }); // bypass for a flow already confirmed elsewhere
+await appkit.signAuthEntry(authEntryXdr);               // auth tree decoded, previewed, then sent to the wallet
 ```
 
 Concurrent `signTransaction`/`signAuthEntry`/`signMessage` calls are queued and resolved in order rather than racing the wallet extension. `appkit.pendingSignCount` and the `signQueueChange` event expose queue depth.
@@ -204,9 +270,13 @@ const soroban = new SorobanConnection({
   wallet: appkit,
 });
 
-// See what a call would do — and whether it would even succeed — before signing:
+// See what a call would do, whether it would even succeed, and how balances
+// would change — all before signing:
 const preview = await soroban.previewInvoke({ contractId, method: 'transfer', args });
 console.log(preview.simulationStatus, preview.operations[0].summary);
+console.log(preview.balanceDeltas);
+// e.g. [{ kind: 'account', asset: 'XLM', delta: '-1000000000',
+//         summary: 'XLM balance GA...: 1000 → 900 (-100)' }]
 
 // Build, simulate, prepare, sign (previewed automatically), submit, and poll — one call:
 const result = await soroban.invoke({ contractId, method: 'transfer', args });
@@ -215,20 +285,27 @@ const result = await soroban.invoke({ contractId, method: 'transfer', args });
 ### Sign-In With Stellar
 
 ```ts
-const { message, signedMessage, signerAddress } = await appkit.signIn({
+const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
   statement: 'Sign in to My App',
   nonce: await fetch('/api/siws/nonce').then((r) => r.text()),
 });
-// POST { message, signedMessage, signerAddress } to your backend
+// POST { message, signedMessage, signerAddress, signedData } to your backend
+// — signedData is what the verifier needs to handle wallets (Albedo, xBull)
+// that sign something other than the raw message bytes.
 ```
 
 ```ts
 // server side
 import { verifySiws } from '@saganta/stellar-appkit-siws-verify';
 
-const result = await verifySiws(payload, { expectedDomain: 'app.example.com', expectedNonce });
+const result = await verifySiws(
+  { message, signedMessage, signerAddress, signedData },  // signedData is optional — falls back to utf8(message)
+  { expectedDomain: 'app.example.com', expectedNonce }
+);
 if (result.ok) { /* result.claims.address is verified */ }
 ```
+
+No per-wallet custom verifier is needed — `verifySiws` works out of the box for Freighter, Ledger, Albedo, and xBull. The `signedData` field is what makes Albedo (which signs a server-derived hash) and xBull (which signs a prefixed `fullMessage`) verifiable without app-side special-casing. If a third-party connector doesn't populate `signedData`, the verifier falls back to `utf8(message)` — correct for any direct signer (Freighter, Ledger, SEP-43) and fails loudly for transformative signers, rather than silently passing.
 
 ### Theming
 
@@ -307,14 +384,19 @@ ARCHITECTURE.md          # design rationale, positioning, phased roadmap
 ## Setup (contributing to this repo)
 
 ```bash
-npm install
-npm run build       # builds every package
-npm run typecheck   # typechecks every package
+bun install           # installs dependencies for every workspace package
+bun run typecheck     # typechecks every package (core → build → siws-verify, in dependency order)
+bun run build         # builds every package
+bun test              # runs the full test suite (80 tests across 8 files, ~350ms)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same typecheck → build → test pipeline on Linux and macOS on every push and pull request. A cross-platform check on macOS runs after the Linux job passes, to catch platform-specific path/encoding issues.
+
+See [TESTING.md](./TESTING.md) for what each test file covers and how to add tests for a new wallet connector.
 
 ### Publishing
 
-Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`.
+Each package's `package.json` has an explicit `"files": ["dist", "src"]` and a `"prepare": "tsc -p tsconfig.json"` script. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. The `prepare` script also runs on `npm install` from a git URL, so direct-from-git installs build `dist/` automatically (see "Installing the dev version directly from git" above). Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`.
 
 The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
 
@@ -325,12 +407,10 @@ The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-ap
 Flagged explicitly rather than silently half-working:
 
 - **WalletConnect adapter isn't implemented** — the shape exists (`createWalletConnectConnector`), every method throws with a pointer to what's needed. Blocks Lobstr, Hana, Hot Wallet, and mobile deep-linking.
-- **Ledger Soroban auth-entry signing is stubbed** — reconstructing a valid `SorobanAuthorizationEntry` from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at rather than risk shipping something that produces invalid auth entries. Plain transaction signing and public-key/multi-account derivation both work.
+- **Ledger Soroban auth-entry signing is stubbed** — reconstructing a valid `SorobanAuthorizationEntry` from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at rather than risk shipping something that produces invalid auth entries. Plain transaction signing and public-key/multi-account derivation both work. (Standalone `signAuthEntry()` from app-supplied XDR works end-to-end with preview — only the *production* of signed auth entries inside `SorobanConnection.invoke()` is stubbed.)
 - **Ledger's `signTransaction` payload shape** is implemented against the most standard pattern but isn't 100% confirmed from published docs alone — worth checking against your installed `@ledgerhq/hw-app-str` version before production use.
 - **"Locked" reachability isn't detected for Freighter or xBull** — neither SDK exposes a distinct unlock-state check, so both report `'available'` once installed, even if locked.
 - **xBull doesn't support Soroban auth-entry signing** — the underlying message protocol has an internal concept for it (`xdrType: 'Transaction' | 'AuthEntry'`), but the public `sign()` method doesn't expose a way to select it, so there's no reliable way to request it through the published SDK today.
-- **Soroban balance-delta preview is argument-based, not simulation-based** — recognized SEP-41 calls decode the intended amount directly from call arguments; the preview does not diff Soroban RPC simulation state changes, since that response shape isn't stable enough across protocol versions to rely on.
-- **`signAuthEntry()` doesn't go through the preview flow** — only `signTransaction()` does today. A Soroban call made via `SorobanConnection.invoke()` is still covered (the outer transaction signature is previewed), but a standalone `signAuthEntry()` call bypasses it.
 - **No React (or Vue/Svelte) wrapper yet** — `ui-web` is plain Web Components; a thin React wrapper is next on the roadmap, not yet built.
 - **No React Native UI** — `core` is platform-agnostic already (inject a `ConnectStorage`), but there's no native bottom-sheet package yet.
 
