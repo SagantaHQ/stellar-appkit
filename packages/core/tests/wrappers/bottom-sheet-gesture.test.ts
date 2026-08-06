@@ -14,14 +14,14 @@ import { test, expect, describe, mock, beforeEach } from 'bun:test';
 
 // Mock the gesture + motion packages
 const mockGestureDestroy = mock(() => {});
-const mockCreateGesture = mock((_el: HTMLElement, _config: unknown) => ({
+const mockDragGesture = mock((_el: HTMLElement, _handlers: unknown, _config?: unknown) => ({
   destroy: mockGestureDestroy,
 }));
 
 const mockAnimate = mock((_el: HTMLElement, _keyframes: unknown, _opts?: unknown) => {});
 
 mock.module('@use-gesture/vanilla', () => ({
-  createGesture: mockCreateGesture,
+  DragGesture: mockDragGesture,
 }));
 
 mock.module('motion', () => ({
@@ -39,27 +39,26 @@ mock.module('@stellar/freighter-api', () => ({
 }));
 
 beforeEach(() => {
-  mockCreateGesture.mockClear();
+  mockDragGesture.mockClear();
   mockAnimate.mockClear();
   mockGestureDestroy.mockClear();
 });
 
 describe('Bottom-sheet gesture setup', () => {
-  test('createGesture from @use-gesture/vanilla is importable and callable', async () => {
+  test('DragGesture from @use-gesture/vanilla is importable and callable', async () => {
     const vanillaMod = await import('@use-gesture/vanilla');
-    expect(vanillaMod.createGesture).toBeDefined();
-    expect(typeof vanillaMod.createGesture).toBe('function');
+    expect(vanillaMod.DragGesture).toBeDefined();
+    expect(typeof vanillaMod.DragGesture).toBe('function');
 
-    // Verify it can be called with a fake element and config
+    // Verify it can be called with a fake element, handlers, and config
     const fakeEl = { style: {}, addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
-    const result = vanillaMod.createGesture(fakeEl, {
-      axis: 'y',
+    const result = vanillaMod.DragGesture(fakeEl, {
       onDrag: () => {},
       onDragEnd: () => {},
-    });
+    }, { axis: 'y' });
     expect(result).toBeDefined();
     expect(typeof result.destroy).toBe('function');
-    expect(mockCreateGesture).toHaveBeenCalled();
+    expect(mockDragGesture).toHaveBeenCalled();
   });
 
   test('animate from motion is importable and callable', async () => {
@@ -67,18 +66,12 @@ describe('Bottom-sheet gesture setup', () => {
     expect(motionMod.animate).toBeDefined();
     expect(typeof motionMod.animate).toBe('function');
 
-    // Verify it can be called with a fake element
     const fakeEl = { style: {} } as unknown as HTMLElement;
     motionMod.animate(fakeEl, { transform: 'translateY(0px)' }, { type: 'spring' });
     expect(mockAnimate).toHaveBeenCalled();
   });
 
   test('gesture packages are optional — the modal code loads without them', async () => {
-    // The modal's setupBottomSheetGestures uses dynamic import() wrapped in
-    // try/catch. If the packages aren't installed, it silently no-ops.
-    // We verify the modules ARE installed in the dev environment (so the
-    // gesture works during development), but the modal code doesn't
-    // statically import them — it uses lazy import().
     expect(true).toBe(true);
   });
 });

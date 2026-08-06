@@ -672,23 +672,18 @@ export class SagantaAppKitModal extends HTMLElement {
     const panel = this.root.querySelector<HTMLElement>('.panel');
     if (!panel) return;
 
-    // Bind the gesture to the PANEL (the whole sheet), not just the handle.
-    // The handle is only 36x5px — too small a target. Binding to the panel
-    // lets the user grab anywhere on the sheet to drag it down.
-    // We use `filterTaps: true` so clicks on buttons inside the panel
-    // still work (the gesture only activates on actual drag movement, not taps).
-    const dragTarget = panel;
-
-    const createGesture = (gestureModule as unknown as {
-      createGesture: (el: HTMLElement, config: unknown) => { destroy: () => void };
-    }).createGesture;
+    // Use DragGesture (the pre-built drag recognizer), NOT createGesture
+    // (which is a low-level factory that takes an array of action names).
+    // DragGesture(target, handlers, config) → { destroy() }
+    const DragGesture = (gestureModule as unknown as {
+      DragGesture: (el: HTMLElement, handlers: unknown, config?: unknown) => { destroy: () => void };
+    }).DragGesture;
     const animate = (motionModule as unknown as {
       animate: (el: HTMLElement, keyframes: unknown, opts?: unknown) => void;
     }).animate;
 
     let currentY = 0;
     let sheetHeight = 0;
-    let isDragging = false;
 
     const measureSheet = () => {
       sheetHeight = panel.offsetHeight;
@@ -697,25 +692,19 @@ export class SagantaAppKitModal extends HTMLElement {
     // Clean up any previous gesture handler (e.g. from a re-render)
     this.gestureDestroyer?.destroy();
 
-    const gesture = createGesture(dragTarget, {
+    const gesture = DragGesture(panel, {
       axis: 'y' as const,
       filterTaps: true,
-      // Accept all pointer types (touch + mouse) so it works on desktop too
       pointer: { capture: true },
       onDragStart: () => {
         measureSheet();
-        isDragging = true;
-        // Disable the CSS transition during drag — otherwise the panel
-        // lags behind the finger because the transition interpolates.
         panel.style.transition = 'none';
         panel.style.willChange = 'transform';
       },
-      onDrag: (state: { movement: [number, number]; velocity: [number, number] }) => {
+      onDrag: (state: { movement: [number, number] }) => {
         const my = state.movement[1];
-        // Only allow dragging DOWN (positive Y), not up
         currentY = Math.max(0, my);
         panel.style.transform = `translateY(${currentY}px)`;
-        // Fade the backdrop as the sheet drags down
         const overlay = this.root.querySelector<HTMLElement>('.overlay');
         if (overlay && sheetHeight > 0) {
           const progress = currentY / sheetHeight;
@@ -724,15 +713,12 @@ export class SagantaAppKitModal extends HTMLElement {
       },
       onDragEnd: (state: { velocity: [number, number] }) => {
         const velocity = state.velocity;
-        isDragging = false;
         panel.style.willChange = 'auto';
-        // Re-enable CSS transition for the spring-back / close animation
         panel.style.transition = '';
 
         const shouldClose = velocity[1] > 0.5 || currentY > sheetHeight * 0.4;
 
         if (shouldClose) {
-          // Animate down and close
           animate(
             panel,
             { transform: `translateY(${sheetHeight + 100}px)` },
@@ -742,14 +728,12 @@ export class SagantaAppKitModal extends HTMLElement {
           if (overlay) {
             animate(overlay, { opacity: 0 }, { duration: 0.25 });
           }
-          // Close after the animation
           setTimeout(() => {
             this.close();
             panel.style.transform = '';
             currentY = 0;
           }, 250);
         } else {
-          // Spring back to open position
           animate(
             panel,
             { transform: 'translateY(0px)' },
@@ -762,6 +746,11 @@ export class SagantaAppKitModal extends HTMLElement {
           currentY = 0;
         }
       },
+    }, {
+      // Config (separate from handlers)
+      axis: 'y',
+      filterTaps: true,
+      pointer: { capture: true },
     });
 
     this.gestureDestroyer = gesture;

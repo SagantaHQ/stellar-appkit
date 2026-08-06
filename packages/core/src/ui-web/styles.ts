@@ -157,10 +157,11 @@ export function buildStyles(theme: ConnectTheme): string {
       overflow: hidden;
     }
     .wallet-tile img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 10px;
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border-radius: 7px;
+      padding: 0;
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
