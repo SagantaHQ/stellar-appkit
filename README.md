@@ -13,7 +13,7 @@ Stellar already has solid wallet-connection plumbing — [SEP-43](https://github
 - A **polished, themeable, cross-platform UI** (modal / bottom-sheet / inline) — the existing connector libraries are deliberately headless, so "sleek out of the box" is a gap, not a solved problem.
 - A **transaction preview** that decodes operations into plain language and flags risk *before* the wallet's own signature prompt — every wallet-connect kit passes raw XDR straight through today.
 - A **first-class Soroban layer** — simulate → prepare → sign → submit as one call, with typed contract clients, instead of hand-rolling `rpc.Server` calls per app.
-- **Multi-wallet sessions**, hardware wallet support, and network-mismatch recovery that goes further than "fail with a generic error."
+- **Network-mismatch recovery** that goes further than "fail with a generic error" — typed `NetworkMismatchError` with `expectedNetwork` / `actualNetwork`, plus an optional auto-retry mode that polls until the user switches networks. Hardware wallet support included (Ledger via WebHID/WebUSB, with multi-account derivation-path based account picking).
 
 Every connector is its own independently tree-shakeable module — pick one wallet or all of them, nothing you don't import ships in your bundle. The initial chunk is approximately 40kb with only Freighter imported (numbers may have shifted with the addition of typed contract clients and RPC failover — re-verify with your bundler's analyzer). Framework wrappers (`/react`, `/vue`, `/solid`, `/svelte`) are separate subpath exports — a React app never ships Vue or Svelte code. The bigger weight (`@stellar/stellar-sdk`, ~1.4MB) is a separate chunk that only loads on the first actual sign or Soroban call, not part of that initial number.
 
@@ -24,11 +24,11 @@ Every connector is its own independently tree-shakeable module — pick one wall
 **Wallet connectivity**
 - Unified adapter interface aligned with SEP-43, so new wallets are one file, not a redesign
 - Freighter, Albedo, xBull, and Ledger (WebHID/WebUSB) adapters, ready to use
-- Multiple wallets connected simultaneously — switch the active one without disconnecting the others
 - Hardware wallets with real multi-account support (derivation-path based) via `listAccounts()`/`selectAccount()`
 - Richer-than-boolean reachability (`'available' | 'locked' | 'not-installed' | 'unavailable'`)
 - Typed `NetworkMismatchError` with an optional auto-retry mode that polls until the user switches networks
 - Cross-tab session sync via `BroadcastChannel` — connect in one tab, every other tab reflects it
+- Multi-session client API (`sessions`, `switchAccount`) for apps that build their own wallet management UI — the built-in modal is single-wallet
 
 **Signing & transaction UX**
 - Human-readable transaction previews — every operation decoded, not just a summary
@@ -222,21 +222,22 @@ That's a working wallet connect flow. Everything past here is what you reach for
 
 ## Core concepts
 
-### Multiple wallets, switching, and account picking
+### Account picking (hardware wallets) and the multi-session API
 
-Connecting a second wallet doesn't replace the first — both stay connected.
+The underlying `StellarAppKit` client supports keeping multiple wallets connected at the API level — connecting a second wallet doesn't replace the first, and `switchAccount(walletId)` flips the active one without disconnecting. **Note:** the built-in `<saganta-appkit-modal>` UI is single-wallet — connecting a new wallet through the modal replaces the previous one in the UI, even though the underlying API keeps both sessions alive. The multi-session API is intended for apps that build their own wallet management UI on top of the client.
 
 ```ts
+// Hardware wallet account picking (Ledger exposes multiple derivable accounts):
+const accounts = await appkit.registry.getOrThrow('ledger').listAccounts();
+await appkit.switchAccount('ledger', accounts[2].address);
+
+// Advanced: multi-session API (for apps with custom wallet management UI):
 await appkit.connect('freighter');
-await appkit.connect('ledger'); // both connected now; Ledger is active
+await appkit.connect('ledger'); // both connected at the API level; Ledger is active
 
 appkit.sessions;                       // every connected session
 appkit.session;                        // the active one
 await appkit.switchAccount('freighter'); // back to Freighter, Ledger stays connected
-
-// Ledger exposes more than one derivable account:
-const accounts = await appkit.registry.getOrThrow('ledger').listAccounts();
-await appkit.switchAccount('ledger', accounts[2].address);
 ```
 
 ### Reachability and network handling

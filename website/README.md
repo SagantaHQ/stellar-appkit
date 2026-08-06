@@ -8,7 +8,7 @@ Static site — landing page, docs, and a fully interactive demo. No build step:
 website/
   index.html       # landing page — hero, features, wallets, code sample, live embedded modal
   docs.html         # documentation — sidebar nav, ported from the repo's README
-  demo.html          # full interactive playground (theming, multi-wallet, SIWS, tx preview)
+  demo.html          # full interactive playground (theming, wallet connect, SIWS, tx preview)
   assets/
     site.css          # shared design tokens + component styles
   vendor/
