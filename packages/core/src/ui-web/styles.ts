@@ -126,7 +126,39 @@ export function buildStyles(theme: ConnectTheme): string {
     .icon-btn:focus-visible { outline: 2px solid ${v('colorAccent', theme)}; outline-offset: 1px; }
     .icon-btn svg { width: 16px; height: 16px; }
 
-    .body { padding: 4px 10px 12px; overflow-y: auto; }
+    .body {
+      padding: 4px 10px 12px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: ${v('colorBorder', theme)} transparent;
+    }
+
+    /* Webkit (Chrome, Safari, Edge) — sleek custom scrollbar
+     * Uses the theme's border color for the thumb (subtle, not distracting),
+     * and the accent color on hover so the user can spot it when they need it.
+     * The thumb is narrow (4px) and rounded, matching the panel's radius language.
+     * Track is fully transparent — no secondary background stripe. */
+    .body::-webkit-scrollbar { width: 6px; }
+    .body::-webkit-scrollbar-track { background: transparent; }
+    .body::-webkit-scrollbar-thumb {
+      background: ${v('colorBorder', theme)};
+      border-radius: 9999px;
+      border: 1px solid transparent;
+      background-clip: padding-box;
+    }
+    .body::-webkit-scrollbar-thumb:hover {
+      background: ${v('colorAccent', theme)};
+      background-clip: padding-box;
+    }
+    /* Hide the scrollbar when not hovered — fades in on hover (sleek, macOS-style) */
+    .body { scrollbar-width: none; }
+    .body:hover { scrollbar-width: thin; }
+    .body::-webkit-scrollbar { width: 0; transition: width 0.2s ease; }
+    .body:hover::-webkit-scrollbar { width: 6px; }
+    /* Firefox fallback — always visible thin scrollbar (Firefox doesn't support hover-show) */
+    @supports not selector(::-webkit-scrollbar) {
+      .body { scrollbar-width: thin; }
+    }
 
     /* ---------- wallet list ---------- */
     .wallet-row {
