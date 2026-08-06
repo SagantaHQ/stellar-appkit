@@ -191,12 +191,25 @@ export function createXBullConnector(): WalletConnector {
         // instantiating the bridge — otherwise the bridge's synchronous
         // `window.xBullSDK` lookup fails and it silently opens the web
         // wallet popup, which is the exact bug users report ("opens the
-        // web wallet version instead of using the extension"). 2s is
-        // enough for content-script injection on a normal page load; if
-        // it doesn't appear, the bridge will fall back to the web wallet
-        // popup (which is still functional, just not what the user wanted).
+        // web wallet version instead of using the extension").
         await waitForXBullExtension();
         const b = await ensureBridge();
+
+        // Pre-flight check: if the xBull extension is injected but no
+        // wallet has been set up inside it yet, the extension throws an
+        // unhelpful "Wallet hasn't been set upp" (their typo) error.
+        // Catch it and surface a friendly message that tells the user
+        // exactly what to do: open the xBull extension and create/import
+        // a wallet.
+        const sdk = (typeof window !== 'undefined' ? window : globalThis) as { xBullSDK?: { isConnected?: boolean } };
+        if (sdk.xBullSDK && sdk.xBullSDK.isConnected === false) {
+          throw ConnectError.internal(
+            'xBull extension is installed but no wallet has been set up. Open the xBull extension in your browser toolbar and create or import a wallet, then try connecting again.',
+            undefined,
+            meta.id
+          );
+        }
+
         // Both flags are required together per the real IConnectParams shape —
         // we need both capabilities, so this is explicit rather than relying
         // on whatever the library defaults to when the params object is omitted.

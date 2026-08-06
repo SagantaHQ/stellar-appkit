@@ -2,7 +2,7 @@ import type { StellarAppKit, WalletAccountOption, WalletReachability, Transactio
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '../index.js';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
-import { icons, genericWalletIcon } from './icons.js';
+import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
 import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
 
@@ -469,11 +469,18 @@ export class SagantaAppKitModal extends HTMLElement {
           : '';
         const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
 
+        // Use the wallet's official icon URL first; fall back to our
+        // bundled inline SVG data-URI if the URL fails to load.
+        const fallbackIcon = getWalletIconDataUri(connector.id);
+        const onerrorHandler = fallbackIcon
+          ? `this.src='${fallbackIcon}'; this.onerror=null;`
+          : `this.style.display='none'; this.nextElementSibling.style.display='flex';`;
+
         return `
           <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability !== 'available'}" ${disabled ? 'disabled' : ''}>
             <span class="wallet-tile ${isConnecting ? 'connecting' : ''}">
-              <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-              <span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>
+              <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="${onerrorHandler}" />
+              ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
             </span>
             <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
             <span class="wallet-sub">${subLabel}</span>
