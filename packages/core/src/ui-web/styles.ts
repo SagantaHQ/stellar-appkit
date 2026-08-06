@@ -214,44 +214,178 @@ export function buildStyles(theme: ConnectTheme): string {
     .account {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
       padding: 6px 10px 14px;
     }
-    .account-row {
+
+    /* Account header — avatar + address + copy button */
+    .account-header {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px;
+      padding: 4px 0;
+    }
+    .account-header .account-avatar {
+      width: 42px;
+      height: 42px;
+    }
+    .account-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .account-info .account-address {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .account-info .account-network {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 2px;
+    }
+
+    /* Balance card — prominent display */
+    .balance-card {
+      padding: 20px;
+      border-radius: ${v('radiusLg', theme)};
+      background: ${v('colorSurfaceHover', theme)};
+      border: 1px solid ${v('colorBorder', theme)};
+      text-align: center;
+    }
+    .balance-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${v('colorTextMuted', theme)};
+      margin-bottom: 8px;
+    }
+    .balance-amount {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 6px;
+    }
+    .balance-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: ${v('fontDisplay', theme)};
+      letter-spacing: -0.02em;
+    }
+    .balance-unit {
+      font-size: 14px;
+      color: ${v('colorTextMuted', theme)};
+      font-weight: 500;
+    }
+    .balance-loading {
+      font-size: 16px;
+      color: ${v('colorTextMuted', theme)};
+    }
+
+    /* Quick action buttons */
+    .quick-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .action-btn {
+      all: unset;
+      box-sizing: border-box;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 8px;
       border-radius: ${v('radiusMd', theme)};
       background: ${v('colorBg', theme)};
       border: 1px solid ${v('colorBorder', theme)};
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      color: ${v('colorText', theme)};
+      transition: background 0.15s ease, border-color 0.15s ease;
     }
-    .account-avatar {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: ${v('colorAccent', theme)};
-      flex-shrink: 0;
-      overflow: hidden;
+    .action-btn:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorAccent', theme)};
+    }
+    .action-btn svg {
+      width: 20px;
+      height: 20px;
+      color: ${v('colorAccent', theme)};
+    }
+
+    /* Transaction history */
+    .tx-history {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .tx-header {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${v('colorTextMuted', theme)};
+      padding: 4px 0 8px;
+    }
+    .tx-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px;
+      border-radius: ${v('radiusSm', theme)};
+      transition: background 0.15s ease;
+    }
+    .tx-row:hover {
+      background: ${v('colorSurfaceHover', theme)};
+    }
+    .tx-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-    .account-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 50%;
-    }
-    .account-address {
-      font-family: ${v('fontMono', theme)};
-      font-size: 13px;
-      letter-spacing: -0.01em;
-    }
-    .account-network {
       font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .tx-success {
+      background: rgba(110, 231, 183, 0.15);
+      color: ${v('colorAccent', theme)};
+    }
+    .tx-failed {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+    .tx-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .tx-type {
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: capitalize;
+    }
+    .tx-date {
+      font-size: 11px;
       color: ${v('colorTextMuted', theme)};
       margin-top: 2px;
     }
-    .account-actions { display: flex; gap: 8px; margin-left: auto; }
+    .tx-amount {
+      font-size: 13px;
+      font-family: ${v('fontMono', theme)};
+      font-weight: 500;
+    }
+    .tx-in { color: ${v('colorAccent', theme)}; }
+    .tx-out { color: ${v('colorText', theme)}; }
+    .tx-empty {
+      padding: 24px 8px;
+      text-align: center;
+      font-size: 13px;
+      color: ${v('colorTextMuted', theme)};
+    }
     .btn {
       all: unset;
       box-sizing: border-box;

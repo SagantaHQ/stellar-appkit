@@ -46,6 +46,10 @@ export class SagantaAppKitModal extends HTMLElement {
   private copyState: 'idle' | 'copied' = 'idle';
   /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
   private copiedAddress: string | null = null;
+  /** Cached XLM balance for the connected account (in lumens, e.g. "123.4567890"). */
+  private cachedBalance: string | null = null;
+  /** Cached transaction history for the connected account (latest 5). */
+  private cachedTxHistory: Array<{ hash: string; type: string; amount: string; asset: string; date: string; success: boolean }> = [];
   private pendingAccountPicker: { connector: WalletConnector; accounts: WalletAccountOption[] } | null = null;
   private pendingPreview: { preview: TransactionPreview; resolve: (approved: boolean) => void; wasAlreadyOpen: boolean } | null = null;
   private releaseFocusTrap: (() => void) | null = null;
@@ -103,8 +107,7 @@ export class SagantaAppKitModal extends HTMLElement {
         this.render();
       }),
       client.on('sessionsChanged', () => {
-        this.refreshAvatars();
-        this.render();
+        this.refreshAccountData();
       }),
       client.on('error', (err) => {
         this.lastError = err;
@@ -182,38 +185,89 @@ export class SagantaAppKitModal extends HTMLElement {
   }
 
   /**
-   * Fetches avatars for all connected sessions (and account-picker
-   * accounts) in parallel, then re-renders. Uses the avatar cache so
-   * already-fetched avatars aren't re-fetched. Called on sessionsChanged
-   * and when the account picker appears.
+   * Fetches avatars + balance + transaction history for the connected
+   * account, then re-renders. Called on connect and sessionsChanged.
    */
-  private async refreshAvatars() {
+  private async refreshAccountData() {
     if (!this._client) return;
-
-    // Collect all addresses that need avatars: connected sessions + account picker.
-    const addressesToFetch: Array<{ address: string; connector: WalletConnector | null }> = [];
-    for (const session of this._client.sessions) {
-      addressesToFetch.push({
-        address: session.address,
-        connector: this._client.registry.get(session.walletId) ?? null,
-      });
+    const session = this._client.session;
+    if (!session) {
+      this.cachedBalance = null;
+      this.cachedTxHistory = [];
+      return;
     }
-    if (this.pendingAccountPicker) {
-      for (const account of this.pendingAccountPicker.accounts) {
-        addressesToFetch.push({
-          address: account.address,
-          connector: this.pendingAccountPicker.connector,
-        });
+
+    // Fetch avatar
+    const connector = this._client.activeConnector;
+    await this.fetchAvatar(session.address, connector);
+
+    // Fetch XLM balance + transaction history from Horizon
+    try {
+      const sdk = await import('@stellar/stellar-sdk');
+      const network = session.network;
+      const horizonUrl = network === 'PUBLIC'
+        ? 'https://horizon.stellar.org'
+        : 'https://horizon-testnet.stellar.org';
+      const horizon = new sdk.Horizon.Server(horizonUrl);
+
+      // Balance
+      try {
+        const account = await horizon.loadAccount(session.address);
+        const xlmBalance = account.balances.find(
+          (b: { asset_type: string; balance: string }) => b.asset_type === 'native'
+        );
+        if (xlmBalance) {
+          this.cachedBalance = parseFloat(xlmBalance.balance).toFixed(2);
+        } else {
+          this.cachedBalance = '0.00';
+        }
+      } catch {
+        this.cachedBalance = '0.00';
       }
+
+      // Transaction history (latest 5)
+      try {
+        const txs = await horizon.transactions().forAccount(session.address).limit(5).call();
+        const history: Array<{ hash: string; type: string; amount: string; asset: string; date: string; success: boolean }> = [];
+
+        for (const tx of txs.records) {
+          // Determine transaction type from the operations
+          let type = 'Transaction';
+          let amount = '';
+          let asset = 'XLM';
+
+          try {
+            const ops = await horizon.operations().forTransaction(tx.hash).limit(1).call();
+            if (ops.records.length > 0) {
+              const op = ops.records[0] as { type: string; amount?: string; asset_type?: string; asset_code?: string };
+              type = op.type || 'Transaction';
+              if (op.type === 'payment' || op.type === 'create_account') {
+                amount = parseFloat(op.amount || '0').toFixed(2);
+                if (op.asset_type && op.asset_type !== 'native') {
+                  asset = op.asset_code || 'UNKNOWN';
+                }
+              }
+            }
+          } catch { /* skip if ops can't be loaded */ }
+
+          const date = tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+          const success = tx.successful !== false;
+
+          // For received payments, amount is positive; for sent, negative
+          // (Horizon doesn't tell us direction easily, so we show it as-is)
+          history.push({ hash: tx.hash, type, amount: amount || '—', asset, date, success });
+        }
+
+        this.cachedTxHistory = history;
+      } catch {
+        this.cachedTxHistory = [];
+      }
+    } catch {
+      // stellar-sdk not available or network error — show without balance/history
+      this.cachedBalance = null;
+      this.cachedTxHistory = [];
     }
 
-    // Fetch in parallel — each call checks the cache first, so already-fetched
-    // avatars return immediately.
-    await Promise.all(
-      addressesToFetch.map(({ address, connector }) => this.fetchAvatar(address, connector))
-    );
-
-    // Re-render with the now-populated avatar cache.
     this.render();
   }
 
@@ -245,7 +299,7 @@ export class SagantaAppKitModal extends HTMLElement {
           // Fetch avatars for the picker accounts in the background —
           // the initial render shows gradient fallbacks, then avatars
           // pop in once fetched.
-          void this.refreshAvatars();
+          void this.refreshAccountData();
           return;
         }
       }
@@ -521,39 +575,74 @@ export class SagantaAppKitModal extends HTMLElement {
   }
 
   private renderConnected(): string {
-    const sessions = this._client?.sessions ?? [];
-    const activeWalletId = this._client?.activeConnector?.id;
-    if (sessions.length === 0) return this.renderWalletList();
+    const session = this._client?.session;
+    if (!session) return this.renderWalletList();
 
-    const rows = sessions
-      .map((session) => {
-        const isActive = session.walletId === activeWalletId;
-        const gradient = gradientFromAddress(session.address);
-        const avatarUrl = this.avatarCache.get(session.address);
-        const avatarHtml = avatarUrl
-          ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
-          : '';
-        const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
-        return `
-          <div class="account-row" data-active="${isActive}" style="${isActive ? '' : 'opacity:0.7;'}">
-            <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
-            <div style="min-width:0; flex:1; cursor:${isActive ? 'default' : 'pointer'};" data-action="${isActive ? '' : 'switch-account'}" data-wallet-id="${session.walletId}">
-              <div class="account-address">${truncateAddress(session.address)}</div>
-              <div class="account-network">${escapeHtml(session.network)}${isActive ? ' · active' : ''}</div>
+    const gradient = gradientFromAddress(session.address);
+    const avatarUrl = this.avatarCache.get(session.address);
+    const avatarHtml = avatarUrl
+      ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
+      : '';
+    const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
+
+    // Balance display — "Loading..." until fetched
+    const balanceDisplay = this.cachedBalance
+      ? `<span class="balance-value">${escapeHtml(this.cachedBalance)}</span><span class="balance-unit">XLM</span>`
+      : `<span class="balance-loading">Loading balance…</span>`;
+
+    // Transaction history — show up to 5 recent transactions
+    const historyHtml = this.cachedTxHistory.length > 0
+      ? this.cachedTxHistory.map((tx) => {
+          const icon = tx.success ? '✓' : '✗';
+          const iconClass = tx.success ? 'tx-success' : 'tx-failed';
+          return `
+            <div class="tx-row">
+              <span class="tx-icon ${iconClass}">${icon}</span>
+              <div class="tx-info">
+                <span class="tx-type">${escapeHtml(tx.type)}</span>
+                <span class="tx-date">${escapeHtml(tx.date)}</span>
+              </div>
+              <span class="tx-amount ${tx.amount.startsWith('-') ? 'tx-out' : 'tx-in'}">${escapeHtml(tx.amount)} ${escapeHtml(tx.asset)}</span>
             </div>
-            <div class="account-actions">
-              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
-              <button class="icon-btn" data-action="disconnect-one" data-wallet-id="${session.walletId}" aria-label="Disconnect">${icons.close}</button>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
+          `;
+        }).join('')
+      : `<div class="tx-empty">No recent transactions</div>`;
 
     return `
       <div class="account">
-        ${rows}
-        <button class="btn" data-action="connect-another">+ Connect another wallet</button>
+        <!-- Account header with avatar, address, and copy -->
+        <div class="account-header">
+          <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
+          <div class="account-info">
+            <div class="account-address">${truncateAddress(session.address)}</div>
+            <div class="account-network">${escapeHtml(session.network)}</div>
+          </div>
+          <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
+        </div>
+
+        <!-- Balance card -->
+        <div class="balance-card">
+          <div class="balance-label">Total Balance</div>
+          <div class="balance-amount">${balanceDisplay}</div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+          <button class="action-btn" data-action="switch-wallet" aria-label="Switch wallet">
+            ${icons.wallet}
+            <span>Switch Wallet</span>
+          </button>
+          <button class="action-btn" data-action="disconnect" aria-label="Disconnect">
+            ${icons.logOut}
+            <span>Disconnect</span>
+          </button>
+        </div>
+
+        <!-- Transaction history -->
+        <div class="tx-history">
+          <div class="tx-header">Recent Activity</div>
+          ${historyHtml}
+        </div>
       </div>
     `;
   }
@@ -792,24 +881,22 @@ export class SagantaAppKitModal extends HTMLElement {
       });
     });
 
+    this.root.querySelector('[data-action="switch-wallet"]')?.addEventListener('click', () => {
+      // Disconnect current wallet and go back to wallet list
+      this.view = 'wallet-list';
+      this.render();
+    });
+
+    this.root.querySelector('[data-action="disconnect"]')?.addEventListener('click', () => {
+      this._client?.disconnect();
+    });
+
+    // Legacy: still handle switch-account for multi-account wallets (Ledger)
     this.root.querySelectorAll<HTMLElement>('[data-action="switch-account"]').forEach((el) => {
       el.addEventListener('click', () => {
         const walletId = el.dataset.walletId;
         if (walletId) this._client?.switchAccount(walletId);
       });
-    });
-
-    this.root.querySelectorAll<HTMLElement>('[data-action="disconnect-one"]').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const walletId = el.dataset.walletId;
-        if (walletId) this._client?.disconnect(walletId);
-      });
-    });
-
-    this.root.querySelector('[data-action="connect-another"]')?.addEventListener('click', () => {
-      this.view = 'wallet-list';
-      this.render();
     });
 
     this.root.querySelector('[data-action="approve-preview"]')?.addEventListener('click', () => this.resolvePreview(true));
