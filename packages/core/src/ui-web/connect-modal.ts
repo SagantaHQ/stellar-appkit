@@ -692,10 +692,13 @@ export class SagantaAppKitModal extends HTMLElement {
     // Clean up any previous gesture handler (e.g. from a re-render)
     this.gestureDestroyer?.destroy();
 
+    // DragGesture(target, handlers, config):
+    //   handlers = { onDragStart, onDrag, onDragEnd } (the drag event handlers)
+    //   config = { axis, filterTaps, pointer } (the gesture configuration)
+    // The previous version merged handlers + config into the first object,
+    // which caused 'this.handler is not a function' because the DragEngine
+    // tried to call config properties (like 'axis') as handler functions.
     const gesture = DragGesture(panel, {
-      axis: 'y' as const,
-      filterTaps: true,
-      pointer: { capture: true },
       onDragStart: () => {
         measureSheet();
         panel.style.transition = 'none';
@@ -747,7 +750,6 @@ export class SagantaAppKitModal extends HTMLElement {
         }
       },
     }, {
-      // Config (separate from handlers)
       axis: 'y',
       filterTaps: true,
       pointer: { capture: true },

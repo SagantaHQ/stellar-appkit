@@ -62,9 +62,20 @@ export function createAlbedoConnector(): WalletConnector {
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
         const albedo = await sdk();
-        const res = await albedo.publicKey({});
-        lastKnownAddress = res.pubkey;
-        return { address: res.pubkey, walletId: meta.id };
+        // Albedo's popup can be closed by the user without resolving or
+        // rejecting the promise — it just hangs forever. Add a timeout
+        // so the modal doesn't stay in "connecting" state indefinitely.
+        // 60 seconds is generous enough for a user to read and approve,
+        // but short enough to recover from a forgotten popup.
+        const timeoutMs = 60_000;
+        const result = await Promise.race([
+          albedo.publicKey({}),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Albedo connection timed out — the popup may have been closed.')), timeoutMs)
+          ),
+        ]);
+        lastKnownAddress = result.pubkey;
+        return { address: result.pubkey, walletId: meta.id };
       });
     },
 
