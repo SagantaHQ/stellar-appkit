@@ -21,7 +21,35 @@ export async function withNormalizedError<T>(
 function normalizeThrown(walletId: string, err: unknown, rejectionHints?: RegExp[]): ConnectError {
   if (err instanceof ConnectError) return err;
 
-  const message = err instanceof Error ? err.message : String(err);
+  // Wallet SDKs throw different shapes:
+  //   - Error instances → err.message
+  //   - Plain objects (xBull, some WC wallets) → err.message, err.error,
+  //     err.toString(), or JSON.stringify
+  //   - Strings → use directly
+  // String(err) on a plain object produces "[object Object]" which is
+  // useless. Extract the message from common shapes instead.
+  let message: string;
+  if (err instanceof Error) {
+    message = err.message;
+  } else if (typeof err === 'string') {
+    message = err;
+  } else if (typeof err === 'object' && err !== null) {
+    const obj = err as {
+      message?: string;
+      error?: string | { message?: string };
+      toString?: () => string;
+    };
+    message =
+      obj.message ??
+      (typeof obj.error === 'string' ? obj.error : obj.error?.message) ??
+      (typeof obj.toString === 'function' && obj.toString() !== '[object Object]'
+        ? obj.toString()
+        : JSON.stringify(err)) ??
+      'Unknown wallet error';
+  } else {
+    message = String(err);
+  }
+
   const hints = rejectionHints ?? [/reject/i, /denied/i, /cancel/i, /declined/i];
 
   if (hints.some((re) => re.test(message))) {
