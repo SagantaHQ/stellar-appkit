@@ -214,111 +214,191 @@ export function buildStyles(theme: ConnectTheme): string {
     .account {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 20px;
       padding: 6px 10px 14px;
     }
 
-    /* Account header — avatar + address + copy button */
+    /* Header wallet icon in panel header */
+    .header-wallet-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      display: block;
+    }
+
+    /* Account header — avatar + address (clickable) + network pill + overflow */
     .account-header {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 4px 0;
+      padding: 2px 0;
     }
     .account-header .account-avatar {
       width: 42px;
       height: 42px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .account-header .account-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
     }
     .account-info {
       flex: 1;
       min-width: 0;
     }
-    .account-info .account-address {
+    .account-address-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .account-address {
+      font-family: ${v('fontMono', theme)};
       font-size: 14px;
       font-weight: 500;
     }
-    .account-info .account-network {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-top: 2px;
+    .account-copy-icon {
+      display: flex;
+      opacity: 0;
+      transition: opacity 0.15s ease;
     }
+    .account-copy-icon svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
+    .account-address-row:hover .account-copy-icon { opacity: 1; }
+    .account-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .network-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      text-transform: capitalize;
+      color: ${v('colorTextMuted', theme)};
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: ${v('colorSurfaceHover', theme)};
+    }
+    .network-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--net-color, ${v('colorAccent', theme)});
+    }
+    .explorer-link {
+      display: flex;
+      opacity: 0.5;
+      transition: opacity 0.15s ease;
+    }
+    .explorer-link:hover { opacity: 1; }
+    .explorer-link svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
 
-    /* Balance card — prominent display */
-    .balance-card {
-      padding: 20px;
-      border-radius: ${v('radiusLg', theme)};
+    /* Overflow menu — hidden by default, toggled by ••• button */
+    .overflow-menu {
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      padding: 6px;
+      border-radius: ${v('radiusMd', theme)};
       background: ${v('colorSurfaceHover', theme)};
       border: 1px solid ${v('colorBorder', theme)};
-      text-align: center;
+    }
+    .overflow-menu[data-overflow="true"] {
+      display: flex;
+    }
+    .overflow-item {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: ${v('radiusSm', theme)};
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: ${v('colorText', theme)};
+      transition: background 0.15s ease;
+    }
+    .overflow-item:hover { background: ${v('colorBg', theme)}; }
+    .overflow-item svg { width: 18px; height: 18px; color: ${v('colorTextMuted', theme)}; }
+    .overflow-danger { color: #ef4444; }
+    .overflow-danger svg { color: #ef4444; }
+
+    /* Pending signature banner */
+    .pending-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: ${v('radiusMd', theme)};
+      background: rgba(110, 231, 183, 0.08);
+      border: 1px solid rgba(110, 231, 183, 0.2);
+      font-size: 13px;
+      color: ${v('colorAccent', theme)};
+    }
+    .pending-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(110, 231, 183, 0.2);
+      border-top-color: ${v('colorAccent', theme)};
+      border-radius: 50%;
+      animation: sc-spin 0.8s linear infinite;
+    }
+
+    /* Balance — large typography, no card */
+    .balance-section {
+      padding: 0 2px;
     }
     .balance-label {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: ${v('colorTextMuted', theme)};
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .balance-amount {
       display: flex;
       align-items: baseline;
-      justify-content: center;
       gap: 6px;
     }
     .balance-value {
-      font-size: 28px;
+      font-size: 32px;
       font-weight: 700;
-      font-family: ${v('fontDisplay', theme)};
+      font-family: ${v('fontMono', theme)};
       letter-spacing: -0.02em;
     }
     .balance-unit {
-      font-size: 14px;
+      font-size: 15px;
       color: ${v('colorTextMuted', theme)};
       font-weight: 500;
     }
-    .balance-loading {
-      font-size: 16px;
-      color: ${v('colorTextMuted', theme)};
+    .balance-skeleton {
+      width: 140px;
+      height: 32px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, ${v('colorSurfaceHover', theme)} 25%, ${v('colorBorder', theme)} 50%, ${v('colorSurfaceHover', theme)} 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s ease-in-out infinite;
     }
-
-    /* Quick action buttons */
-    .quick-actions {
-      display: flex;
-      gap: 8px;
-    }
-    .action-btn {
-      all: unset;
-      box-sizing: border-box;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 12px 8px;
-      border-radius: ${v('radiusMd', theme)};
-      background: ${v('colorBg', theme)};
-      border: 1px solid ${v('colorBorder', theme)};
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 500;
-      color: ${v('colorText', theme)};
-      transition: background 0.15s ease, border-color 0.15s ease;
-    }
-    .action-btn:hover {
-      background: ${v('colorSurfaceHover', theme)};
-      border-color: ${v('colorAccent', theme)};
-    }
-    .action-btn svg {
-      width: 20px;
-      height: 20px;
-      color: ${v('colorAccent', theme)};
+    @keyframes skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
 
     /* Transaction history */
     .tx-history {
       display: flex;
       flex-direction: column;
-      gap: 2px;
     }
     .tx-header {
       font-size: 11px;
@@ -332,12 +412,13 @@ export function buildStyles(theme: ConnectTheme): string {
       align-items: center;
       gap: 10px;
       padding: 10px 8px;
-      border-radius: ${v('radiusSm', theme)};
+      text-decoration: none;
+      color: inherit;
+      border-bottom: 1px solid ${v('colorBorder', theme)};
       transition: background 0.15s ease;
     }
-    .tx-row:hover {
-      background: ${v('colorSurfaceHover', theme)};
-    }
+    .tx-row:last-child { border-bottom: none; }
+    .tx-row:hover { background: ${v('colorSurfaceHover', theme)}; }
     .tx-icon {
       width: 24px;
       height: 24px;
@@ -345,7 +426,7 @@ export function buildStyles(theme: ConnectTheme): string {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       flex-shrink: 0;
     }
@@ -380,6 +461,13 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .tx-in { color: ${v('colorAccent', theme)}; }
     .tx-out { color: ${v('colorText', theme)}; }
+    .tx-external {
+      display: flex;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .tx-row:hover .tx-external { opacity: 0.5; }
+    .tx-external svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
     .tx-empty {
       padding: 24px 8px;
       text-align: center;

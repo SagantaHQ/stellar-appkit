@@ -109,6 +109,10 @@ export class SagantaAppKitModal extends HTMLElement {
       client.on('sessionsChanged', () => {
         this.refreshAccountData();
       }),
+      client.on('signQueueChange', () => {
+        // Re-render the connected view to update the pending-signature banner
+        if (this.view === 'connected') this.render();
+      }),
       client.on('error', (err) => {
         this.lastError = err;
         this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
@@ -455,20 +459,11 @@ export class SagantaAppKitModal extends HTMLElement {
   }
 
   private renderPanel(effectiveMode: EffectiveMode): string {
-    const showClose = effectiveMode !== 'inline';
     const title = this.getAttribute('title') ?? this.defaultTitle();
-    const logoSrc = this.getAttribute('logo-src');
-
     return `
       <div class="panel" role="dialog" aria-modal="${effectiveMode !== 'inline'}" aria-label="${title}">
         ${effectiveMode === 'bottom-sheet' ? '<div class="drag-handle"></div>' : ''}
-        <div class="header">
-          <div class="brand">
-            ${logoSrc ? `<img src="${escapeAttr(logoSrc)}" alt="" />` : '<slot name="logo"></slot>'}
-            <span class="title">${escapeHtml(title)}</span>
-          </div>
-          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
-        </div>
+        ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
         <div class="footer">Powered by Stellar AppKit</div>
       </div>
@@ -477,8 +472,15 @@ export class SagantaAppKitModal extends HTMLElement {
 
   private defaultTitle(): string {
     switch (this.view) {
-      case 'connected':
-        return (this._client?.sessions.length ?? 0) > 1 ? 'Accounts' : 'Account';
+      case 'connected': {
+        // Show wallet icon + name instead of "Account"
+        const connector = this._client?.activeConnector;
+        if (connector) {
+          const icon = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+          return connector.meta.name;
+        }
+        return 'Account';
+      }
       case 'account-picker':
         return 'Choose an account';
       case 'network-mismatch':
@@ -488,6 +490,36 @@ export class SagantaAppKitModal extends HTMLElement {
       default:
         return 'Connect a wallet';
     }
+  }
+
+  private renderPanelHeader(effectiveMode: EffectiveMode): string {
+    const showClose = effectiveMode !== 'inline';
+    const title = this.getAttribute('title') ?? this.defaultTitle();
+    const logoSrc = this.getAttribute('logo-src');
+
+    // When connected, show wallet icon + name in the header instead of the app logo
+    let headerBrand: string;
+    if (this.view === 'connected' && this._client?.activeConnector) {
+      const connector = this._client.activeConnector;
+      const iconUrl = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+      headerBrand = `
+        <img src="${escapeAttr(iconUrl)}" alt="" class="header-wallet-icon"
+             onerror="this.style.display='none'" />
+        <span class="title">${escapeHtml(connector.meta.name)}</span>
+      `;
+    } else {
+      headerBrand = `
+        ${logoSrc ? `<img src="${escapeAttr(logoSrc)}" alt="" />` : '<slot name="logo"></slot>'}
+        <span class="title">${escapeHtml(title)}</span>
+      `;
+    }
+
+    return `
+      <div class="header">
+        <div class="brand">${headerBrand}</div>
+        ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+      </div>
+    `;
   }
 
   private renderBody(): string {
@@ -584,58 +616,89 @@ export class SagantaAppKitModal extends HTMLElement {
       ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
       : '';
     const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
+    const isTestnet = session.network !== 'PUBLIC';
+    const networkColor = isTestnet ? '#f59e0b' : '#6EE7B7';
+    const networkLabel = session.network.toLowerCase();
+    const pendingCount = this._client?.pendingSignCount ?? 0;
+    const explorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/account/${session.address}`;
 
-    // Balance display — "Loading..." until fetched
-    const balanceDisplay = this.cachedBalance
+    // Balance — skeleton shimmer while loading, then large number
+    const balanceHtml = this.cachedBalance
       ? `<span class="balance-value">${escapeHtml(this.cachedBalance)}</span><span class="balance-unit">XLM</span>`
-      : `<span class="balance-loading">Loading balance…</span>`;
+      : `<div class="balance-skeleton"></div>`;
 
-    // Transaction history — show up to 5 recent transactions
+    // Pending signatures banner — only shows when pendingSignCount > 0
+    const pendingBanner = pendingCount > 0
+      ? `<div class="pending-banner">
+           <span class="pending-spinner"></span>
+           <span>${pendingCount} pending signature${pendingCount > 1 ? 's' : ''}</span>
+         </div>`
+      : '';
+
+    // Transaction history with explorer links + relative time
     const historyHtml = this.cachedTxHistory.length > 0
       ? this.cachedTxHistory.map((tx) => {
           const icon = tx.success ? '✓' : '✗';
           const iconClass = tx.success ? 'tx-success' : 'tx-failed';
+          const txExplorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/tx/${tx.hash}`;
           return `
-            <div class="tx-row">
+            <a class="tx-row" href="${escapeAttr(txExplorerUrl)}" target="_blank" rel="noopener">
               <span class="tx-icon ${iconClass}">${icon}</span>
               <div class="tx-info">
                 <span class="tx-type">${escapeHtml(tx.type)}</span>
                 <span class="tx-date">${escapeHtml(tx.date)}</span>
               </div>
               <span class="tx-amount ${tx.amount.startsWith('-') ? 'tx-out' : 'tx-in'}">${escapeHtml(tx.amount)} ${escapeHtml(tx.asset)}</span>
-            </div>
+              <span class="tx-external">${icons.externalLink}</span>
+            </a>
           `;
         }).join('')
       : `<div class="tx-empty">No recent transactions</div>`;
 
     return `
       <div class="account">
-        <!-- Account header with avatar, address, and copy -->
+        <!-- Account header: avatar + address (clickable to copy) + network pill + overflow -->
         <div class="account-header">
           <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
           <div class="account-info">
-            <div class="account-address">${truncateAddress(session.address)}</div>
-            <div class="account-network">${escapeHtml(session.network)}</div>
+            <div class="account-address-row" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" title="Click to copy address">
+              <span class="account-address">${truncateAddress(session.address)}</span>
+              <span class="account-copy-icon">${isCopied ? icons.check : icons.copy}</span>
+            </div>
+            <div class="account-meta">
+              <span class="network-pill" style="--net-color: ${networkColor};">
+                <span class="network-dot"></span>
+                ${escapeHtml(networkLabel)}
+              </span>
+              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="View on stellar.expert">
+                ${icons.externalLink}
+              </a>
+            </div>
           </div>
-          <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
+          <button class="icon-btn" data-action="toggle-overflow" aria-label="More options" title="More options">
+            <svg viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="10" r="2"/><circle cx="10" cy="10" r="2"/><circle cx="16" cy="10" r="2"/></svg>
+          </button>
         </div>
 
-        <!-- Balance card -->
-        <div class="balance-card">
-          <div class="balance-label">Total Balance</div>
-          <div class="balance-amount">${balanceDisplay}</div>
-        </div>
-
-        <!-- Quick actions -->
-        <div class="quick-actions">
-          <button class="action-btn" data-action="switch-wallet" aria-label="Switch wallet">
+        <!-- Overflow menu (hidden by default) -->
+        <div class="overflow-menu" data-overflow="false">
+          <button class="overflow-item" data-action="switch-wallet">
             ${icons.wallet}
             <span>Switch Wallet</span>
           </button>
-          <button class="action-btn" data-action="disconnect" aria-label="Disconnect">
+          <button class="overflow-item overflow-danger" data-action="disconnect">
             ${icons.logOut}
             <span>Disconnect</span>
           </button>
+        </div>
+
+        <!-- Pending signature banner -->
+        ${pendingBanner}
+
+        <!-- Balance — large typography, no card border -->
+        <div class="balance-section">
+          <div class="balance-label">XLM Balance</div>
+          <div class="balance-amount">${balanceHtml}</div>
         </div>
 
         <!-- Transaction history -->
@@ -881,14 +944,32 @@ export class SagantaAppKitModal extends HTMLElement {
       });
     });
 
-    this.root.querySelector('[data-action="switch-wallet"]')?.addEventListener('click', () => {
-      // Disconnect current wallet and go back to wallet list
+    this.root.querySelector('[data-action="switch-wallet"]')?.addEventListener('click', async () => {
+      // Properly disconnect the current wallet before showing the wallet list.
+      // This closes the Ledger transport handle, clears the persisted session,
+      // and prevents restore() from reconnecting both wallets on next load.
+      if (this._client?.session) {
+        await this._client.disconnect();
+      }
+      this.cachedBalance = null;
+      this.cachedTxHistory = [];
       this.view = 'wallet-list';
-      this.render();
+      await this.refreshWalletList();
     });
 
-    this.root.querySelector('[data-action="disconnect"]')?.addEventListener('click', () => {
-      this._client?.disconnect();
+    this.root.querySelector('[data-action="disconnect"]')?.addEventListener('click', async () => {
+      await this._client?.disconnect();
+      this.cachedBalance = null;
+      this.cachedTxHistory = [];
+    });
+
+    // Overflow menu toggle
+    this.root.querySelector('[data-action="toggle-overflow"]')?.addEventListener('click', () => {
+      const menu = this.root.querySelector<HTMLElement>('.overflow-menu');
+      if (menu) {
+        const isOpen = menu.getAttribute('data-overflow') === 'true';
+        menu.setAttribute('data-overflow', isOpen ? 'false' : 'true');
+      }
     });
 
     // Legacy: still handle switch-account for multi-account wallets (Ledger)
