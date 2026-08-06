@@ -6,8 +6,8 @@ import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
 import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
 
-export type PresentationMode = 'auto' | 'modal' | 'bottom-sheet' | 'inline';
-type EffectiveMode = 'modal' | 'bottom-sheet' | 'inline';
+export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
+type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
 type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'error';
 
 const MOBILE_BREAKPOINT_PX = 640;
@@ -454,8 +454,12 @@ export class SagantaAppKitModal extends HTMLElement {
 
   private computeEffectiveMode(): EffectiveMode {
     const attr = (this.getAttribute('mode') as PresentationMode) ?? 'auto';
-    if (attr === 'modal' || attr === 'bottom-sheet' || attr === 'inline') return attr;
-    return this.mediaQuery?.matches ? 'bottom-sheet' : 'modal';
+    // Normalize: 'bottom-sheet' (legacy) → 'bottomsheet' (canonical).
+    // Both spellings are accepted for backwards compatibility.
+    if (attr === 'modal' || attr === 'bottomsheet' || attr === 'bottom-sheet' || attr === 'inline') {
+      return attr === 'bottom-sheet' ? 'bottomsheet' : (attr as EffectiveMode);
+    }
+    return this.mediaQuery?.matches ? 'bottomsheet' : 'modal';
   }
 
   private resolveTheme(): ConnectTheme {
@@ -489,7 +493,7 @@ export class SagantaAppKitModal extends HTMLElement {
     const title = this.getAttribute('title') ?? this.defaultTitle();
     return `
       <div class="panel" role="dialog" aria-modal="${effectiveMode !== 'inline'}" aria-label="${title}">
-        ${effectiveMode === 'bottom-sheet' ? '<div class="drag-handle"></div>' : ''}
+        ${effectiveMode === 'bottomsheet' ? '<div class="drag-handle"></div>' : ''}
         ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
         <div class="footer">Powered by <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
@@ -1086,7 +1090,7 @@ export class SagantaAppKitModal extends HTMLElement {
     // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
     // Uses @use-gesture/vanilla + motion (lazy-imported bundled deps)
     // so apps that don't use the bottom-sheet mode don't need them installed.
-    if (effectiveMode === 'bottom-sheet') {
+    if (effectiveMode === 'bottomsheet') {
       void this.setupBottomSheetGestures();
     }
 

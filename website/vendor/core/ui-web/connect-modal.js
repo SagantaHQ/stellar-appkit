@@ -418,9 +418,12 @@ export class SagantaAppKitModal extends HTMLElement {
     }
     computeEffectiveMode() {
         const attr = this.getAttribute('mode') ?? 'auto';
-        if (attr === 'modal' || attr === 'bottom-sheet' || attr === 'inline')
-            return attr;
-        return this.mediaQuery?.matches ? 'bottom-sheet' : 'modal';
+        // Normalize: 'bottom-sheet' (legacy) → 'bottomsheet' (canonical).
+        // Both spellings are accepted for backwards compatibility.
+        if (attr === 'modal' || attr === 'bottomsheet' || attr === 'bottom-sheet' || attr === 'inline') {
+            return attr === 'bottom-sheet' ? 'bottomsheet' : attr;
+        }
+        return this.mediaQuery?.matches ? 'bottomsheet' : 'modal';
     }
     resolveTheme() {
         const attr = this.getAttribute('theme') ?? 'dark';
@@ -450,7 +453,7 @@ export class SagantaAppKitModal extends HTMLElement {
         const title = this.getAttribute('title') ?? this.defaultTitle();
         return `
       <div class="panel" role="dialog" aria-modal="${effectiveMode !== 'inline'}" aria-label="${title}">
-        ${effectiveMode === 'bottom-sheet' ? '<div class="drag-handle"></div>' : ''}
+        ${effectiveMode === 'bottomsheet' ? '<div class="drag-handle"></div>' : ''}
         ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
         <div class="footer">Powered by <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
@@ -994,7 +997,7 @@ export class SagantaAppKitModal extends HTMLElement {
         // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
         // Uses @use-gesture/vanilla + motion (lazy-imported bundled deps)
         // so apps that don't use the bottom-sheet mode don't need them installed.
-        if (effectiveMode === 'bottom-sheet') {
+        if (effectiveMode === 'bottomsheet') {
             void this.setupBottomSheetGestures();
         }
         this.root.querySelectorAll('[data-action="select-wallet"]').forEach((el) => {

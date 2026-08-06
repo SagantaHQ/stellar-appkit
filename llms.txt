@@ -246,7 +246,7 @@ let handle: StellarAppKitModalHandle | undefined;
 ```
 
 ### Modal props (all frameworks)
-- `mode`: 'auto' | 'modal' | 'bottom-sheet' | 'inline'
+- `mode`: 'auto' | 'modal' | 'bottomsheet' | 'inline'
 - `theme`: 'dark' | 'light'
 - `branding`: 'default' | 'minimal' | 'hidden'
 - `logoSrc`: string (URL)

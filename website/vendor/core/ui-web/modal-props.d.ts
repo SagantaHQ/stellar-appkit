@@ -16,8 +16,13 @@
  * Web Component directly with `modal.client = appkit`.
  */
 import type { StellarAppKit } from '../index.js';
-/** Presentation mode for the modal — mirrors the Web Component's `mode` attribute. */
-export type ModalMode = 'auto' | 'modal' | 'bottom-sheet' | 'inline';
+/**
+ * Presentation mode for the modal — mirrors the Web Component's `mode` attribute.
+ *
+ * `'bottomsheet'` is the canonical spelling. `'bottom-sheet'` (with hyphen)
+ * is accepted as a backwards-compatible alias and normalized internally.
+ */
+export type ModalMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 /** Theme selection — mirrors the Web Component's `theme` attribute. */
 export type ModalTheme = 'dark' | 'light';
 /** Branding mode — mirrors the Web Component's `branding` attribute. */
@@ -35,7 +40,7 @@ export interface StellarAppKitModalProps {
      *
      * - `'auto'` (default) — modal on desktop, bottom-sheet on mobile web
      * - `'modal'` — always centered modal (desktop)
-     * - `'bottom-sheet'` — always draggable bottom-sheet (mobile)
+     * - `'bottomsheet'` — always draggable bottom-sheet (mobile). `'bottom-sheet'` (hyphen) also accepted.
      * - `'inline'` — embedded in-page, no overlay (always open)
      */
     mode?: ModalMode;

@@ -677,7 +677,7 @@ function ModalHost() {
 <button on:click={() => openModal(modalEl)}>Connect</button>
 ```
 
-**Shared props** (all frameworks): `mode` (`'auto'|'modal'|'bottom-sheet'|'inline'`), `theme` (`'dark'|'light'`), `branding` (`'default'|'minimal'|'hidden'`), `logoSrc` (URL), `title` (string), `autoRetryNetwork` (boolean), `stellarExpertAvatars` (boolean).
+**Shared props** (all frameworks): `mode` (`'auto'|'modal'|'bottomsheet'|'inline'`), `theme` (`'dark'|'light'`), `branding` (`'default'|'minimal'|'hidden'`), `logoSrc` (URL), `title` (string), `autoRetryNetwork` (boolean), `stellarExpertAvatars` (boolean).
 
 **Events** (all frameworks): `connect`, `disconnect`, `error` — mirroring the underlying client's events. React/Solid use `onConnect`/`onDisconnect`/`onError` callback props; Vue uses `@connect`/`@disconnect`/`@error` emits; Svelte uses `on:sc-connect`/`on:sc-disconnect`/`on:sc-error` on the raw element (since the action wraps the Web Component directly).
 

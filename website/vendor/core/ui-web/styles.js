@@ -47,8 +47,8 @@ export function buildStyles(theme) {
     .overlay[data-mode="modal"][data-open="true"] .panel { transform: scale(1); opacity: 1; }
 
     /* ---------- layout: bottom-sheet (mobile web + always on RN) ---------- */
-    .overlay[data-mode="bottom-sheet"] { align-items: flex-end; justify-content: center; padding: 0; }
-    .overlay[data-mode="bottom-sheet"] .panel {
+    .overlay[data-mode="bottomsheet"] { align-items: flex-end; justify-content: center; padding: 0; }
+    .overlay[data-mode="bottomsheet"] .panel {
       width: 100%;
       max-width: 560px;
       border-radius: ${v('radiusLg', theme)} ${v('radiusLg', theme)} 0 0;
@@ -58,7 +58,7 @@ export function buildStyles(theme) {
       touch-action: pan-y;
       overscroll-behavior: contain;
     }
-    .overlay[data-mode="bottom-sheet"][data-open="true"] .panel { transform: translateY(0); }
+    .overlay[data-mode="bottomsheet"][data-open="true"] .panel { transform: translateY(0); }
     .drag-handle {
       width: 36px;
       height: 5px;
@@ -77,7 +77,7 @@ export function buildStyles(theme) {
 
     @media (prefers-reduced-motion: reduce) {
       .overlay[data-mode="modal"] .panel,
-      .overlay[data-mode="bottom-sheet"] .panel { transition: none; }
+      .overlay[data-mode="bottomsheet"] .panel { transition: none; }
     }
 
     /* ---------- layout: inline (no overlay, renders in page flow) ---------- */
@@ -153,19 +153,20 @@ export function buildStyles(theme) {
     .connecting-view__logo {
       width: 56px;
       height: 56px;
-      border-radius: 14px;
+      border-radius: 12px;
       object-fit: contain;
       position: relative;
       z-index: 1;
       background: ${v('colorSurface', theme)};
     }
-    /* The arc — a conic-gradient spinner that rotates around the logo.
-       Uses a partial sweep (not a full circle) to match the mockup's
-       "open arc" aesthetic. */
+    /* The spinner — a square with rounded corners, using a conic-gradient
+       background masked into a border-ring shape. The gradient sweeps
+       ~270° (open at the top) and rotates to create the loading effect.
+       Square (not circular) to match the modern squircle aesthetic. */
     .connecting-view__arc {
       position: absolute;
       inset: 0;
-      border-radius: 50%;
+      border-radius: 22px;
       background: conic-gradient(
         from 0deg,
         transparent 0deg,
@@ -173,16 +174,18 @@ export function buildStyles(theme) {
         ${v('colorAccent', theme)} 270deg,
         ${v('colorAccent', theme)} 360deg
       );
-      -webkit-mask: radial-gradient(
-        farthest-side,
-        transparent calc(100% - 4px),
-        black calc(100% - 4px)
-      );
-      mask: radial-gradient(
-        farthest-side,
-        transparent calc(100% - 4px),
-        black calc(100% - 4px)
-      );
+      /* Mask into a 4px-thick border ring (square with rounded corners).
+         The mask is a rounded-rectangle outline: solid black except for
+         an inset transparent rectangle, leaving only the border visible. */
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      mask-composite: exclude;
+      padding: 4px;
       animation: sak-connecting-spin 1.4s linear infinite;
     }
     @keyframes sak-connecting-spin {
