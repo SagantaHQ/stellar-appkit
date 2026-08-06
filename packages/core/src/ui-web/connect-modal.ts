@@ -642,13 +642,18 @@ export class SagantaAppKitModal extends HTMLElement {
    * the cost.
    *
    * Behavior:
-   * - Drag down on the sheet (or the drag handle) moves it with the finger
+   * - Drag down on the sheet's header area (drag handle + header) moves the sheet
    * - Release with velocity > 0.5 or drag > 40% of sheet height → close
    * - Release otherwise → spring back to open position
    * - Only vertical dragging is enabled (horizontal swipes are ignored)
+   * - Works with both touch and mouse pointers (for desktop testing)
    *
    * If the gesture packages aren't installed, this silently no-ops — the
    * bottom-sheet still works via the close button and backdrop tap.
+   *
+   * IMPORTANT: this must be called after every render() that touches the
+   * bottom-sheet DOM, because render() replaces innerHTML and destroys the
+   * element the gesture was bound to. wireEvents() calls this automatically.
    */
   private async setupBottomSheetGestures() {
     let gestureModule: typeof import('@use-gesture/vanilla') | null = null;
@@ -665,13 +670,14 @@ export class SagantaAppKitModal extends HTMLElement {
     }
 
     const panel = this.root.querySelector<HTMLElement>('.panel');
-    const handle = this.root.querySelector<HTMLElement>('.drag-handle');
     if (!panel) return;
 
-    // The drag target is the handle if present, otherwise the whole panel.
-    // Using the handle is better UX — dragging the body content shouldn't
-    // move the sheet (the user might be scrolling a list).
-    const dragTarget = handle ?? panel;
+    // Bind the gesture to the PANEL (the whole sheet), not just the handle.
+    // The handle is only 36x5px — too small a target. Binding to the panel
+    // lets the user grab anywhere on the sheet to drag it down.
+    // We use `filterTaps: true` so clicks on buttons inside the panel
+    // still work (the gesture only activates on actual drag movement, not taps).
+    const dragTarget = panel;
 
     const createGesture = (gestureModule as unknown as {
       createGesture: (el: HTMLElement, config: unknown) => { destroy: () => void };
@@ -682,9 +688,8 @@ export class SagantaAppKitModal extends HTMLElement {
 
     let currentY = 0;
     let sheetHeight = 0;
+    let isDragging = false;
 
-    // Update sheetHeight on each interaction — the sheet's height changes
-    // as the user navigates between views (wallet list → connected → preview).
     const measureSheet = () => {
       sheetHeight = panel.offsetHeight;
     };
@@ -695,9 +700,14 @@ export class SagantaAppKitModal extends HTMLElement {
     const gesture = createGesture(dragTarget, {
       axis: 'y' as const,
       filterTaps: true,
-      pointer: { touch: true },
+      // Accept all pointer types (touch + mouse) so it works on desktop too
+      pointer: { capture: true },
       onDragStart: () => {
         measureSheet();
+        isDragging = true;
+        // Disable the CSS transition during drag — otherwise the panel
+        // lags behind the finger because the transition interpolates.
+        panel.style.transition = 'none';
         panel.style.willChange = 'transform';
       },
       onDrag: (state: { movement: [number, number]; velocity: [number, number] }) => {
@@ -714,7 +724,10 @@ export class SagantaAppKitModal extends HTMLElement {
       },
       onDragEnd: (state: { velocity: [number, number] }) => {
         const velocity = state.velocity;
+        isDragging = false;
         panel.style.willChange = 'auto';
+        // Re-enable CSS transition for the spring-back / close animation
+        panel.style.transition = '';
 
         const shouldClose = velocity[1] > 0.5 || currentY > sheetHeight * 0.4;
 
@@ -732,7 +745,6 @@ export class SagantaAppKitModal extends HTMLElement {
           // Close after the animation
           setTimeout(() => {
             this.close();
-            // Reset transform after close
             panel.style.transform = '';
             currentY = 0;
           }, 250);

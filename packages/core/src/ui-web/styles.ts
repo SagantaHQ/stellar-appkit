@@ -58,6 +58,8 @@ export function buildStyles(theme: ConnectTheme): string {
       padding-bottom: env(safe-area-inset-bottom, 0px);
       transform: translateY(100%);
       transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      touch-action: pan-y;
+      overscroll-behavior: contain;
     }
     .overlay[data-mode="bottom-sheet"][data-open="true"] .panel { transform: translateY(0); }
     .drag-handle {
