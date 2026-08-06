@@ -62,10 +62,17 @@ export function buildStyles(theme: ConnectTheme): string {
     .overlay[data-mode="bottom-sheet"][data-open="true"] .panel { transform: translateY(0); }
     .drag-handle {
       width: 36px;
-      height: 4px;
+      height: 5px;
       border-radius: 4px;
       background: ${v('colorBorder', theme)};
       margin: 10px auto 2px;
+      cursor: grab;
+      touch-action: none;
+      transition: background 0.15s ease;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+      background: ${v('colorTextMuted', theme)};
     }
     .overlay[data-mode="modal"] .drag-handle { display: none; }
 
@@ -147,7 +154,12 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
     }
-    .wallet-tile img { width: 22px; height: 22px; object-fit: contain; }
+    .wallet-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 10px;
+    }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
 

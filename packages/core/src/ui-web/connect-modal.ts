@@ -49,6 +49,7 @@ export class SagantaAppKitModal extends HTMLElement {
   private pendingAccountPicker: { connector: WalletConnector; accounts: WalletAccountOption[] } | null = null;
   private pendingPreview: { preview: TransactionPreview; resolve: (approved: boolean) => void; wasAlreadyOpen: boolean } | null = null;
   private releaseFocusTrap: (() => void) | null = null;
+  private gestureDestroyer: { destroy: () => void } | null = null;
   private clientUnsubscribers: Array<() => void> = [];
   private mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
   /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
@@ -68,6 +69,7 @@ export class SagantaAppKitModal extends HTMLElement {
 
   disconnectedCallback() {
     this.releaseFocusTrap?.();
+    this.gestureDestroyer?.destroy();
     this.clientUnsubscribers.forEach((unsub) => unsub());
   }
 
@@ -633,12 +635,139 @@ export class SagantaAppKitModal extends HTMLElement {
     `;
   }
 
+  /**
+   * Wires up the drag-to-dismiss gesture for the bottom-sheet using
+   * @use-gesture/vanilla + motion. Lazy-imported so apps that don't use
+   * bottom-sheet mode (or don't have the packages installed) don't pay
+   * the cost.
+   *
+   * Behavior:
+   * - Drag down on the sheet (or the drag handle) moves it with the finger
+   * - Release with velocity > 0.5 or drag > 40% of sheet height → close
+   * - Release otherwise → spring back to open position
+   * - Only vertical dragging is enabled (horizontal swipes are ignored)
+   *
+   * If the gesture packages aren't installed, this silently no-ops — the
+   * bottom-sheet still works via the close button and backdrop tap.
+   */
+  private async setupBottomSheetGestures() {
+    let gestureModule: typeof import('@use-gesture/vanilla') | null = null;
+    let motionModule: typeof import('motion') | null = null;
+    try {
+      [gestureModule, motionModule] = await Promise.all([
+        import('@use-gesture/vanilla'),
+        import('motion'),
+      ]);
+    } catch {
+      // Packages not installed — bottom-sheet works without gestures
+      // (close button + backdrop tap still functional).
+      return;
+    }
+
+    const panel = this.root.querySelector<HTMLElement>('.panel');
+    const handle = this.root.querySelector<HTMLElement>('.drag-handle');
+    if (!panel) return;
+
+    // The drag target is the handle if present, otherwise the whole panel.
+    // Using the handle is better UX — dragging the body content shouldn't
+    // move the sheet (the user might be scrolling a list).
+    const dragTarget = handle ?? panel;
+
+    const createGesture = (gestureModule as unknown as {
+      createGesture: (el: HTMLElement, config: unknown) => { destroy: () => void };
+    }).createGesture;
+    const animate = (motionModule as unknown as {
+      animate: (el: HTMLElement, keyframes: unknown, opts?: unknown) => void;
+    }).animate;
+
+    let currentY = 0;
+    let sheetHeight = 0;
+
+    // Update sheetHeight on each interaction — the sheet's height changes
+    // as the user navigates between views (wallet list → connected → preview).
+    const measureSheet = () => {
+      sheetHeight = panel.offsetHeight;
+    };
+
+    // Clean up any previous gesture handler (e.g. from a re-render)
+    this.gestureDestroyer?.destroy();
+
+    const gesture = createGesture(dragTarget, {
+      axis: 'y' as const,
+      filterTaps: true,
+      pointer: { touch: true },
+      onDragStart: () => {
+        measureSheet();
+        panel.style.willChange = 'transform';
+      },
+      onDrag: (state: { movement: [number, number]; velocity: [number, number] }) => {
+        const my = state.movement[1];
+        // Only allow dragging DOWN (positive Y), not up
+        currentY = Math.max(0, my);
+        panel.style.transform = `translateY(${currentY}px)`;
+        // Fade the backdrop as the sheet drags down
+        const overlay = this.root.querySelector<HTMLElement>('.overlay');
+        if (overlay && sheetHeight > 0) {
+          const progress = currentY / sheetHeight;
+          overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
+        }
+      },
+      onDragEnd: (state: { velocity: [number, number] }) => {
+        const velocity = state.velocity;
+        panel.style.willChange = 'auto';
+
+        const shouldClose = velocity[1] > 0.5 || currentY > sheetHeight * 0.4;
+
+        if (shouldClose) {
+          // Animate down and close
+          animate(
+            panel,
+            { transform: `translateY(${sheetHeight + 100}px)` },
+            { duration: 0.25, easing: 'ease-in' }
+          );
+          const overlay = this.root.querySelector<HTMLElement>('.overlay');
+          if (overlay) {
+            animate(overlay, { opacity: 0 }, { duration: 0.25 });
+          }
+          // Close after the animation
+          setTimeout(() => {
+            this.close();
+            // Reset transform after close
+            panel.style.transform = '';
+            currentY = 0;
+          }, 250);
+        } else {
+          // Spring back to open position
+          animate(
+            panel,
+            { transform: 'translateY(0px)' },
+            { type: 'spring', stiffness: 300, damping: 30 }
+          );
+          const overlay = this.root.querySelector<HTMLElement>('.overlay');
+          if (overlay) {
+            animate(overlay, { opacity: 1 }, { type: 'spring', stiffness: 300, damping: 30 });
+          }
+          currentY = 0;
+        }
+      },
+    });
+
+    this.gestureDestroyer = gesture;
+  }
+
   private wireEvents(effectiveMode: EffectiveMode) {
     this.root.querySelector('[data-action="close"]')?.addEventListener('click', () => this.close());
     if (effectiveMode !== 'inline') {
       this.root.querySelector('.overlay')?.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) this.close();
       });
+    }
+
+    // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
+    // Uses @use-gesture/vanilla + motion (lazy-imported, optional peer deps)
+    // so apps that don't use the bottom-sheet mode don't need them installed.
+    if (effectiveMode === 'bottom-sheet') {
+      void this.setupBottomSheetGestures();
     }
 
     this.root.querySelectorAll<HTMLElement>('[data-action="select-wallet"]').forEach((el) => {

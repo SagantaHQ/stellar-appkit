@@ -56,7 +56,9 @@
     "vue": "^3.3.0",
     "solid-js": "^1.7.0",
     "svelte": "^4.0.0 || ^5.0.0",
-    "@walletconnect/sign-client": "^2.0.0"
+    "@walletconnect/sign-client": "^2.0.0",
+    "@use-gesture/vanilla": "^10.3.0",
+    "motion": "^10.0.0 || ^11.0.0 || ^12.0.0 || ^13.0.0"
   },
   "peerDependenciesMeta": {
     "@stellar/freighter-api": {
@@ -90,6 +92,12 @@
       "optional": true
     },
     "@walletconnect/sign-client": {
+      "optional": true
+    },
+    "@use-gesture/vanilla": {
+      "optional": true
+    },
+    "motion": {
       "optional": true
     }
   },
