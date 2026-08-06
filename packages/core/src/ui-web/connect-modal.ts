@@ -465,7 +465,7 @@ export class SagantaAppKitModal extends HTMLElement {
         ${effectiveMode === 'bottom-sheet' ? '<div class="drag-handle"></div>' : ''}
         ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
-        <div class="footer">Powered by Stellar AppKit</div>
+        <div class="footer">Powered by <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
       </div>
     `;
   }

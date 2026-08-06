@@ -76,7 +76,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 | [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath, plus framework wrappers at `/react`, `/vue`, `/solid`, `/svelte` — all separate entry points, so importing only the core client never pulls in UI or framework code. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 
-See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap.
+See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap. Full documentation is at **[docs.saganta.com](https://docs.saganta.com)**.
 
 ---
 
