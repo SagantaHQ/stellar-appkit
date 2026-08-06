@@ -31,13 +31,334 @@ export async function buildTransactionPreview(xdr, networkPassphrase, opts = {})
         });
     }
     const operations = tx.operations.map((op) => decodeOperation(op, sdk, opts));
-    return {
+    const preview = {
         sourceAccount: tx.source,
         fee: tx.fee,
         operations,
         riskFlags: txRiskFlags,
         raw: { xdr, networkPassphrase },
     };
+    // Compute the fee estimate if the consumer opted in AND provided a
+    // simulation response. We do this here (rather than in
+    // SorobanConnection.previewInvoke) so consumers calling
+    // buildTransactionPreview directly also get the estimate when they
+    // pass a simulation.
+    if (opts.includeFeeEstimate && opts.simulation) {
+        const feeEstimate = computeFeeEstimate(tx.fee, tx.operations.length, opts.simulation);
+        if (feeEstimate)
+            preview.feeEstimate = feeEstimate;
+    }
+    return preview;
+}
+/**
+ * Computes a FeeEstimate from the transaction's declared fee, operation
+ * count, and a Soroban simulation response.
+ *
+ * The simulation response's `cost` field contains:
+ *   - `cpuInstructions`: number of Soroban instructions consumed
+ *   - `memoryBytes`: memory used
+ *   - `resourceFeeCharged`: the actual Soroban resource fee in stroops
+ *
+ * For classic (non-Soroban) transactions, the simulation won't have a
+ * `cost` field — we still compute the base fee breakdown, but
+ * `sorobanResourceFee` and `sorobanInstructions` are undefined.
+ *
+ * All amounts are in stroops (1 XLM = 10,000,000 stroops).
+ */
+function computeFeeEstimate(declaredFee, operationCount, simulation) {
+    // declaredFee is the total fee on the TransactionEnvelope (in stroops).
+    // For a non-fee-bump transaction, this is baseFee × operationCount +
+    // any Soroban resource fee the builder already added. We treat the
+    // per-operation base fee as declaredFee / operationCount (integer division).
+    const totalDeclared = BigInt(declaredFee);
+    const baseFeePerOp = operationCount > 0 ? totalDeclared / BigInt(operationCount) : 0n;
+    const totalBaseFee = baseFeePerOp * BigInt(operationCount);
+    // Try to extract Soroban resource fee + instruction count from the
+    // simulation response. The shape varies a bit across SDK versions,
+    // so we check several common paths.
+    const sim = simulation;
+    let sorobanResourceFee;
+    let sorobanInstructions;
+    if (sim?.cost?.resourceFeeCharged !== undefined) {
+        sorobanResourceFee = BigInt(String(sim.cost.resourceFeeCharged));
+    }
+    else if (sim?.transactionData?.resourceFee !== undefined) {
+        // Older SDK versions exposed the resource fee on transactionData
+        sorobanResourceFee = BigInt(String(sim.transactionData.resourceFee));
+    }
+    if (sim?.cost?.cpuInstructions !== undefined) {
+        sorobanInstructions = String(sim.cost.cpuInstructions);
+    }
+    // The total fee the user pays = the declared fee on the transaction
+    // (which already includes the Soroban resource fee if the builder
+    // added it via prepareTransaction). If the simulation's resource
+    // fee is HIGHER than what the builder added (rare, but possible if
+    // the network's fee schedule changed), we use the simulation's
+    // number as the more accurate estimate.
+    let totalFee = totalDeclared;
+    if (sorobanResourceFee !== undefined) {
+        const builderAddedResourceFee = totalDeclared - totalBaseFee;
+        if (sorobanResourceFee > builderAddedResourceFee) {
+            totalFee = totalBaseFee + sorobanResourceFee;
+        }
+    }
+    return {
+        baseFee: baseFeePerOp.toString(),
+        operationCount,
+        totalBaseFee: totalBaseFee.toString(),
+        sorobanResourceFee: sorobanResourceFee?.toString(),
+        sorobanInstructions,
+        totalFee: totalFee.toString(),
+        totalFeeXlm: formatStroopsAsXlm(totalFee),
+    };
+}
+/** Formats an integer amount of stroops as a decimal XLM string (1 XLM = 10,000,000 stroops). */
+function formatStroopsAsXlm(stroops) {
+    const negative = stroops < 0n;
+    const abs = negative ? -stroops : stroops;
+    const whole = abs / 10000000n;
+    const frac = abs % 10000000n;
+    const fracStr = frac.toString().padStart(7, '0').replace(/0+$/, '');
+    const value = fracStr ? `${whole}.${fracStr}` : whole.toString();
+    return `${negative ? '-' : ''}${value} XLM`;
+}
+/**
+ * Extracts human-readable balance deltas from a Soroban
+ * `simulateTransaction` success response.
+ *
+ * The previous version of the SDK surfaced only the *intended* amount
+ * for SEP-41 token calls (decoded from call args), not the actual
+ * balance changes the network would apply. This function walks the
+ * simulation's `stateChanges` array — which is the network's own
+ * authoritative statement of what would change — and produces a list
+ * of deltas that can be shown in a preview UI as "your balance will
+ * go from X to Y".
+ *
+ * Pass the simulation response object (the same one
+ * `server.simulateTransaction()` returns, or that
+ * `SorobanConnection.previewInvoke()` already calls internally).
+ * Returns an empty array if the simulation has no state changes (e.g.
+ * a read-only call) or if the response shape isn't recognized.
+ */
+export async function decodeSimulationDeltas(simulation) {
+    if (!simulation || typeof simulation !== 'object')
+        return [];
+    const sim = simulation;
+    if (!Array.isArray(sim.stateChanges))
+        return [];
+    const sdk = await import('@stellar/stellar-sdk');
+    const deltas = [];
+    for (const raw of sim.stateChanges) {
+        if (!raw || typeof raw !== 'object')
+            continue;
+        const change = raw;
+        // Skip entries with no key — the decoder can't do anything useful
+        // without one, and a null key in the simulation response usually
+        // means the server couldn't resolve the entry (which we shouldn't
+        // crash on, just skip).
+        if (change.key == null)
+            continue;
+        // The SDK's parsed response gives us xdr.LedgerKey / xdr.LedgerEntry
+        // objects. The raw (un-parsed) response gives base64 strings —
+        // handle both so this works regardless of which form the caller
+        // passes (server.simulateTransaction returns the parsed form).
+        let key;
+        try {
+            key = typeof change.key === 'string'
+                ? sdk.xdr.LedgerKey.fromXDR(change.key, 'base64')
+                : change.key;
+        }
+        catch {
+            continue;
+        }
+        let before = null;
+        let after = null;
+        try {
+            before = change.before == null
+                ? null
+                : typeof change.before === 'string'
+                    ? sdk.xdr.LedgerEntry.fromXDR(change.before, 'base64')
+                    : change.before;
+            after = change.after == null
+                ? null
+                : typeof change.after === 'string'
+                    ? sdk.xdr.LedgerEntry.fromXDR(change.after, 'base64')
+                    : change.after;
+        }
+        catch {
+            // Malformed before/after — skip this entry rather than failing the whole list.
+            continue;
+        }
+        const delta = decodeStateChange(key, before, after, change.type, sdk);
+        if (delta)
+            deltas.push(delta);
+    }
+    return deltas;
+}
+/**
+ * Maps a single state change (key + before + after + type) into a
+ * human-readable BalanceDelta. The XDR shape varies by entry kind
+ * (account, trustline, contractData, offer, ...), so this switches on
+ * `key.switch().name` and pulls the relevant fields off each.
+ *
+ * Note on types: stellar-sdk's `Int64` is a BigInt-like wrapper (extends
+ * `Hyper` from `@stellar/js-xdr`) — call `.toBigInt()` to get a real
+ * bigint out of it. Switching on `.name` returns the union of all
+ * LedgerEntryType variants ('account' | 'trustline' | 'offer' | ...),
+ * NOT a 'ledgerKey*' prefixed string.
+ */
+function decodeStateChange(key, before, after, type, sdk) {
+    // Guard against non-XDR key objects (e.g. a plain JS object that
+    // doesn't have the .switch() method the XDR union types do). The
+    // caller already filtered null/undefined, but a malformed entry with
+    // a non-XDR object key can still slip through — better to skip it
+    // than crash the whole decoder.
+    if (typeof key.switch !== 'function')
+        return null;
+    // type: 0 = create, 1 = update, 2 = delete (per stellar-xdr's LedgerEntryChangeType)
+    const change = type === 0 ? 'created' : type === 2 ? 'deleted' : 'updated';
+    const kind = key.switch().name;
+    if (kind === 'account') {
+        const accountKey = key.account();
+        // accountId is a PublicKey; .ed25519() returns the 32-byte raw key Buffer.
+        // StrKey.encodeEd25519PublicKey converts that to the G... string form.
+        const pubKeyBuf = accountKey.accountId().ed25519();
+        const address = sdk.StrKey.encodeEd25519PublicKey(pubKeyBuf);
+        const beforeBal = int64ToBigInt(before?.data()?.account()?.balance());
+        const afterBal = int64ToBigInt(after?.data()?.account()?.balance());
+        return {
+            kind: 'account',
+            address,
+            asset: 'XLM',
+            change,
+            summary: formatAccountDelta(address, beforeBal, afterBal, change),
+            delta: beforeBal !== undefined && afterBal !== undefined
+                ? (afterBal - beforeBal).toString()
+                : undefined,
+        };
+    }
+    if (kind === 'trustline') {
+        const tlKey = key.trustLine();
+        const account = sdk.StrKey.encodeEd25519PublicKey(tlKey.accountId().ed25519());
+        const tlAsset = tlKey.asset();
+        const assetKind = tlAsset.switch().name;
+        let asset;
+        if (assetKind === 'assetTypeCreditAlphanum4') {
+            const alpha = tlAsset.alphaNum4();
+            asset = `${alpha.assetCode().toString('utf8')}:${short(sdk.StrKey.encodeEd25519PublicKey(alpha.issuer().ed25519()))}`;
+        }
+        else if (assetKind === 'assetTypeCreditAlphanum12') {
+            const alpha = tlAsset.alphaNum12();
+            asset = `${alpha.assetCode().toString('utf8')}:${short(sdk.StrKey.encodeEd25519PublicKey(alpha.issuer().ed25519()))}`;
+        }
+        else {
+            asset = 'liquidity pool share';
+        }
+        const beforeBal = int64ToBigInt(before?.data()?.trustLine()?.balance());
+        const afterBal = int64ToBigInt(after?.data()?.trustLine()?.balance());
+        return {
+            kind: 'trustline',
+            address: account,
+            asset,
+            change,
+            summary: formatTrustlineDelta(account, asset, beforeBal, afterBal, change),
+            delta: beforeBal !== undefined && afterBal !== undefined
+                ? (afterBal - beforeBal).toString()
+                : undefined,
+        };
+    }
+    if (kind === 'contractData') {
+        const cdKey = key.contractData();
+        const contract = sdk.Address.fromScAddress(cdKey.contract()).toString();
+        return {
+            kind: 'contract',
+            address: contract,
+            change,
+            summary: change === 'created'
+                ? `Contract ${short(contract)}: storage entry created`
+                : change === 'deleted'
+                    ? `Contract ${short(contract)}: storage entry deleted`
+                    : `Contract ${short(contract)}: storage entry updated`,
+        };
+    }
+    if (kind === 'offer') {
+        const offerId = key.offer().offerId().toString();
+        return {
+            kind: 'offer',
+            change,
+            summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Deleted' : 'Updated'} offer #${offerId}`,
+        };
+    }
+    if (kind === 'data') {
+        const dataKey = key.data().dataName().toString('utf8');
+        return {
+            kind: 'data',
+            change,
+            summary: `${change === 'created' ? 'Set' : change === 'deleted' ? 'Removed' : 'Updated'} account data entry "${dataKey}"`,
+        };
+    }
+    if (kind === 'claimableBalance') {
+        const balanceId = key.claimableBalance().balanceId().toXDR('base64');
+        return {
+            kind: 'claimableBalance',
+            change,
+            summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Claimed' : 'Updated'} claimable balance ${short(balanceId)}`,
+        };
+    }
+    if (kind === 'liquidityPool') {
+        return {
+            kind: 'liquidityPool',
+            change,
+            summary: `${change === 'created' ? 'Created' : change === 'deleted' ? 'Deleted' : 'Updated'} liquidity pool`,
+        };
+    }
+    return {
+        kind: 'unknown',
+        change,
+        summary: `${change} an unrecognized ledger entry (${kind})`,
+    };
+}
+/**
+ * Coerces a stellar-sdk `Int64` (a Hyper wrapper) into a native bigint.
+ * Returns undefined if the input is undefined (the optional-chaining on
+ * `before?.data()?.account()?.balance()` can legitimately produce undefined).
+ */
+function int64ToBigInt(value) {
+    return value === undefined ? undefined : value.toBigInt();
+}
+function formatAccountDelta(address, before, after, change) {
+    if (change === 'created')
+        return `New account ${short(address)} created with ${after !== undefined ? formatStroops(after) + ' XLM' : 'funding'}`;
+    if (change === 'deleted')
+        return `Account ${short(address)} merged away`;
+    if (before !== undefined && after !== undefined) {
+        const diff = after - before;
+        const sign = diff >= 0n ? '+' : '';
+        return `XLM balance ${short(address)}: ${formatStroops(before)} → ${formatStroops(after)} (${sign}${formatStroops(diff)})`;
+    }
+    return `XLM balance ${short(address)} updated`;
+}
+function formatTrustlineDelta(account, asset, before, after, change) {
+    if (change === 'created')
+        return `New trustline for ${asset} on ${short(account)}`;
+    if (change === 'deleted')
+        return `Removed trustline for ${asset} on ${short(account)}`;
+    if (before !== undefined && after !== undefined) {
+        const diff = after - before;
+        const sign = diff >= 0n ? '+' : '';
+        return `${asset} balance ${short(account)}: ${formatStroops(before)} → ${formatStroops(after)} (${sign}${formatStroops(diff)})`;
+    }
+    return `${asset} balance ${short(account)} updated`;
+}
+/** Formats an integer amount of stroops as a decimal XLM/asset-unit string (1 XLM = 10,000,000 stroops). */
+function formatStroops(stroops) {
+    const negative = stroops < 0n;
+    const abs = negative ? -stroops : stroops;
+    const whole = abs / 10000000n;
+    const frac = abs % 10000000n;
+    const fracStr = frac.toString().padStart(7, '0').replace(/0+$/, '');
+    const value = fracStr ? `${whole}.${fracStr}` : whole.toString();
+    return negative ? `-${value}` : value;
 }
 function decodeOperation(op, sdk, opts) {
     const flags = [];
@@ -187,6 +508,7 @@ function decodeInvokeHostFunction(op, sdk, opts) {
     const flags = [];
     const details = {};
     let summary = 'Invoke a Soroban host function';
+    let badges;
     if (op.func.switch().name === 'hostFunctionTypeInvokeContract') {
         const invoke = op.func.invokeContract();
         const contractId = sdk.Address.fromScAddress(invoke.contractAddress()).toString();
@@ -194,18 +516,34 @@ function decodeInvokeHostFunction(op, sdk, opts) {
         const args = invoke.args().map((arg) => sdk.scValToNative(arg));
         details.contract = contractId;
         details.function = functionName;
-        summary = `Call \`${functionName}\` on contract ${short(contractId)}`;
+        // Surface the contract's human-readable name from contractMetadata
+        // (if available) in the summary — "Call `transfer` on USDC Token"
+        // reads much better than "Call `transfer` on contract CBETT2CX...".
+        const metadata = lookupContractMetadata(contractId, opts.contractMetadata);
+        const contractLabel = metadata?.name ?? short(contractId);
+        summary = `Call \`${functionName}\` on ${contractLabel}`;
         if (SEP41_AMOUNT_METHODS.has(functionName) && args.length > 0) {
             // SEP-41 token calls put the amount last (transfer(from, to, amount), mint(to, amount), ...) — decode it directly from the args rather than simulating.
             const amountArg = args[args.length - 1];
             if (typeof amountArg === 'bigint' || typeof amountArg === 'number') {
-                summary = `${capitalize(functionName)} ${amountArg} (raw units) via contract ${short(contractId)}`;
+                summary = `${capitalize(functionName)} ${amountArg} (raw units) via ${contractLabel}`;
                 details.amount = String(amountArg);
             }
         }
+        // Backwards-compat: the verifiedContracts set still drives the
+        // unverified-contract RISK flag. If contractMetadata is also
+        // provided, we additionally surface positive badges (verified,
+        // audited, etc.) — but the risk flag and the badge are independent
+        // signals, so a contract could be "verified" (badge) but not in
+        // the verifiedContracts set (no risk flag), or vice versa.
         const verified = checkVerified(contractId, opts.verifiedContracts);
         if (verified === false) {
             flags.push({ severity: 'warning', code: 'unverified-contract', message: `Contract ${short(contractId)} isn't in your list of verified contracts.` });
+        }
+        // Surface positive trust signals as badges — verified, audited,
+        // publisher, plus any free-form extras the consumer configured.
+        if (metadata) {
+            badges = buildContractBadges(contractId, metadata);
         }
     }
     else if (op.func.switch().name === 'hostFunctionTypeUploadContractWasm') {
@@ -219,7 +557,136 @@ function decodeInvokeHostFunction(op, sdk, opts) {
         if (authFlag)
             flags.push(authFlag);
     }
-    return { type: op.type, summary, details, riskFlags: flags };
+    return { type: op.type, summary, details, riskFlags: flags, contractBadges: badges };
+}
+/**
+ * Looks up a contract's metadata from the PreviewOptions.contractMetadata
+ * field — handles both the Map and the function form.
+ */
+function lookupContractMetadata(contractId, metadata) {
+    if (!metadata)
+        return undefined;
+    if (metadata instanceof Map)
+        return metadata.get(contractId);
+    return metadata(contractId);
+}
+/**
+ * Builds the badge array for a contract from its metadata. Each badge
+ * is a separate entry — a contract can be both "Verified" and "Audited"
+ * and "Published by Saganta", and the preview UI renders each one
+ * independently.
+ */
+function buildContractBadges(contractId, meta) {
+    const badges = [];
+    if (meta.verified) {
+        badges.push({
+            contractId,
+            label: 'Verified',
+            code: 'verified',
+            description: meta.name ? `Verified: ${meta.name}` : 'This contract is in your app\'s verified registry.',
+            severity: 'success',
+        });
+    }
+    if (meta.audited) {
+        badges.push({
+            contractId,
+            label: 'Audited',
+            code: 'audited',
+            description: 'This contract has been independently audited.',
+            url: meta.auditUrl,
+            severity: 'success',
+        });
+    }
+    if (meta.publisher) {
+        badges.push({
+            contractId,
+            label: meta.publisher,
+            code: 'publisher',
+            description: `Published by ${meta.publisher}`,
+            severity: 'info',
+        });
+    }
+    if (meta.extraBadges) {
+        for (const extra of meta.extraBadges) {
+            badges.push({
+                contractId,
+                label: extra.label,
+                code: 'extra',
+                description: extra.description,
+                url: extra.url,
+                severity: 'info',
+            });
+        }
+    }
+    return badges;
+}
+/**
+ * Builds a preview for a single Soroban auth entry (used when an app
+ * calls signAuthEntry() standalone, rather than signing the whole
+ * transaction). Surfaces the contract IDs and functions being
+ * authorized, plus risk flags for broad grants and unverified
+ * contracts.
+ *
+ * Auth entries are signed separately from the outer transaction
+ * envelope in delegated / multi-party flows — a standalone
+ * signAuthEntry() call can grant one or more contracts permission to
+ * act on the user's behalf, so this preview is critical for not
+ * silently approving broad authorization grants.
+ */
+export async function buildAuthEntryPreview(authEntryXdr, opts = {}) {
+    const sdk = await import('@stellar/stellar-sdk');
+    // Try base64 first (the most common encoding for XDR strings in
+    // Stellar), fall back to hex if base64 fails. This matches what
+    // SorobanAuthorizationEntry.fromXDR's auto-detection would do if the
+    // TS overloads allowed omitting the format with a string input.
+    let entry;
+    try {
+        entry = sdk.xdr.SorobanAuthorizationEntry.fromXDR(authEntryXdr, 'base64');
+    }
+    catch {
+        entry = sdk.xdr.SorobanAuthorizationEntry.fromXDR(authEntryXdr, 'hex');
+    }
+    const contractIds = new Set();
+    const functionNames = [];
+    const riskFlags = [];
+    let invocationCount = 0;
+    function walk(invocation) {
+        invocationCount++;
+        const fn = invocation.function();
+        if (fn.switch().name === 'sorobanAuthorizedFunctionTypeContractFn') {
+            const call = fn.contractFn();
+            const contractId = sdk.Address.fromScAddress(call.contractAddress()).toString();
+            const functionName = typeof call.functionName() === 'string'
+                ? call.functionName()
+                : call.functionName().toString();
+            contractIds.add(contractId);
+            functionNames.push(functionName);
+            const verified = checkVerified(contractId, opts.verifiedContracts);
+            if (verified === false) {
+                riskFlags.push({
+                    severity: 'warning',
+                    code: 'unverified-contract',
+                    message: `Authorization grants permission to contract ${short(contractId)}, which isn't in your list of verified contracts.`,
+                });
+            }
+        }
+        invocation.subInvocations().forEach(walk);
+    }
+    walk(entry.rootInvocation());
+    if (contractIds.size > 1 || invocationCount > 3) {
+        riskFlags.push({
+            severity: 'warning',
+            code: 'broad-auth-grant',
+            message: `This authorization spans ${contractIds.size} contract(s) across ${invocationCount} call(s) — review carefully if you expected a single, narrow action.`,
+        });
+    }
+    return {
+        authorizedContracts: Array.from(contractIds),
+        authorizedFunctions: functionNames,
+        invocationCount,
+        riskFlags,
+        raw: { authEntryXdr },
+    };
 }
 function assessAuthEntries(auth, sdk) {
     const contractIds = new Set();

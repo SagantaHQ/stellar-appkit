@@ -94,7 +94,31 @@ export function createAlbedoConnector() {
                     message,
                     pubkey: opts?.address ?? lastKnownAddress ?? undefined,
                 });
-                return { signedMessage: res.message_signature, signerAddress: res.pubkey };
+                // Albedo does NOT sign the raw message bytes. Per its `signMessage`
+                // intent, it returns:
+                //   - `signed_message`: a HEX-encoded value derived from the pubkey
+                //     and the original message (the bytes the wallet actually signed)
+                //   - `message_signature`: a HEX-encoded ed25519 signature over
+                //     `signed_message`'s bytes.
+                //
+                // The previous version of this connector returned only
+                // `message_signature` and threw away `signed_message`, which made
+                // server-side signature verification impossible without calling
+                // Albedo's intent again on the server (you can't recompute
+                // `signed_message` — its derivation is opaque / server-side).
+                //
+                // We now surface `signed_message` as `signedData` (base64 of the
+                // hex-decoded bytes), so `verifySiws` can verify the signature
+                // against the bytes Albedo actually signed — the same code path
+                // that handles Freighter/xBull/Ledger.
+                if (!res.signed_message) {
+                    throw ConnectError.internal('Albedo did not return a signed_message. The wallet may be on an older version — update Albedo and try again.', undefined, meta.id);
+                }
+                return {
+                    signedMessage: res.message_signature,
+                    signerAddress: res.pubkey,
+                    signedData: Buffer.from(res.signed_message, 'hex').toString('base64'),
+                };
             });
         },
     };

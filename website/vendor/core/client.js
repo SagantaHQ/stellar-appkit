@@ -4,7 +4,7 @@ import { createWebStorage, SESSION_STORAGE_KEY } from './storage.js';
 import { TabSync } from './tab-sync.js';
 import { ConnectError, NetworkMismatchError, } from './types.js';
 import { signInWithStellar } from './siws.js';
-import { buildTransactionPreview } from './decode.js';
+import { buildTransactionPreview, buildAuthEntryPreview, } from './decode.js';
 const DEFAULT_RETRY_INTERVAL_MS = 1500;
 const DEFAULT_RETRY_TIMEOUT_MS = 30_000;
 /**
@@ -20,6 +20,8 @@ export class StellarAppKit {
     constructor(config) {
         /** Called before every signTransaction() — set by ui-web automatically, or assign your own for a non-UI preview flow (e.g. logging, a CLI confirmation prompt). */
         this.onPreviewTransaction = null;
+        /** Called before every signAuthEntry() — same contract as onPreviewTransaction, but for standalone auth-entry signing. Returns false to cancel before the wallet sees the request. */
+        this.onPreviewAuthEntry = null;
         this.emitter = new TypedEmitter();
         this._status = 'idle';
         this._sessions = new Map(); // keyed by walletId
@@ -34,6 +36,7 @@ export class StellarAppKit {
         this.storage = config.storage ?? createWebStorage();
         this.customNetworkPassphrase = config.networkPassphrase;
         this.onPreviewTransaction = config.onPreviewTransaction ?? null;
+        this.onPreviewAuthEntry = config.onPreviewAuthEntry ?? null;
         this.previewOptions = config.previewOptions ?? {};
         if (config.syncAcrossTabs !== false) {
             this.tabSync = new TabSync(SESSION_STORAGE_KEY, () => {
@@ -372,9 +375,31 @@ export class StellarAppKit {
             return connector.signTransaction(xdr, opts);
         });
     }
-    /** Queued alongside signTransaction()/signMessage() — see enqueueSign. Doesn't currently go through the preview flow (see README's "known gaps"). */
+    /**
+     * Signs a Soroban auth entry. Queued alongside every other sign* call
+     * (see enqueueSign). If `onPreviewAuthEntry` is set, the auth entry is
+     * decoded and the handler is awaited *before* the wallet ever sees the
+     * request — rejecting there throws the same way a wallet-side rejection
+     * would, so callers don't need to special-case it. Pass `skipPreview:
+     * true` to bypass for a specific call (e.g. a flow already confirmed
+     * through some other UI).
+     *
+     * The preview surfaces the contract IDs and functions being authorized,
+     * plus risk flags for broad grants and unverified contracts — this
+     * closes a previous gap where standalone signAuthEntry() calls could
+     * silently grant broad contract permissions without user review.
+     */
     signAuthEntry(authEntryXdr, opts) {
-        return this.enqueueSign(() => this.requireActiveConnector().signAuthEntry(authEntryXdr, opts));
+        return this.enqueueSign(async () => {
+            const connector = this.requireActiveConnector();
+            if (this.onPreviewAuthEntry && !opts?.skipPreview) {
+                const preview = await buildAuthEntryPreview(authEntryXdr, this.previewOptions);
+                const approved = await this.onPreviewAuthEntry(preview);
+                if (!approved)
+                    throw ConnectError.rejected(connector.id);
+            }
+            return connector.signAuthEntry(authEntryXdr, opts);
+        });
     }
     /** Queued alongside signTransaction()/signAuthEntry() — see enqueueSign. */
     signMessage(message, opts) {

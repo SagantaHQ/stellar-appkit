@@ -1,7 +1,7 @@
 import { ConnectorRegistry } from './connectors/registry.js';
 import { type ConnectSession, type ConnectStatus, type ConnectStorage, type SignMessageResult, type SignOptions, type SignTransactionResult, type SignTxOptions, type SignAuthEntryResult, type StellarAppKitEvents, type StellarNetwork, type WalletConnector, type WalletReachability } from './types.js';
 import { type SignInOptions, type SignInResult } from './siws.js';
-import { type PreviewHandler, type PreviewOptions } from './decode.js';
+import { type PreviewHandler, type AuthEntryPreviewHandler, type PreviewOptions } from './decode.js';
 export interface StellarAppKitConfig {
     connectors: WalletConnector[];
     /** Network the app expects to operate on — used to validate the connected wallet's network. */
@@ -20,7 +20,9 @@ export interface StellarAppKitConfig {
     syncAcrossTabs?: boolean;
     /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
     onPreviewTransaction?: PreviewHandler;
-    /** Passed through to buildTransactionPreview() — verifiedContracts, largeTransferThreshold. */
+    /** Called before every signAuthEntry() with a decoded preview of the auth tree — return false to cancel before the wallet ever sees the request. Standalone auth-entry signing can grant broad contract permissions, so this preview is critical. */
+    onPreviewAuthEntry?: AuthEntryPreviewHandler;
+    /** Passed through to buildTransactionPreview() / buildAuthEntryPreview() — verifiedContracts, largeTransferThreshold. */
     previewOptions?: PreviewOptions;
 }
 export interface AppKitConnectOptions {
@@ -49,6 +51,8 @@ export declare class StellarAppKit {
     readonly appMetadata?: StellarAppKitConfig['appMetadata'];
     /** Called before every signTransaction() — set by ui-web automatically, or assign your own for a non-UI preview flow (e.g. logging, a CLI confirmation prompt). */
     onPreviewTransaction: PreviewHandler | null;
+    /** Called before every signAuthEntry() — same contract as onPreviewTransaction, but for standalone auth-entry signing. Returns false to cancel before the wallet sees the request. */
+    onPreviewAuthEntry: AuthEntryPreviewHandler | null;
     previewOptions: PreviewOptions;
     private storage;
     private customNetworkPassphrase?;
@@ -135,8 +139,23 @@ export declare class StellarAppKit {
     signTransaction(xdr: string, opts?: SignTxOptions & {
         skipPreview?: boolean;
     }): Promise<SignTransactionResult>;
-    /** Queued alongside signTransaction()/signMessage() — see enqueueSign. Doesn't currently go through the preview flow (see README's "known gaps"). */
-    signAuthEntry(authEntryXdr: string, opts?: SignOptions): Promise<SignAuthEntryResult>;
+    /**
+     * Signs a Soroban auth entry. Queued alongside every other sign* call
+     * (see enqueueSign). If `onPreviewAuthEntry` is set, the auth entry is
+     * decoded and the handler is awaited *before* the wallet ever sees the
+     * request — rejecting there throws the same way a wallet-side rejection
+     * would, so callers don't need to special-case it. Pass `skipPreview:
+     * true` to bypass for a specific call (e.g. a flow already confirmed
+     * through some other UI).
+     *
+     * The preview surfaces the contract IDs and functions being authorized,
+     * plus risk flags for broad grants and unverified contracts — this
+     * closes a previous gap where standalone signAuthEntry() calls could
+     * silently grant broad contract permissions without user review.
+     */
+    signAuthEntry(authEntryXdr: string, opts?: SignOptions & {
+        skipPreview?: boolean;
+    }): Promise<SignAuthEntryResult>;
     /** Queued alongside signTransaction()/signAuthEntry() — see enqueueSign. */
     signMessage(message: string, opts?: SignOptions): Promise<SignMessageResult>;
     /** Sign-In With Stellar — see siws.ts for the message format. Also queued, since it's a signMessage() call under the hood. */

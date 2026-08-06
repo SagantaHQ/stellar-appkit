@@ -15,7 +15,7 @@ Stellar already has solid wallet-connection plumbing — [SEP-43](https://github
 - A **first-class Soroban layer** — simulate → prepare → sign → submit as one call, with typed contract clients, instead of hand-rolling `rpc.Server` calls per app.
 - **Multi-wallet sessions**, hardware wallet support, and network-mismatch recovery that goes further than "fail with a generic error."
 
-Every connector is its own independently tree-shakeable module — pick one wallet or all of them, nothing you don't import ships in your bundle. Verified with a real code-splitting bundler config, not a naive single-file one: the initial chunk is 36.9kb with only Freighter imported and 43.3kb with Freighter, Albedo, and xBull all imported together — zero code for a wallet you don't import. The bigger weight (`@stellar/stellar-sdk`, ~1.4MB) is a separate chunk that only loads on the first actual sign or Soroban call, not part of that initial number.
+Every connector is its own independently tree-shakeable module — pick one wallet or all of them, nothing you don't import ships in your bundle. The initial chunk is approximately 40kb with only Freighter imported (numbers may have shifted with the addition of typed contract clients and RPC failover — re-verify with your bundler's analyzer). Framework wrappers (`/react`, `/vue`, `/solid`, `/svelte`) are separate subpath exports — a React app never ships Vue or Svelte code. The bigger weight (`@stellar/stellar-sdk`, ~1.4MB) is a separate chunk that only loads on the first actual sign or Soroban call, not part of that initial number.
 
 ---
 
@@ -690,4 +690,4 @@ Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
 ## License
 
-GPL-3.0-or-later — see [LICENSE](./LICENSE). (Earlier drafts of this README said MIT; that was wrong, not a deliberate relicensing — the committed `LICENSE` file has always been GPLv3. Worth a deliberate decision if an SDK meant to be embedded in other people's apps is what you actually want under copyleft terms, since that has real implications for anyone adopting it.)
+MIT — see [LICENSE](./LICENSE). (Previously shipped under GPLv3; changed to MIT to match the SDK's intended use case of being embedded in other people's apps. GPLv3's copyleft would have required apps that embed this SDK to themselves be open-sourced, which is not the intent.)

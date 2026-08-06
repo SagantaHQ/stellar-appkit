@@ -148,19 +148,47 @@ export function buildStyles(theme) {
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
 
-    /* connecting state: a hairline arc traces the selected wallet's tile outline, not a generic spinner */
+    /* connecting state: a conic-gradient "scanner" effect rotates around
+     * the wallet tile's rounded-rectangle border. This gives a modern
+     * loading-indicator feel (like AI dashboards) without the wobble of
+     * a spinning border. The ::before is a conic gradient that sits 2px
+     * outside the tile; ::after is a solid background that sits 2px inside,
+     * so only the gradient ring is visible.
+     *
+     * Uses conic-gradient instead of border + border-radius because a
+     * spinning border with border-radius wobbles — the corners trace a
+     * different radius than the edges. A conic gradient on a rounded
+     * rectangle traces smoothly because it's a fill, not a stroke. */
+    .wallet-tile.connecting {
+      position: relative;
+      z-index: 0;
+    }
+    .wallet-tile.connecting::before {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border-radius: 12px;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0%,
+        ${v('colorAccent', theme)} 25%,
+        ${v('colorAccent', theme)} 40%,
+        transparent 60%,
+        transparent 100%
+      );
+      animation: sc-spin 1.2s linear infinite;
+      z-index: -1;
+    }
     .wallet-tile.connecting::after {
       content: "";
       position: absolute;
-      inset: -1px;
-      border-radius: 11px;
-      border: 1.5px solid transparent;
-      border-top-color: ${v('colorAccent', theme)};
-      border-right-color: ${v('colorAccent', theme)};
-      animation: sc-spin 0.8s linear infinite;
+      inset: 1px;
+      border-radius: 9px;
+      background: ${v('colorBg', theme)};
+      z-index: -1;
     }
     @media (prefers-reduced-motion: reduce) {
-      .wallet-tile.connecting::after { animation-duration: 1.6s; }
+      .wallet-tile.connecting::before { animation-duration: 3s; }
     }
     @keyframes sc-spin { to { transform: rotate(360deg); } }
 
@@ -184,6 +212,16 @@ export function buildStyles(theme) {
       width: 36px; height: 36px; border-radius: 50%;
       background: ${v('colorAccent', theme)};
       flex-shrink: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .account-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
     }
     .account-address {
       font-family: ${v('fontMono', theme)};
@@ -236,10 +274,24 @@ export function buildStyles(theme) {
     .preview-meta {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       font-family: ${v('fontMono', theme)};
       font-size: 12px;
       color: ${v('colorTextMuted', theme)};
       padding: 0 2px;
+      gap: 8px;
+    }
+    .preview-meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .preview-meta-item .icon-btn {
+      padding: 2px;
+      opacity: 0.6;
+    }
+    .preview-meta-item .icon-btn:hover {
+      opacity: 1;
     }
     .preview-ops { display: flex; flex-direction: column; gap: 8px; }
     .preview-op {
@@ -252,6 +304,48 @@ export function buildStyles(theme) {
     .preview-op-index { color: ${v('colorTextMuted', theme)}; font-family: ${v('fontMono', theme)}; }
     .preview-actions { display: flex; gap: 8px; margin-top: 4px; }
     .preview-actions .btn { flex: 1; }
+
+    /* contract verification badges — positive trust signals (Verified,
+     * Audited, Published by X) surfaced from previewOptions.contractMetadata */
+    .contract-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .contract-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      border: 1px solid;
+      cursor: default;
+    }
+    .contract-badge[data-url] { cursor: pointer; }
+    .contract-badge[data-url]:hover { opacity: 0.8; }
+    .badge-success {
+      color: #16a34a;
+      background: rgba(22, 163, 74, 0.1);
+      border-color: rgba(22, 163, 74, 0.3);
+    }
+    .badge-info {
+      color: ${v('colorTextMuted', theme)};
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorBorder', theme)};
+    }
+    .badge-warning {
+      color: #d97706;
+      background: rgba(217, 119, 6, 0.1);
+      border-color: rgba(217, 119, 6, 0.3);
+    }
+    .badge-danger {
+      color: #dc2626;
+      background: rgba(220, 38, 38, 0.1);
+      border-color: rgba(220, 38, 38, 0.3);
+    }
 
     .risk-flag {
       margin-top: 8px;

@@ -1,8 +1,9 @@
 import { ConnectError, NetworkMismatchError } from '../index.js';
 import { darkTheme, lightTheme, themeToCssDeclarations } from './tokens.js';
 import { buildStyles } from './styles.js';
-import { icons, genericWalletIcon } from './icons.js';
+import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
+import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
 const MOBILE_BREAKPOINT_PX = 640;
 /**
  * `<saganta-appkit-modal>` — the single UI entry point. Attach a
@@ -23,7 +24,7 @@ const MOBILE_BREAKPOINT_PX = 640;
  */
 export class SagantaAppKitModal extends HTMLElement {
     static get observedAttributes() {
-        return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network'];
+        return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars'];
     }
     constructor() {
         super();
@@ -36,11 +37,15 @@ export class SagantaAppKitModal extends HTMLElement {
         this.connectingWalletId = null;
         this.lastError = null;
         this.copyState = 'idle';
+        /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
+        this.copiedAddress = null;
         this.pendingAccountPicker = null;
         this.pendingPreview = null;
         this.releaseFocusTrap = null;
         this.clientUnsubscribers = [];
         this.mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
+        /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
+        this.avatarCache = new Map();
         this.handleGlobalKeydown = (e) => {
             if (e.key === 'Escape')
                 this.close();
@@ -80,6 +85,7 @@ export class SagantaAppKitModal extends HTMLElement {
             this.view = 'connected';
             this.render();
         }), client.on('sessionsChanged', () => {
+            this.refreshAvatars();
             this.render();
         }), client.on('error', (err) => {
             this.lastError = err;
@@ -146,6 +152,37 @@ export class SagantaAppKitModal extends HTMLElement {
         this.walletList = await this._client.registry.listReachability();
         this.render();
     }
+    /**
+     * Fetches avatars for all connected sessions (and account-picker
+     * accounts) in parallel, then re-renders. Uses the avatar cache so
+     * already-fetched avatars aren't re-fetched. Called on sessionsChanged
+     * and when the account picker appears.
+     */
+    async refreshAvatars() {
+        if (!this._client)
+            return;
+        // Collect all addresses that need avatars: connected sessions + account picker.
+        const addressesToFetch = [];
+        for (const session of this._client.sessions) {
+            addressesToFetch.push({
+                address: session.address,
+                connector: this._client.registry.get(session.walletId) ?? null,
+            });
+        }
+        if (this.pendingAccountPicker) {
+            for (const account of this.pendingAccountPicker.accounts) {
+                addressesToFetch.push({
+                    address: account.address,
+                    connector: this.pendingAccountPicker.connector,
+                });
+            }
+        }
+        // Fetch in parallel — each call checks the cache first, so already-fetched
+        // avatars return immediately.
+        await Promise.all(addressesToFetch.map(({ address, connector }) => this.fetchAvatar(address, connector)));
+        // Re-render with the now-populated avatar cache.
+        this.render();
+    }
     async selectWallet(connector) {
         if (!this._client)
             return;
@@ -170,6 +207,10 @@ export class SagantaAppKitModal extends HTMLElement {
                     this.pendingAccountPicker = { connector, accounts };
                     this.view = 'account-picker';
                     this.render();
+                    // Fetch avatars for the picker accounts in the background —
+                    // the initial render shows gradient fallbacks, then avatars
+                    // pop in once fetched.
+                    void this.refreshAvatars();
                     return;
                 }
             }
@@ -235,15 +276,58 @@ export class SagantaAppKitModal extends HTMLElement {
         try {
             await navigator.clipboard.writeText(address);
             this.copyState = 'copied';
+            this.copiedAddress = address;
             this.render();
             window.setTimeout(() => {
-                this.copyState = 'idle';
-                this.render();
+                // Only clear the "copied" state if it's still for the same address
+                // — a newer copy on a different address shouldn't be cleared by
+                // an older timeout.
+                if (this.copiedAddress === address) {
+                    this.copyState = 'idle';
+                    this.copiedAddress = null;
+                    this.render();
+                }
             }, 1500);
         }
         catch {
             /* clipboard permission denied — silently ignore, address is still visible to copy manually */
         }
+    }
+    /**
+     * Fetches the avatar URL for a given address + connector, with caching.
+     * Returns null if no avatar is available (the UI falls back to a
+     * generated gradient).
+     *
+     * Priority:
+     * 1. Wallet-provided avatar (connector.getAvatar()) — highest priority,
+     *    the wallet knows the user's profile picture.
+     * 2. Stellar Expert avatar API (if `stellar-expert-avatars` attribute
+     *    is set) — a public service that generates avatars for any Stellar
+     *    account.
+     * 3. null — the UI uses gradientFromAddress() as a fallback.
+     */
+    async fetchAvatar(address, connector) {
+        const cacheKey = address;
+        if (this.avatarCache.has(cacheKey)) {
+            return this.avatarCache.get(cacheKey) ?? null;
+        }
+        // 1. Try the wallet's own avatar support first.
+        if (connector) {
+            const walletAvatar = await fetchWalletAvatar(connector);
+            if (walletAvatar) {
+                this.avatarCache.set(cacheKey, walletAvatar);
+                return walletAvatar;
+            }
+        }
+        // 2. Try Stellar Expert's public avatar API (opt-in via attribute).
+        if (this.getAttribute('stellar-expert-avatars') === 'true') {
+            const url = stellarExpertAvatarUrl(address);
+            this.avatarCache.set(cacheKey, url);
+            return url;
+        }
+        // 3. No avatar available — UI will use the gradient fallback.
+        this.avatarCache.set(cacheKey, null);
+        return null;
     }
     computeEffectiveMode() {
         const attr = this.getAttribute('mode') ?? 'auto';
@@ -339,11 +423,17 @@ export class SagantaAppKitModal extends HTMLElement {
                         : reachability === 'unavailable' ? 'Unavailable'
                             : '';
             const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
+            // Use the wallet's official icon URL first; fall back to our
+            // bundled inline SVG data-URI if the URL fails to load.
+            const fallbackIcon = getWalletIconDataUri(connector.id);
+            const onerrorHandler = fallbackIcon
+                ? `this.src='${fallbackIcon}'; this.onerror=null;`
+                : `this.style.display='none'; this.nextElementSibling.style.display='flex';`;
             return `
           <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability !== 'available'}" ${disabled ? 'disabled' : ''}>
             <span class="wallet-tile ${isConnecting ? 'connecting' : ''}">
-              <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-              <span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>
+              <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="${onerrorHandler}" />
+              ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
             </span>
             <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
             <span class="wallet-sub">${subLabel}</span>
@@ -357,15 +447,24 @@ export class SagantaAppKitModal extends HTMLElement {
         if (!picker)
             return this.renderWalletList();
         return picker.accounts
-            .map((account) => `
-          <button class="wallet-row" data-action="pick-account" data-address="${escapeAttr(account.address)}">
-            <span class="account-avatar" style="width:28px; height:28px; flex-shrink:0;"></span>
-            <span style="min-width:0; text-align:left;">
-              <span class="wallet-name" style="display:block;">${escapeHtml(account.label ?? 'Account')}</span>
-              <span class="account-network" style="font-family: var(--sak-font-mono);">${truncateAddress(account.address)}</span>
-            </span>
-          </button>
-        `)
+            .map((account) => {
+            const gradient = gradientFromAddress(account.address);
+            const avatarUrl = this.avatarCache.get(account.address);
+            const avatarHtml = avatarUrl
+                ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
+                : '';
+            const isCopied = this.copiedAddress === account.address && this.copyState === 'copied';
+            return `
+            <button class="wallet-row" data-action="pick-account" data-address="${escapeAttr(account.address)}">
+              <span class="account-avatar" style="background: ${gradient};">${avatarHtml}</span>
+              <span style="min-width:0; text-align:left; flex:1;">
+                <span class="wallet-name" style="display:block;">${escapeHtml(account.label ?? 'Account')}</span>
+                <span class="account-network" style="font-family: var(--sak-font-mono);">${truncateAddress(account.address)}</span>
+              </span>
+              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(account.address)}" aria-label="Copy address" onclick="event.stopPropagation();">${isCopied ? icons.check : icons.copy}</button>
+            </button>
+          `;
+        })
             .join('');
     }
     renderConnected() {
@@ -376,15 +475,21 @@ export class SagantaAppKitModal extends HTMLElement {
         const rows = sessions
             .map((session) => {
             const isActive = session.walletId === activeWalletId;
+            const gradient = gradientFromAddress(session.address);
+            const avatarUrl = this.avatarCache.get(session.address);
+            const avatarHtml = avatarUrl
+                ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
+                : '';
+            const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
             return `
           <div class="account-row" data-active="${isActive}" style="${isActive ? '' : 'opacity:0.7;'}">
-            <div class="account-avatar"></div>
+            <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
             <div style="min-width:0; flex:1; cursor:${isActive ? 'default' : 'pointer'};" data-action="${isActive ? '' : 'switch-account'}" data-wallet-id="${session.walletId}">
               <div class="account-address">${truncateAddress(session.address)}</div>
               <div class="account-network">${escapeHtml(session.network)}${isActive ? ' · active' : ''}</div>
             </div>
             <div class="account-actions">
-              ${isActive ? `<button class="icon-btn" data-action="copy-address" aria-label="Copy address">${this.copyState === 'copied' ? icons.check : icons.copy}</button>` : ''}
+              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
               <button class="icon-btn" data-action="disconnect-one" data-wallet-id="${session.walletId}" aria-label="Disconnect">${icons.close}</button>
             </div>
           </div>
@@ -404,12 +509,23 @@ export class SagantaAppKitModal extends HTMLElement {
             return this.renderWalletList();
         const { preview } = pending;
         const txFlags = preview.riskFlags.map((flag) => riskFlagHtml(flag)).join('');
+        // Surface the fee estimate if available (populated by
+        // SorobanConnection.previewInvoke when includeFeeEstimate is on).
+        const feeHtml = preview.feeEstimate
+            ? `<span>Fee ${preview.feeEstimate.totalFeeXlm}</span>`
+            : `<span>Fee ${preview.fee} stroops</span>`;
+        const isCopied = this.copiedAddress === preview.sourceAccount && this.copyState === 'copied';
         const opsHtml = preview.operations
             .map((op, i) => {
             const opFlags = op.riskFlags.map((flag) => riskFlagHtml(flag)).join('');
+            // Surface contract badges if present (from previewOptions.contractMetadata)
+            const badgesHtml = op.contractBadges && op.contractBadges.length > 0
+                ? `<div class="contract-badges">${op.contractBadges.map((b) => `<span class="contract-badge badge-${b.severity}"${b.url ? ` data-url="${escapeAttr(b.url)}"` : ''}>${escapeHtml(b.label)}</span>`).join('')}</div>`
+                : '';
             return `
           <div class="preview-op">
             <div class="preview-op-summary"><span class="preview-op-index">${i + 1}.</span> ${escapeHtml(op.summary)}</div>
+            ${badgesHtml}
             ${opFlags}
           </div>
         `;
@@ -418,8 +534,11 @@ export class SagantaAppKitModal extends HTMLElement {
         return `
       <div class="preview">
         <div class="preview-meta">
-          <span>From ${truncateAddress(preview.sourceAccount)}</span>
-          <span>Fee ${preview.fee} stroops</span>
+          <span class="preview-meta-item">
+            From ${truncateAddress(preview.sourceAccount)}
+            <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(preview.sourceAccount)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
+          </span>
+          ${feeHtml}
         </div>
         ${txFlags}
         <div class="preview-ops">${opsHtml}</div>
@@ -505,6 +624,27 @@ export class SagantaAppKitModal extends HTMLElement {
         this.root.querySelector('[data-action="copy-address"]')?.addEventListener('click', () => {
             if (this._client?.session)
                 this.copyAddress(this._client.session.address);
+        });
+        // Copy-to-clipboard for any address displayed inline (account picker,
+        // connected sessions, transaction preview source account). Each button
+        // carries the address in data-address so we know which one to copy.
+        this.root.querySelectorAll('[data-action="copy-address-inline"]').forEach((el) => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const address = el.dataset.address;
+                if (address)
+                    this.copyAddress(address);
+            });
+        });
+        // Contract badges with a data-url (e.g. audit report links) open in a
+        // new tab on click. Badges without data-url are display-only.
+        this.root.querySelectorAll('.contract-badge[data-url]').forEach((el) => {
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const url = el.dataset.url;
+                if (url)
+                    window.open(url, '_blank', 'noopener');
+            });
         });
     }
 }

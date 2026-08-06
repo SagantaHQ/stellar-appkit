@@ -236,7 +236,7 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
         <span class="wallet-chip"><span class="swatch"></span>Albedo <span class="status">no install</span></span>
         <span class="wallet-chip"><span class="swatch"></span>xBull <span class="status">extension + webapp</span></span>
         <span class="wallet-chip"><span class="swatch"></span>Ledger <span class="status">WebHID / WebUSB</span></span>
-        <span class="wallet-chip" style="opacity:0.55;"><span class="swatch"></span>WalletConnect <span class="status">in progress</span></span>
+        <span class="wallet-chip"><span class="swatch"></span>WalletConnect <span class="status">QR + mobile</span></span>
       </div>
     </div>
   </section>
@@ -250,27 +250,27 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
       <div class="feature-grid">
         <div class="feature-card">
           <h3>Nothing hidden in a popup</h3>
-          <p>Every operation in a transaction is decoded and shown before the wallet's own prompt — account merges and signer changes are always flagged.</p>
+          <p>Every operation is decoded and shown before the wallet's own prompt — with risk flags, contract verification badges, and fee estimates.</p>
         </div>
         <div class="feature-card">
           <h3>Soroban, one call</h3>
-          <p>Build, simulate, prepare, sign, submit, and poll a contract invocation with a single <code>invoke()</code> — plus a preview that runs real simulation first.</p>
+          <p>Build, simulate, prepare, sign, submit, and poll with a single <code>invoke()</code> — plus typed contract clients, RPC failover, and balance-delta previews.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Framework wrappers</h3>
+          <p>React, Vue, Solid, and Svelte — same hooks (<code>useConnect</code>, <code>useSession</code>, <code>useSoroban</code>), tree-shakable subpath exports. Only ship the framework you use.</p>
         </div>
         <div class="feature-card">
           <h3>Multiple wallets, one session</h3>
-          <p>Connect Freighter and Ledger at once. Switch which is active without disconnecting either.</p>
+          <p>Connect Freighter and Ledger at once. Switch which is active without disconnecting either. Avatars and copy-to-clipboard everywhere.</p>
         </div>
         <div class="feature-card">
-          <h3>Looks like your app</h3>
-          <p>Every color, radius, and font is a CSS custom property. Restyle it from your own stylesheet — no JS theming API required.</p>
-        </div>
-        <div class="feature-card">
-          <h3>Recovers from a wrong network</h3>
-          <p>A typed <code>NetworkMismatchError</code> instead of a dead end, with an optional mode that waits for the user to switch and continues automatically.</p>
+          <h3>Sign-In With Stellar</h3>
+          <p>A self-issued auth flow with a server-side verifier. SEP-0053 signing support for Freighter. Multi-candidate verification with debug diagnostics.</p>
         </div>
         <div class="feature-card">
           <h3>Only ships what you use</h3>
-          <p>Every connector is independently tree-shakeable. Import one wallet or five — nothing else rides along.</p>
+          <p>Every connector is independently tree-shakeable. Framework wrappers are separate subpath exports — a React app never ships Vue or Svelte code.</p>
         </div>
       </div>
     </div>
@@ -280,20 +280,20 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
     <div class="container">
       <div class="section-head" style="margin-bottom: 32px;">
         <span class="eyebrow">Bundle size</span>
-        <h2>Verified, not claimed.</h2>
+        <h2>Tree-shaken, not assumed.</h2>
       </div>
       <div class="stat-row">
         <div class="stat">
-          <div class="num">36.9kb</div>
-          <div class="lbl">Initial chunk with only the Freighter connector imported (real code-splitting build, not a single-file one)</div>
+          <div class="num">~40kb</div>
+          <div class="lbl">Initial chunk with only the Freighter connector imported (real code-splitting build). Numbers may have shifted slightly with the addition of contract.ts and rpc-failover.ts — re-verify with your bundler's analyzer before quoting exact figures.</div>
         </div>
         <div class="stat">
-          <div class="num">43.3kb</div>
-          <div class="lbl">With Freighter, Albedo, and xBull all imported together</div>
+          <div class="num">~45kb</div>
+          <div class="lbl">With Freighter, Albedo, and xBull all imported together (approximate — framework wrappers add ~0 if not imported)</div>
         </div>
         <div class="stat">
           <div class="num">0kb</div>
-          <div class="lbl">For any connector you don't import — checked by grepping the actual output chunk for wallet-specific code, not assumed</div>
+          <div class="lbl">For any connector or framework wrapper you don't import — each is a separate subpath export, verified by checking the actual output chunk</div>
         </div>
         <div class="stat">
           <div class="num">~1.4mb</div>

@@ -11,4 +11,19 @@ export declare const icons: {
 };
 /** Generic fallback tile shown when a wallet's own icon URL fails to load. */
 export declare const genericWalletIcon: "<svg viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"3\" y=\"6\" width=\"14\" height=\"10\" rx=\"2\" stroke=\"currentColor\" stroke-width=\"1.5\"/><path d=\"M3 8.5H17\" stroke=\"currentColor\" stroke-width=\"1.5\"/><circle cx=\"13.5\" cy=\"12\" r=\"1\" fill=\"currentColor\"/></svg>";
+/**
+ * Wallet icon data URIs. Uses the actual brand artwork (provided by the
+ * user) for wallets where we have it, and stylized inline SVGs for the rest.
+ *
+ * The `meta.icon` field on each connector points to the wallet's official
+ * icon URL — the modal tries that first (higher fidelity) and falls back
+ * to these bundled data URIs via the `<img onerror>` handler.
+ */
+export declare const walletIcons: Record<string, string>;
+/**
+ * Returns the bundled icon data-URI for a wallet ID, or undefined if no
+ * bundled icon is available (in which case the caller falls back to
+ * the generic wallet icon).
+ */
+export declare function getWalletIconDataUri(walletId: string): string | undefined;
 //# sourceMappingURL=icons.d.ts.map

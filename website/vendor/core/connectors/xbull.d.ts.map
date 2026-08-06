@@ -1,1 +1,1 @@
-{"version":3,"file":"xbull.d.ts","sourceRoot":"","sources":["../../src/connectors/xbull.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AAIrB;;;;;;;;;;;;;;;;;;;;;;;;;;GA0BG;AACH,wBAAgB,oBAAoB,IAAI,eAAe,CAqHtD"}
+{"version":3,"file":"xbull.d.ts","sourceRoot":"","sources":["../../src/connectors/xbull.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AA2GrB,wBAAgB,oBAAoB,IAAI,eAAe,CAyMtD"}

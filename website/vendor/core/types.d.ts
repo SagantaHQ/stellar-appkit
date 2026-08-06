@@ -115,8 +115,31 @@ export interface SignAuthEntryResult {
     signerAddress: string;
 }
 export interface SignMessageResult {
+    /** The signature itself — encoding varies per wallet (base64 for Freighter/Ledger, hex for Albedo). Decoded by the verifier. */
     signedMessage: string;
     signerAddress: string;
+    /**
+     * Base64 of the exact byte sequence that was passed to the wallet's
+     * signing function. This is what the verifier must hash/verify against —
+     * NOT necessarily the plaintext `message` argument the caller passed in.
+     *
+     * Why this exists: wallets do not all sign the same thing.
+     *  - Freighter, Ledger, and SEP-43-compliant wallets sign the raw UTF-8
+     *    bytes of the message string — `signedData` is just `base64(utf8(message))`.
+     *  - Albedo signs a derived value (`signed_message`, a hash of pubkey +
+     *    message produced server-side) rather than the raw message bytes —
+     *    `signedData` is `base64(hexDecode(signed_message))`.
+     *  - xBull signs a `fullMessage` that may include a wallet-added prefix —
+     *    `signedData` is `base64(utf8(fullMessage))`.
+     *
+     * The connector is the only code that knows what bytes the wallet actually
+     * signed; surfacing it here makes the verifier wallet-agnostic.
+     *
+     * Optional for backward compatibility with third-party connectors that
+     * haven't been updated yet — the verifier falls back to
+     * `Buffer.from(message, 'utf-8')` when `signedData` is absent.
+     */
+    signedData?: string;
 }
 /**
  * Every adapter — native SEP-43 or shimmed — implements this. This is the
@@ -139,6 +162,21 @@ export interface WalletConnector {
     listAccounts?(): Promise<WalletAccountOption[]>;
     /** Switches which of listAccounts()'s addresses subsequent sign/getAddress calls act on. Only meaningful alongside listAccounts. */
     selectAccount?(address: string): Promise<void>;
+    /**
+     * Optional: returns a URL to the connected account's profile picture /
+     * avatar, if the wallet supports one. Used by the UI to render an
+     * avatar next to the address instead of a generic colored circle.
+     *
+     * Return `null` or `undefined` if no avatar is available — the UI
+     * falls back to a generated gradient avatar based on the address.
+     * Returning a string URL (data: or https:) causes the UI to render
+     * an `<img>` tag for the avatar.
+     *
+     * Wallets that don't support avatars omit this method entirely.
+     */
+    getAvatar?(): Promise<{
+        url: string;
+    } | null>;
 }
 /** Cross-platform storage shim — localStorage on web, AsyncStorage/SecureStore on RN. */
 export interface ConnectStorage {

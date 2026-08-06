@@ -1,1 +1,1 @@
-{"version":3,"file":"albedo.d.ts","sourceRoot":"","sources":["../../src/connectors/albedo.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AAIrB;;;;;;;;;;GAUG;AACH,wBAAgB,qBAAqB,IAAI,eAAe,CAgHvD"}
+{"version":3,"file":"albedo.d.ts","sourceRoot":"","sources":["../../src/connectors/albedo.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AAIrB;;;;;;;;;;GAUG;AACH,wBAAgB,qBAAqB,IAAI,eAAe,CA4IvD"}

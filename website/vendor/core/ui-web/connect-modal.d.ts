@@ -29,11 +29,15 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private connectingWalletId;
     private lastError;
     private copyState;
+    /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
+    private copiedAddress;
     private pendingAccountPicker;
     private pendingPreview;
     private releaseFocusTrap;
     private clientUnsubscribers;
     private mediaQuery;
+    /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
+    private avatarCache;
     constructor();
     connectedCallback(): void;
     disconnectedCallback(): void;
@@ -45,6 +49,13 @@ export declare class SagantaAppKitModal extends HTMLElement {
     close(): void;
     private handleGlobalKeydown;
     private refreshWalletList;
+    /**
+     * Fetches avatars for all connected sessions (and account-picker
+     * accounts) in parallel, then re-renders. Uses the avatar cache so
+     * already-fetched avatars aren't re-fetched. Called on sessionsChanged
+     * and when the account picker appears.
+     */
+    private refreshAvatars;
     private selectWallet;
     private pickAccount;
     /**
@@ -59,6 +70,20 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private showTransactionPreview;
     private resolvePreview;
     private copyAddress;
+    /**
+     * Fetches the avatar URL for a given address + connector, with caching.
+     * Returns null if no avatar is available (the UI falls back to a
+     * generated gradient).
+     *
+     * Priority:
+     * 1. Wallet-provided avatar (connector.getAvatar()) — highest priority,
+     *    the wallet knows the user's profile picture.
+     * 2. Stellar Expert avatar API (if `stellar-expert-avatars` attribute
+     *    is set) — a public service that generates avatars for any Stellar
+     *    account.
+     * 3. null — the UI uses gradientFromAddress() as a fallback.
+     */
+    private fetchAvatar;
     private computeEffectiveMode;
     private resolveTheme;
     private render;

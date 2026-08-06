@@ -8,7 +8,7 @@ export async function signInWithStellar(opts) {
     const issuedAt = new Date();
     const expirationTime = opts.expirationTime ?? new Date(issuedAt.getTime() + 10 * 60 * 1000);
     const message = buildSiwsMessage({ ...opts, address, issuedAt, expirationTime });
-    const { signedMessage, signerAddress } = await connector.signMessage(message);
+    const { signedMessage, signerAddress, signedData } = await connector.signMessage(message);
     if (signerAddress !== address) {
         // Defends against a wallet returning a different signer than the one
         // we asked to sign — should never happen, but a session bug here is
@@ -19,6 +19,7 @@ export async function signInWithStellar(opts) {
         message,
         signedMessage,
         signerAddress,
+        signedData,
         issuedAt: issuedAt.toISOString(),
         expirationTime: expirationTime.toISOString(),
     };

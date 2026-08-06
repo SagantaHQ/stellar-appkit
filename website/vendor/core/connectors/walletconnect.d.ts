@@ -1,28 +1,29 @@
-import type { WalletConnector } from '../types.js';
-/**
- * WalletConnect v2 (Reown) relay adapter — the single connector that covers
- * every wallet supporting the Stellar WC namespace (Lobstr, Hana, Hot
- * Wallet, and any wallet on both mobile and desktop that isn't a browser
- * extension). This is Phase 2 in the roadmap: it needs a real
- * `@walletconnect/sign-client` session (QR pairing on desktop, deep link on
- * mobile) wired in, session persistence via the injected `ConnectStorage`,
- * and `stellar_signXDR` / `stellar_signAndSubmitXDR` request methods per
- * the Stellar WC namespace.
- *
- * This file defines the adapter shape and wires up everything that doesn't
- * depend on the actual relay client, so implementing `initSession`/
- * `request` below is the only work left — the rest of the SDK (Soroban
- * layer, SIWS, UI) already knows how to talk to this connector once that's
- * in place, because it speaks the same WalletConnector interface as every
- * other adapter.
- */
-export declare function createWalletConnectConnector(opts: {
+import type { WalletConnector, ConnectStorage } from '../types.js';
+export interface WalletConnectConnectorOptions {
+    /** WalletConnect Cloud project ID — get one at cloud.walletconnect.com. */
     projectId: string;
+    /** App metadata shown in the wallet's connection approval dialog. */
     metadata: {
         name: string;
         description: string;
         url: string;
         icons: string[];
     };
-}): WalletConnector;
+    /**
+     * Called with the WC pairing URI when a new connection is initiated.
+     * The app renders this as a QR code (desktop) or opens it as a deep
+     * link (mobile). Required — without this, the user can't scan the
+     * pairing code.
+     */
+    onUri: (uri: string) => void;
+    /**
+     * Optional storage for persisting the WC session topic across page
+     * reloads. If provided, `restore()` will attempt to reconnect using
+     * the saved topic. If not provided, sessions are lost on page reload.
+     */
+    storage?: ConnectStorage;
+    /** The Stellar network passphrase to include in the session proposal. */
+    networkPassphrase: string;
+}
+export declare function createWalletConnectConnector(opts: WalletConnectConnectorOptions): WalletConnector;
 //# sourceMappingURL=walletconnect.d.ts.map

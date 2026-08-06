@@ -1,1 +1,1 @@
-{"version":3,"file":"freighter.d.ts","sourceRoot":"","sources":["../../src/connectors/freighter.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AAIrB;;;;;;;;GAQG;AACH,wBAAgB,wBAAwB,IAAI,eAAe,CAwI1D"}
+{"version":3,"file":"freighter.d.ts","sourceRoot":"","sources":["../../src/connectors/freighter.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EACV,eAAe,EAYhB,MAAM,aAAa,CAAC;AAIrB;;;;;;;;GAQG;AACH,wBAAgB,wBAAwB,IAAI,eAAe,CAoJ1D"}

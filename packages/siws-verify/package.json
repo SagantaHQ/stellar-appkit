@@ -27,5 +27,5 @@
   "peerDependencies": {
     "@stellar/stellar-sdk": "^13.0.0"
   },
-  "license": "GPL-3.0-or-later"
+  "license": "MIT"
 }

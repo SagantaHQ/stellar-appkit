@@ -155,17 +155,29 @@ export function createLedgerConnector(options = {}) {
                 };
             });
         },
-        async signAuthEntry(_authEntryXdr, _opts) {
-            // hw-app-str exposes signSorobanAuthorization(path, authEntryXdr), so
-            // getting a raw signature from the device is straightforward — the
-            // part that's genuinely uncertain is reconstructing a valid
-            // xdr.SorobanAuthorizationEntry with SOROBAN_CREDENTIALS_ADDRESS
-            // credentials from that raw signature, which has a specific ScVal
-            // structure. Rather than guess at that structure and risk shipping
-            // something that produces invalid auth entries, this is stubbed the
-            // same way SorobanConnection.signAuthEntries() is — see
-            // ARCHITECTURE.md §9 for this as explicit follow-up work.
-            throw ConnectError.internal('Ledger Soroban auth-entry signing needs the credentials-wrapping step implemented — see the comment in ledger.ts.', undefined, meta.id);
+        async signAuthEntry(authEntryXdr, _opts) {
+            return withNormalizedError(meta.id, async () => {
+                if (!currentAddress)
+                    throw ConnectError.invalidRequest('Ledger is not connected.', undefined, meta.id);
+                const str = await ensureStrApp();
+                const path = pathForIndex(accountCache.get(currentAddress) ?? currentIndex);
+                // authEntryXdr is a base64-encoded HashIdPreimage XDR (the preimage
+                // that authorizeEntry builds — NOT a SorobanAuthorizationEntry).
+                // hw-app-str's signSorobanAuthorization expects the RAW preimage
+                // bytes (it hashes on-device with SHA-256 before signing).
+                const preimageBytes = Buffer.from(authEntryXdr, 'base64');
+                // The Ledger Stellar app needs the method to exist (older firmware
+                // doesn't support Soroban auth signing). Guard with a runtime check.
+                if (!str.signSorobanAuthorization) {
+                    throw ConnectError.internal('Ledger Stellar app version too old — does not support Soroban auth-entry signing. Update the Stellar app on your device.', undefined, meta.id);
+                }
+                const result = await str.signSorobanAuthorization(path, preimageBytes);
+                const signatureBuffer = 'signature' in result ? result.signature : result;
+                return {
+                    signedAuthEntry: signatureBuffer.toString('base64'),
+                    signerAddress: currentAddress,
+                };
+            });
         },
         async signMessage(message, _opts) {
             return withNormalizedError(meta.id, async () => {
@@ -173,9 +185,18 @@ export function createLedgerConnector(options = {}) {
                     throw ConnectError.invalidRequest('Ledger is not connected.', undefined, meta.id);
                 const str = await ensureStrApp();
                 const path = pathForIndex(accountCache.get(currentAddress) ?? currentIndex);
-                const result = await str.signMessage(path, Buffer.from(message, 'utf-8'));
+                // Ledger's Stellar app signs the raw UTF-8 bytes of `message` directly
+                // (it's a SEP-43-style direct signer, same as Freighter). Surface that
+                // as `signedData` so the verifier uses the same code path as every
+                // other direct signer.
+                const messageBuffer = Buffer.from(message, 'utf-8');
+                const result = await str.signMessage(path, messageBuffer);
                 const signatureBuffer = 'signature' in result ? result.signature : result;
-                return { signedMessage: signatureBuffer.toString('base64'), signerAddress: currentAddress };
+                return {
+                    signedMessage: signatureBuffer.toString('base64'),
+                    signerAddress: currentAddress,
+                    signedData: messageBuffer.toString('base64'),
+                };
             });
         },
         async listAccounts() {
