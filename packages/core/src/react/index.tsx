@@ -1,7 +1,7 @@
 /**
  * React bindings for @saganta/stellar-appkit.
  *
- * Two layers:
+ * Three layers:
  *
  * 1. `<StellarAppKitProvider>` — a Context provider that holds a single
  *    `StellarAppKit` instance for the app. Subscribes to the client's
@@ -13,6 +13,12 @@
  *    `usePreviewAuthEntry`. Each pulls state from the provider via context
  *    and re-renders on the relevant slice of state change.
  *
+ * 3. `<StellarAppKitModal>` — a JSX component wrapping the underlying
+ *    `<saganta-appkit-modal>` Web Component with typed props, event
+ *    handlers, and an imperative `ref` handle. Re-exported from
+ *    `./modal.tsx` so consumers can do `import { StellarAppKitModal }`
+ *    from the same subpath.
+ *
  * Tree-shakability: this subpath is a separate module — bundlers only
  * pull it in if the consumer actually imports `@saganta/stellar-appkit/react`.
  * A consumer using only the core client never pays for React.
@@ -20,7 +26,9 @@
  * SSR safety: the provider and hooks are safe to render on the server —
  * they don't touch `window` or any browser-only API. The `StellarAppKit`
  * instance itself uses `localStorage` lazily (only on actual connect/restore
- * calls), so server-side render won't crash on storage access.
+ * calls), so server-side render won't crash on storage access. The
+ * `<StellarAppKitModal>` component renders a custom element tag during SSR,
+ * which is safe (it just renders the tag, no client connection).
  */
 
 import {
@@ -32,6 +40,17 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+
+// Re-export the modal component and its types so they're available from
+// `@saganta/stellar-appkit/react` directly.
+export {
+  StellarAppKitModal,
+  default as StellarAppKitModalDefault,
+  type StellarAppKitModalProps,
+  type StellarAppKitModalHandle,
+  type StellarAppKitModalEvents,
+  type StellarAppKitModalComponentProps,
+} from './modal.js';
 import {
   StellarAppKit,
   type ConnectSession,

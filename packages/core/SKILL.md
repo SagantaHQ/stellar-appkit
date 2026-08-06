@@ -156,6 +156,88 @@ function WalletPanel() {
 }
 ```
 
+### Framework modal components
+
+Each framework wrapper ships a typed component wrapping the `<saganta-appkit-modal>` Web Component. Use it in place of the raw custom element when you want typed props, automatic client wiring, and event forwarding. **Always import `@saganta/stellar-appkit/ui-web` once at your app entry** to register the custom element — the framework wrappers don't import it themselves (keeps them SSR-safe).
+
+**React:**
+
+```tsx
+import { useRef } from 'react';
+import { StellarAppKitProvider, StellarAppKitModal, useAppKit } from '@saganta/stellar-appkit/react';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/react';
+import '@saganta/stellar-appkit/ui-web'; // registers <saganta-appkit-modal>
+
+function App() {
+  return (
+    <StellarAppKitProvider config={{ network: 'TESTNET', connectors: [...] }}>
+      <ModalHost />
+    </StellarAppKitProvider>
+  );
+}
+
+function ModalHost() {
+  const ref = useRef<StellarAppKitModalHandle>(null);
+  return (
+    <>
+      <StellarAppKitModal ref={ref} mode="auto" theme="dark" />
+      <button onClick={() => ref.current?.open()}>Connect</button>
+    </>
+  );
+}
+```
+
+**Vue:**
+
+```vue
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { provideStellarAppKit, StellarAppKitModal } from '@saganta/stellar-appkit/vue';
+  import '@saganta/stellar-appkit/ui-web';
+  provideStellarAppKit({ network: 'TESTNET', connectors: [...] });
+  const modal = ref<InstanceType<typeof StellarAppKitModal>>();
+</script>
+
+<template>
+  <StellarAppKitModal ref="modal" mode="auto" theme="dark"
+                      @connect="(s) => console.log('connected', s)" />
+  <button @click="modal?.open()">Connect</button>
+</template>
+```
+
+**Solid:**
+
+```tsx
+import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit/solid';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/solid';
+import '@saganta/stellar-appkit/ui-web';
+
+function ModalHost() {
+  let handle: StellarAppKitModalHandle | undefined;
+  return (
+    <>
+      <StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="dark" />
+      <button onClick={() => handle?.open()}>Connect</button>
+    </>
+  );
+}
+```
+
+**Svelte** (uses a `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element — most idiomatic for Svelte):
+
+```svelte
+<script lang="ts">
+  import { setStellarAppKitContext, stellarmodal, openModal } from '@saganta/stellar-appkit/svelte';
+  import '@saganta/stellar-appkit/ui-web';
+  setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
+  let modalEl: HTMLElement;
+</script>
+
+<saganta-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
+                      on:sc-connect={(e) => console.log('connected', e.detail)} />
+<button on:click={() => openModal(modalEl)}>Connect</button>
+```
+
 ### Transaction preview configuration
 
 ```ts
@@ -235,6 +317,15 @@ try {
 - `verifySiws(payload, opts)` — server-side SIWS verification
 - `opts.debug: true` — diagnostics dump on failure
 - Multi-candidate verification (8+ byte sequences tried)
+
+### Framework modal components
+- `StellarAppKitModal` (React/Solid/Vue) — typed component wrapping `<saganta-appkit-modal>`
+- `stellarmodal` (Svelte) — `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element
+- `openModal(node)` / `closeModal(node)` (Svelte) — imperative helpers
+- Props: `mode`, `theme`, `branding`, `logoSrc`, `title`, `autoRetryNetwork`, `stellarExpertAvatars`
+- Events: `onConnect` / `onDisconnect` / `onError` (React/Solid), `@connect` / `@disconnect` / `@error` (Vue), `on:sc-connect` / `on:sc-disconnect` / `on:sc-error` (Svelte on raw element)
+- Imperative handle: `open()`, `close()`, `element` (via `ref` in React/Solid/Vue)
+- **Requires** `import '@saganta/stellar-appkit/ui-web'` once at app entry to register the custom element
 
 ## Available connectors
 

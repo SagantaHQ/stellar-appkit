@@ -179,6 +179,93 @@ const session = useSession();
 // $isConnected, $session?.address
 ```
 
+## Framework Modal Components
+
+Each wrapper ships a typed component wrapping the `<saganta-appkit-modal>` Web Component. Always import `@saganta/stellar-appkit/ui-web` once at app entry to register the custom element — the framework wrappers don't import it themselves (keeps them SSR-safe).
+
+### React
+```tsx
+import { useRef } from 'react';
+import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit/react';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/react';
+import '@saganta/stellar-appkit/ui-web';
+
+function ModalHost() {
+  const ref = useRef<StellarAppKitModalHandle>(null);
+  return (
+    <>
+      <StellarAppKitModal ref={ref} mode="auto" theme="dark"
+                          onConnect={(s) => console.log(s)} />
+      <button onClick={() => ref.current?.open()}>Connect</button>
+    </>
+  );
+}
+```
+
+### Vue
+```vue
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { provideStellarAppKit, StellarAppKitModal } from '@saganta/stellar-appkit/vue';
+  import '@saganta/stellar-appkit/ui-web';
+  provideStellarAppKit({ network: 'TESTNET', connectors: [...] });
+  const modal = ref<InstanceType<typeof StellarAppKitModal>>();
+</script>
+<template>
+  <StellarAppKitModal ref="modal" mode="auto" theme="dark"
+                      @connect="(s) => console.log(s)" />
+  <button @click="modal?.open()">Connect</button>
+</template>
+```
+
+### Solid
+```tsx
+import { StellarAppKitModal } from '@saganta/stellar-appkit/solid';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/solid';
+import '@saganta/stellar-appkit/ui-web';
+
+let handle: StellarAppKitModalHandle | undefined;
+<StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="dark" />;
+<button onClick={() => handle?.open()}>Connect</button>;
+```
+
+### Svelte (use:stellarmodal action)
+```svelte
+<script lang="ts">
+  import { setStellarAppKitContext, stellarmodal, openModal } from '@saganta/stellar-appkit/svelte';
+  import '@saganta/stellar-appkit/ui-web';
+  setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
+  let modalEl: HTMLElement;
+</script>
+<saganta-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
+                      on:sc-connect={(e) => console.log(e.detail)} />
+<button on:click={() => openModal(modalEl)}>Connect</button>
+```
+
+### Modal props (all frameworks)
+- `mode`: 'auto' | 'modal' | 'bottom-sheet' | 'inline'
+- `theme`: 'dark' | 'light'
+- `branding`: 'default' | 'minimal' | 'hidden'
+- `logoSrc`: string (URL)
+- `title`: string
+- `autoRetryNetwork`: boolean
+- `stellarExpertAvatars`: boolean
+
+### Modal events (all frameworks)
+- `connect` — fired when a wallet connects (mirrors client `connect` event)
+- `disconnect` — fired when a wallet disconnects
+- `error` — fired on client errors (rejected, network mismatch, etc.)
+
+### Modal imperative handle (React/Solid/Vue via ref)
+- `open()` — opens the modal (no-op in inline mode)
+- `close()` — closes the modal
+- `element` — the underlying `<saganta-appkit-modal>` DOM node (escape hatch)
+
+### Svelte helpers
+- `stellarmodal(node)` — `use:stellarmodal` action, wires up the client
+- `openModal(node)` / `closeModal(node)` — imperative open/close
+- `isStellarAppKitModal(node)` — type guard for narrowing
+
 ## Transaction Preview
 
 ```ts

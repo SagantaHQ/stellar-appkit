@@ -373,6 +373,23 @@ The hook surface is synthesized from the official Stellar docs ([dapp-frontend t
 
 2. **`usePreviewTransaction` / `usePreviewAuthEntry` are first-class hooks** — the official examples don't have a preview flow. Ours surfaces the `onPreviewTransaction` / `onPreviewAuthEntry` payloads reactively, with a `respond(approve: boolean)` callback that resolves the pending preview. This lets apps build their own preview UI (instead of using `<saganta-appkit-modal>`) while still going through the same risk-flag pipeline.
 
+### Framework-native modal components
+
+In addition to the hooks, each wrapper ships a typed component wrapping the underlying `<saganta-appkit-modal>` Web Component. The component handles client assignment (from the same context as the hooks), prop-to-attribute forwarding, and event listening — so consumers don't have to manage refs and CustomEvents by hand.
+
+| Wrapper | File | Component | Pattern |
+|---|---|---|---|
+| React | `src/react/modal.tsx` | `<StellarAppKitModal>` | `forwardRef` component with `useImperativeHandle` exposing `open()` / `close()` / `element` |
+| Vue | `src/vue/modal.ts` | `<StellarAppKitModal>` | `defineComponent` with `expose()` for the imperative handle; emits `connect` / `disconnect` / `error` |
+| Solid | `src/solid/modal.tsx` | `<StellarAppKitModal>` | `Component` with a `ref` callback prop yielding the imperative handle |
+| Svelte | `src/svelte/modal.ts` | `use:stellarmodal` action | Svelte action on the raw `<saganta-appkit-modal>` element — the idiomatic Svelte pattern for wrapping Web Components |
+
+**Shared prop types** live in `src/ui-web/modal-props.ts` and are re-exported by each wrapper. The `propsToAttributes()` helper translates camelCase props to the kebab-case attributes the Web Component expects.
+
+**SSR safety contract:** the framework modal components deliberately do NOT import `connect-modal.ts` (the Web Component class). That class `extends HTMLElement`, which is undefined in pure-Node SSR/test contexts — importing it at module top-level would crash server-side rendering. Instead, consumers `import '@saganta/stellar-appkit/ui-web'` once at their app entry point to register the `<saganta-appkit-modal>` custom element. This keeps the framework wrappers fully SSR-safe and lets bundlers tree-shake the Web Component code out of server bundles. The 18 new modal-component tests verify this contract by importing each wrapper in a DOM-less bun:test environment — if any wrapper accidentally pulled in `connect-modal.ts`, the test would crash with `HTMLElement is not defined`.
+
+**Why a Svelte action instead of a component:** Svelte renders unknown lowercase tags (like `<saganta-appkit-modal>`) as-is in templates, so wrapping it in a Svelte component would just add an extra layer of indirection without buying anything. Svelte actions (`use:stellarmodal`) are the idiomatic pattern for enhancing a DOM node — they're plain TS functions that take the node and return a destroy callback. This keeps the wrapper zero-runtime-overhead and avoids needing a Svelte compiler step in the build (the rest of the wrapper is plain TS).
+
 ---
 
 ## 8.8 Soroban contract layer — typed clients, failover, badges, fee estimation
@@ -573,6 +590,7 @@ These are maintained in the [docs repo](https://github.com/SagantaHQ/stellar-app
 | 2.0 | Soroban contract layer (§8.8) — typed contract client (`ContractClient<T>` from `stellar contract bindings`), RPC failover (`FailoverRpcServer` with health tracking + cooldown), contract verification badges (`PreviewOptions.contractMetadata` → `ContractBadge[]`), pre-simulate fee estimation (`FeeEstimate` on `previewInvoke()` + `estimateFee()`). 26 new tests (contract, rpc-failover, badges+fee). Total suite now 121 tests. | **done** |
 | 2.1 | UI polish (§8.9) — wallet-provided avatars (`getAvatar()` on `WalletConnector` + deterministic gradient fallback + opt-in Stellar Expert avatars), copy-to-clipboard on all address displays (connected, account picker, transaction preview), smooth loading spinner (border-radius: 50% fix for the square-wobble bug), contract verification badges + fee estimate rendered in the transaction preview UI. 8 new tests (avatar utilities). Total suite now 134 tests. | **done** |
 | 2.6 | AI-readable files (§8.10) — `SKILL.md` (structured AI skill file with YAML frontmatter, trigger conditions, code patterns, API tables) and `llms.txt` (compact plain-text API index following the llmstxt.org convention) shipped at the repo root and in the npm tarball, so AI coding tools (Cursor, Copilot, Claude Code, Windsurf, Continue) can read the full API surface from `node_modules` or the raw GitHub URL. Docs site serves its own `llms.txt` / `llms-full.txt` companion files plus an `AI Integration` reference page. | **done** |
+| 2.7 | Framework-native modal components (§8.7) — `<StellarAppKitModal>` React component (`forwardRef` + `useImperativeHandle`), Vue component (`defineComponent` + `expose`), Solid component (with `ref` callback), and Svelte `use:stellarmodal` action. Shared prop types in `src/ui-web/modal-props.ts`. Components deliberately do NOT import `connect-modal.ts` (the Web Component class extends HTMLElement, undefined in pure-Node SSR) — consumers `import '@saganta/stellar-appkit/ui-web'` once at app entry. 18 new tests covering module structure, default exports, SSR safety, and the `stellarmodal` action contract. Total suite now 155 tests. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | **done** |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |

@@ -61,11 +61,11 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - **Smooth loading spinner** — the connecting-state spinner uses a perfect circular arc (border-radius: 50%), not a rounded-square border that wobbles when rotated
 
 **Framework wrappers**
-- React (`@saganta/stellar-appkit/react`) — `<StellarAppKitProvider>` + hooks (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) using `useSyncExternalStore` for tearing-safe reactivity under React 18 concurrent rendering
-- Vue (`@saganta/stellar-appkit/vue`) — `StellarAppKitPlugin` (for `app.use()`) or `provideStellarAppKit()` + Composition API composables with the same surface, using `shallowRef` + `shallowReadonly` to avoid deep reactivity overhead
-- Solid (`@saganta/stellar-appkit/solid`) — `<StellarAppKitProvider>` + hooks using `createSignal`/`createMemo`/`onCleanup` for fine-grained reactivity
-- Svelte (`@saganta/stellar-appkit/svelte`) — `setStellarAppKitContext()` + store-based composables (`useSessionStore`, `useConnectStore`, ...) that work in both Svelte 4 and Svelte 5; short aliases (`useSession`, `useConnect`) are provided for Svelte 5 runes-style code
-- Each wrapper is a separate subpath export — bundlers only pull in the framework code you actually import. A React app never pays for Vue/Svelte/Solid.
+- React (`@saganta/stellar-appkit/react`) — `<StellarAppKitProvider>` + hooks (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) using `useSyncExternalStore` for tearing-safe reactivity under React 18 concurrent rendering. Also exports a `<StellarAppKitModal>` JSX component (with `forwardRef`) wrapping the underlying Web Component — typed props, event callbacks (`onConnect`/`onDisconnect`/`onError`), and an imperative handle (`open()`/`close()`/`element`).
+- Vue (`@saganta/stellar-appkit/vue`) — `StellarAppKitPlugin` (for `app.use()`) or `provideStellarAppKit()` + Composition API composables with the same surface, using `shallowRef` + `shallowReadonly` to avoid deep reactivity overhead. Also exports a `<StellarAppKitModal>` SFC-style component (via `defineComponent`) with typed props and `@connect`/`@disconnect`/`@error` emits.
+- Solid (`@saganta/stellar-appkit/solid`) — `<StellarAppKitProvider>` + hooks using `createSignal`/`createMemo`/`onCleanup` for fine-grained reactivity. Also exports a `<StellarAppKitModal>` component with typed props and a `ref` callback that yields the imperative handle.
+- Svelte (`@saganta/stellar-appkit/svelte`) — `setStellarAppKitContext()` + store-based composables (`useSessionStore`, `useConnectStore`, ...) that work in both Svelte 4 and Svelte 5; short aliases (`useSession`, `useConnect`) are provided for Svelte 5 runes-style code. Also exports a `use:stellarmodal` Svelte action (the idiomatic way to wrap a Web Component in Svelte) plus `openModal(node)` / `closeModal(node)` / `isStellarAppKitModal(node)` helpers.
+- Each wrapper is a separate subpath export — bundlers only pull in the framework code you actually import. A React app never pays for Vue/Svelte/Solid. The modal components deliberately do NOT import the Web Component class themselves (it would crash SSR); consumers `import '@saganta/stellar-appkit/ui-web'` once at app entry to register `<saganta-appkit-modal>`.
 
 ---
 
@@ -577,6 +577,97 @@ npm install svelte @saganta/stellar-appkit
 ```
 
 All four wrappers share the same hook names (`useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) — only the reactivity primitives differ (React `useState`/`useSyncExternalStore`, Vue `ref`/`computed`, Solid `createSignal`/`createMemo`, Svelte stores). The full hook reference is in [ARCHITECTURE.md §11](./ARCHITECTURE.md#11-framework-wrappers).
+
+#### Framework-native `<StellarAppKitModal>` components
+
+In addition to the hooks, each wrapper ships a typed component wrapping the underlying `<saganta-appkit-modal>` Web Component. The component handles client assignment (from the same context as the hooks), prop-to-attribute forwarding, and event listening — so you don't have to manage refs and CustomEvents by hand.
+
+**Important:** the framework modal components deliberately do NOT import the Web Component class themselves (the class `extends HTMLElement`, which is undefined in pure-Node SSR contexts — importing it at module top-level would crash server-side rendering). Consumers must `import '@saganta/stellar-appkit/ui-web'` once at their app entry point to register the `<saganta-appkit-modal>` custom element. This keeps the framework wrappers fully SSR-safe and lets bundlers tree-shake the Web Component code out of server bundles.
+
+**React:**
+
+```tsx
+import { useRef } from 'react';
+import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit/react';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/react';
+import '@saganta/stellar-appkit/ui-web'; // registers <saganta-appkit-modal>
+
+function App() {
+  return (
+    <StellarAppKitProvider config={{ network: 'TESTNET', connectors: [...] }}>
+      <ModalHost />
+    </StellarAppKitProvider>
+  );
+}
+
+function ModalHost() {
+  const ref = useRef<StellarAppKitModalHandle>(null);
+  return (
+    <>
+      <StellarAppKitModal ref={ref} mode="auto" theme="dark"
+                          onConnect={(s) => console.log('connected', s)}
+                          onError={(err) => console.error(err)} />
+      <button onClick={() => ref.current?.open()}>Connect</button>
+    </>
+  );
+}
+```
+
+**Vue:**
+
+```vue
+<script setup lang="ts">
+  import { ref } from 'vue';
+  import { provideStellarAppKit, StellarAppKitModal } from '@saganta/stellar-appkit/vue';
+  import '@saganta/stellar-appkit/ui-web';
+  provideStellarAppKit({ network: 'TESTNET', connectors: [...] });
+  const modal = ref<InstanceType<typeof StellarAppKitModal>>();
+</script>
+<template>
+  <StellarAppKitModal ref="modal" mode="auto" theme="dark"
+                      @connect="(s) => console.log('connected', s)" />
+  <button @click="modal?.open()">Connect</button>
+</template>
+```
+
+**Solid:**
+
+```tsx
+import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit/solid';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/solid';
+import '@saganta/stellar-appkit/ui-web';
+
+function ModalHost() {
+  let handle: StellarAppKitModalHandle | undefined;
+  return (
+    <>
+      <StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="dark" />
+      <button onClick={() => handle?.open()}>Connect</button>
+    </>
+  );
+}
+```
+
+**Svelte** — uses a `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element, which is the most idiomatic pattern in Svelte for wrapping a Web Component:
+
+```svelte
+<script lang="ts">
+  import { setStellarAppKitContext, stellarmodal, openModal } from '@saganta/stellar-appkit/svelte';
+  import '@saganta/stellar-appkit/ui-web';
+  setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
+  let modalEl: HTMLElement;
+</script>
+
+<saganta-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
+                      on:sc-connect={(e) => console.log('connected', e.detail)} />
+<button on:click={() => openModal(modalEl)}>Connect</button>
+```
+
+**Shared props** (all frameworks): `mode` (`'auto'|'modal'|'bottom-sheet'|'inline'`), `theme` (`'dark'|'light'`), `branding` (`'default'|'minimal'|'hidden'`), `logoSrc` (URL), `title` (string), `autoRetryNetwork` (boolean), `stellarExpertAvatars` (boolean).
+
+**Events** (all frameworks): `connect`, `disconnect`, `error` — mirroring the underlying client's events. React/Solid use `onConnect`/`onDisconnect`/`onError` callback props; Vue uses `@connect`/`@disconnect`/`@error` emits; Svelte uses `on:sc-connect`/`on:sc-disconnect`/`on:sc-error` on the raw element (since the action wraps the Web Component directly).
+
+**Imperative handle** (React/Solid/Vue via `ref`): `open()` (no-op in inline mode), `close()`, and `element` (the underlying DOM node, escape hatch for advanced use). Svelte uses the `openModal(node)` / `closeModal(node)` helpers instead since the action pattern doesn't use refs.
 
 ### The `<saganta-appkit-modal>` element
 
