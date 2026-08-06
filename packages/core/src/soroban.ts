@@ -187,10 +187,10 @@ export class SorobanConnection {
     // separately from the outer transaction envelope — the wallet layer
     // exposes both via one interface, so this branches on capability, not
     // wallet identity.
-    const needsAuthEntrySigning = transactionNeedsAuthEntrySigning(prepared);
+    const needsAuthEntrySigning = transactionNeedsAuthEntrySigning(prepared, session.address, sdk);
     let readyTx = prepared;
     if (needsAuthEntrySigning) {
-      readyTx = await this.signAuthEntries(prepared);
+      readyTx = await this.signAuthEntries(prepared, session.address);
     }
 
     const { signedTxXdr } = await this.wallet.signTransaction(readyTx.toXDR(), {
@@ -401,34 +401,134 @@ export class SorobanConnection {
 
   /**
    * Signs each Soroban auth entry that requires the connected wallet's
-   * signature, via `signAuthEntry` rather than a second `signTransaction`
-   * call — this is what lets delegated/multi-party auth flows and (later)
-   * Saganta's smart-account signer plug in without special-casing the
-   * invoke pipeline.
+   * signature, via `wallet.signAuthEntry()` rather than a second
+   * `signTransaction` call.
+   *
+   * Uses `@stellar/stellar-base`'s `authorizeEntry()` helper, which handles:
+   *   - Cloning the entry (so the caller's object isn't mutated)
+   *   - Setting `signatureExpirationLedger` (to latestLedger + 100)
+   *   - Building the `HashIdPreimage` (networkId + nonce + invocation + expiration)
+   *   - Hashing it with SHA-256
+   *   - Calling our signer callback with the preimage
+   *   - Verifying the returned signature locally (guards against buggy/malicious wallets)
+   *   - Wrapping the signature into the correct `ScVal` structure
+   *     (`scvVec([scvMap({public_key, signature})])`)
+   *   - Reinserting it into `credentials().address().signature()`
+   *
+   * The wallet-facing contract: `signAuthEntry(preimageBase64, opts)` →
+   * `{signedAuthEntry: signatureBase64, signerAddress}`. The wallet signs
+   * `SHA256(preimageBytes)` and returns the raw 64-byte Ed25519 signature.
+   * The wallet does NOT need to know about ScVal wrapping — `authorizeEntry`
+   * handles that.
+   *
+   * Only entries with `SOROBAN_CREDENTIALS_ADDRESS` credentials bound to
+   * the connected wallet's address AND with `signature() === scvVoid`
+   * (not already signed) are signed. Source-account credentials and
+   * entries bound to other addresses are left untouched.
    */
   private async signAuthEntries(
-    tx: InstanceType<StellarSdkModule['Transaction']>
+    tx: InstanceType<StellarSdkModule['Transaction']>,
+    walletAddress: string
   ): Promise<InstanceType<StellarSdkModule['Transaction']>> {
-    // Left intentionally minimal: real implementations need to walk
-    // `tx.operations` for `invokeHostFunction` ops, pull `auth` entries
-    // whose credentials match the connected address, sign each via
-    // `wallet.signAuthEntry`, and rebuild the transaction with the signed
-    // entries substituted in. This is Phase 1 follow-up work — flagged
-    // here rather than silently no-op'd.
-    throw ConnectError.internal(
-      'This transaction requires signing individual Soroban auth entries, which is not yet implemented in SorobanConnection.signAuthEntries(). See ARCHITECTURE.md §9, Phase 1.'
-    );
-  }
+    const sdk = await this.sdk();
+    const server = await this.server();
 
-  // ---- contract() — typed client generation, Phase 1 follow-up ----
-  // contract<T extends ContractSpec>(contractId: string, spec: T): TypedContractClient<T> { ... }
+    // 1. Find invokeHostFunction operations with auth entries.
+    // Only invokeHostFunction ops have auth — other op types don't.
+    const invokeOp = tx.operations.find(
+      (op) => op.type === 'invokeHostFunction' && Array.isArray((op as { auth?: unknown[] }).auth) && ((op as { auth?: unknown[] }).auth?.length ?? 0) > 0
+    ) as { type: 'invokeHostFunction'; auth: import('@stellar/stellar-sdk').xdr.SorobanAuthorizationEntry[]; func: unknown; source?: string } | undefined;
+
+    if (!invokeOp || !invokeOp.auth?.length) return tx;
+
+    // 2. Compute the signature expiration ledger.
+    // The auth entry is valid until this ledger number. Using latestLedger + 100
+    // gives ~8 minutes of validity (at ~5s per ledger) — enough for the
+    // transaction to be submitted and included.
+    const latestLedger = await server.getLatestLedger();
+    const validUntil = latestLedger.sequence + 100;
+
+    // 3. Walk auth entries, sign the ones bound to our address that are unsigned.
+    for (let i = 0; i < invokeOp.auth.length; i++) {
+      const entry = invokeOp.auth[i];
+      if (!entry) continue;
+
+      // 3a. Skip source-account credentials (no signing needed — the outer
+      //     transaction's signature covers these implicitly).
+      const credSwitch = entry.credentials().switch();
+      if (credSwitch.value !== sdk.xdr.SorobanCredentialsType.sorobanCredentialsAddress().value) {
+        continue;
+      }
+
+      // 3b. Skip entries bound to a different address (multi-party auth:
+      //     not ours to sign).
+      const addrCreds = entry.credentials().address();
+      const boundAddress = sdk.Address.fromScAddress(addrCreds.address()).toString();
+      if (boundAddress !== walletAddress) continue;
+
+      // 3c. Skip entries that are already signed.
+      if (addrCreds.signature().switch().name !== 'scvVoid') continue;
+
+      // 3d. Sign via authorizeEntry, wrapping wallet.signAuthEntry into
+      //     the SigningCallback shape authorizeEntry expects.
+      // authorizeEntry's callback receives the HashIdPreimage XDR object
+      // and expects a Buffer back (the raw signature). We adapt our
+      // wallet's signAuthEntry (which takes/returns base64 strings) into
+      // that contract.
+      invokeOp.auth[i] = await sdk.authorizeEntry(
+        entry,
+        async (preimage: import('@stellar/stellar-sdk').xdr.HashIdPreimage) => {
+          const preimageBase64 = preimage.toXDR('base64');
+          const result = await this.wallet.signAuthEntry(preimageBase64, {
+            networkPassphrase: this.networkPassphrase,
+            address: walletAddress,
+          });
+          // Return the raw signature as a Buffer — authorizeEntry will
+          // verify it locally (Keypair.verify(payload, signature)) and
+          // wrap it into the ScVal structure.
+          return Buffer.from(result.signedAuthEntry, 'base64');
+        },
+        validUntil,
+        this.networkPassphrase
+      );
+    }
+
+    return tx;
+  }
 }
 
-function transactionNeedsAuthEntrySigning(_tx: unknown): boolean {
-  // Real implementation inspects invokeHostFunction auth entries for
-  // SOROBAN_CREDENTIALS_ADDRESS entries matching the connected account.
-  // Conservatively returns false for now so invoke() takes the common
-  // (single outer-transaction-signature) path by default.
+/**
+ * Checks whether a prepared transaction has any unsigned Soroban auth
+ * entries that require the connected wallet's signature.
+ *
+ * Returns true if ANY invokeHostFunction operation has an auth entry with:
+ *   - SOROBAN_CREDENTIALS_ADDRESS credentials (needs separate signing)
+ *   - The bound address matches walletAddress (our wallet's to sign)
+ *   - signature() is scvVoid (not already signed)
+ *
+ * Source-account credentials (SOROBAN_CREDENTIALS_SOURCE_ACCOUNT) don't
+ * need separate signing — the outer transaction's signature covers them.
+ */
+function transactionNeedsAuthEntrySigning(
+  tx: unknown,
+  walletAddress: string,
+  sdk: StellarSdkModule
+): boolean {
+  const ops = (tx as { operations: unknown[] }).operations;
+  for (const op of ops) {
+    const typedOp = op as { type: string; auth?: unknown[] };
+    if (typedOp.type !== 'invokeHostFunction' || !typedOp.auth) continue;
+    for (const entry of typedOp.auth as import('@stellar/stellar-sdk').xdr.SorobanAuthorizationEntry[]) {
+      const credSwitch = entry.credentials().switch();
+      if (credSwitch.value !== sdk.xdr.SorobanCredentialsType.sorobanCredentialsAddress().value) {
+        continue;
+      }
+      const addrCreds = entry.credentials().address();
+      const boundAddress = sdk.Address.fromScAddress(addrCreds.address()).toString();
+      if (boundAddress !== walletAddress) continue;
+      if (addrCreds.signature().switch().name === 'scvVoid') return true;
+    }
+  }
   return false;
 }
 

@@ -670,7 +670,7 @@ The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-ap
 
 Flagged explicitly rather than silently half-working:
 
-- **Ledger Soroban auth-entry signing is stubbed** — reconstructing a valid `SorobanAuthorizationEntry` from a raw device signature needs a specific ScVal credentials structure that wasn't guessed at rather than risk shipping something that produces invalid auth entries. Plain transaction signing and public-key/multi-account derivation both work. (Standalone `signAuthEntry()` from app-supplied XDR works end-to-end with preview — only the *production* of signed auth entries inside `SorobanConnection.invoke()` is stubbed.)
+- **Ledger Soroban auth-entry signing is now implemented** — uses `@stellar/stellar-base`'s `authorizeEntry()` helper, which handles the `HashIdPreimage` construction, SHA-256 hashing, local signature verification, and `ScVal` wrapping. The Ledger connector's `signAuthEntry()` sends the raw preimage bytes to the device via `signSorobanAuthorization()`; the device hashes on-device and returns the signature. Works end-to-end inside `SorobanConnection.invoke()` — the invoke pipeline automatically detects auth entries that need signing and calls `signAuthEntry` before `signTransaction`.
 - **Ledger's `signTransaction` payload shape** is implemented against the most standard pattern but isn't 100% confirmed from published docs alone — worth checking against your installed `@ledgerhq/hw-app-str` version before production use.
 - **"Locked" reachability isn't detected for Freighter** — the freighter-api SDK doesn't expose a distinct unlock-state check, so it reports `'available'` once installed, even if locked. xBull's reachability now correctly reports `'not-installed'` when the extension isn't detected (previously always reported `'available'` due to the web-wallet fallback).
 - **Freighter uses SEP-0053 message encoding** — Freighter signs `sha256("Stellar Signed Message:\n" + message)`, not the raw message bytes. The connector surfaces this hash as `signedData`, and the verifier tries it as the first candidate. Confirmed by reading the Freighter extension source (`extension/src/helpers/stellar.ts`). The verifier also includes `debug: true` mode that lists every candidate tried — use it to diagnose verification failures with other wallets.
@@ -682,8 +682,7 @@ Flagged explicitly rather than silently half-working:
 ## Roadmap
 
 1. `ui-react-native` — bottom sheet, Expo compatibility
-2. Ledger Soroban auth-entry signing
-3. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
+2. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
 
 Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
