@@ -154,20 +154,35 @@ export const StellarAppKitModal = forwardRef<
   }, [props.onConnect, props.onDisconnect, props.onError]);
 
   // Expose the imperative handle: open()/close()/element.
+  // The `open()` method ensures the client is set on the host element before
+  // calling the Web Component's open() — this fixes a race where the user
+  // clicks before the useEffect that sets `el.client = client` runs.
   useImperativeHandle(
     ref,
     (): StellarAppKitModalHandle => ({
       open: async () => {
-        await (hostRef.current as unknown as { open?: () => Promise<void> })?.open?.();
+        const el = hostRef.current as unknown as
+          | (HTMLElement & { client: StellarAppKit | null; open?: () => Promise<void> })
+          | null;
+        if (!el) return;
+        // Ensure the client is set before opening — the useEffect might not
+        // have run yet if the user clicks immediately after mount.
+        if (!el.client) {
+          el.client = client;
+        }
+        await el.open?.();
       },
       close: () => {
-        (hostRef.current as unknown as { close?: () => void })?.close?.();
+        const el = hostRef.current as unknown as
+          | (HTMLElement & { close?: () => void })
+          | null;
+        el?.close?.();
       },
       get element() {
         return hostRef.current as HTMLElement & { client: StellarAppKit | null };
       },
     }),
-    []
+    [client]
   );
 
   // JSX doesn't natively know how to render Web Components with TypeScript.
