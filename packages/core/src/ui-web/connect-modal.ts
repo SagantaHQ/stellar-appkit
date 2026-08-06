@@ -923,7 +923,7 @@ export class SagantaAppKitModal extends HTMLElement {
     }
 
     // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
-    // Uses @use-gesture/vanilla + motion (lazy-imported, optional peer deps)
+    // Uses @use-gesture/vanilla + motion (lazy-imported bundled deps)
     // so apps that don't use the bottom-sheet mode don't need them installed.
     if (effectiveMode === 'bottom-sheet') {
       void this.setupBottomSheetGestures();

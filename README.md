@@ -86,17 +86,30 @@ See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, posi
 npm install @saganta/stellar-appkit
 ```
 
-Wallet SDKs are peer dependencies — install the ones for the connectors you actually use:
+That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries (for the draggable bottom-sheet) are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+
+| What's bundled | Used by | Tree-shaken if |
+|---|---|---|
+| `@stellar/stellar-sdk` | Core (transaction building, Soroban RPC, contract spec) | Never — core needs it |
+| `@stellar/freighter-api` | `createFreighterConnector()` | Freighter connector not imported |
+| `@albedo-link/intent` | `createAlbedoConnector()` | Albedo connector not imported |
+| `@creit.tech/xbull-wallet-connect` | `createXBullConnector()` | xBull connector not imported |
+| `@ledgerhq/hw-app-str` + `hw-transport-webhid` + `hw-transport-webusb` | `createLedgerConnector()` | Ledger connector not imported |
+| `@walletconnect/sign-client` | `createWalletConnectConnector()` | WalletConnect connector not imported |
+| `@use-gesture/vanilla` + `motion` | `<saganta-appkit-modal>` bottom-sheet mode | Bottom-sheet mode not used |
+
+### Framework peer dependencies
+
+The only peer dependencies are the framework wrappers themselves — these are optional and only required if you use the corresponding subpath export (`/react`, `/vue`, `/solid`, `/svelte`). Install the one for your framework:
 
 ```bash
-npm install @stellar/stellar-sdk              # always — the base Stellar/Soroban SDK
-npm install @stellar/freighter-api            # if using createFreighterConnector
-npm install @albedo-link/intent               # if using createAlbedoConnector
-npm install @creit.tech/xbull-wallet-connect  # if using createXBullConnector
-npm install @ledgerhq/hw-app-str \
-            @ledgerhq/hw-transport-webhid \
-            @ledgerhq/hw-transport-webusb     # if using createLedgerConnector
+npm install react react-dom      # for @saganta/stellar-appkit/react
+npm install vue                  # for @saganta/stellar-appkit/vue
+npm install solid-js             # for @saganta/stellar-appkit/solid
+npm install svelte               # for @saganta/stellar-appkit/svelte
 ```
+
+Frameworks must remain as peer dependencies (not bundled) because your app already has its own framework instance — having two copies of React (for example) breaks hooks. The wallet SDKs and gesture libraries don't have this singleton constraint, so they're safe to bundle.
 
 ### Installing the dev version directly from git
 
@@ -169,7 +182,7 @@ The siws-verify package depends on `@saganta/stellar-appkit` — when both are l
 **Troubleshooting git installs:**
 
 - **"Cannot find module './dist/index.js'"** — `dist/` wasn't built. This is the expected state after a direct git install (Pattern 1 or 2) because npm's `prepare` script handling for workspace packages is unreliable. Fix: build it manually with `npx tsc -p tsconfig.json` inside the cloned package, or use Pattern 3 (local link) which makes the build step explicit.
-- **"Cannot find module '@stellar/freighter-api'"** — the wallet SDK peer dependencies aren't auto-installed. Install them in your consumer app as listed above.
+- **"Cannot find module '@stellar/freighter-api'"** — this should not happen with `@saganta/stellar-appkit@0.2.0+` (wallet SDKs are now bundled as regular dependencies). If you're on an older version, either upgrade or install the SDK manually: `npm install @stellar/freighter-api`. If you're on 0.2.0+ and still see this, your `node_modules` is likely stale — run `rm -rf node_modules && npm install`.
 - **TypeScript types not picked up** — make sure your consumer app's `tsconfig.json` has `"moduleResolution": "Bundler"` or `"Node16"`/`"NodeNext"` (the package uses subpath exports that older resolutions don't follow).
 - **`@saganta/stellar-appkit-siws-verify` fails to resolve `@saganta/stellar-appkit`** — the siws-verify package depends on core, but a direct git install doesn't set up the workspace symlink between them. **siws-verify cannot be installed via direct git URL** — use Pattern 3 (local link) for it, or wait for the next npm publish.
 
@@ -216,7 +229,7 @@ That's a working wallet connect flow. Everything past here is what you reach for
 | Albedo | `createAlbedoConnector()` | Ready — no install required (popup-based) |
 | xBull | `createXBullConnector()` | Ready — extension + PWA |
 | Ledger | `createLedgerConnector()` | Ready for pubkey + plain tx signing; Soroban auth-entry signing is stubbed (see [Known limitations](#known-limitations)) |
-| WalletConnect (Lobstr, Hana, Hot Wallet, mobile) | `createWalletConnectConnector()` | Ready — QR pairing + `stellar_signXDR` / `stellar_signMessage` via `@walletconnect/sign-client` (peer dep) |
+| WalletConnect (Lobstr, Hana, Hot Wallet, mobile) | `createWalletConnectConnector()` | Ready — QR pairing + `stellar_signXDR` / `stellar_signMessage` via `@walletconnect/sign-client` (bundled dep) |
 
 ---
 

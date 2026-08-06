@@ -18,7 +18,9 @@ import { withNormalizedError } from './error-utils.js';
 
 // Type-only import — @ledgerhq/hw-transport is a transitive dependency of
 // both transport packages below, so its types resolve without adding
-// another explicit peer dependency for something never imported at runtime.
+// another explicit dependency for something never imported at runtime.
+// All three Ledger packages are bundled dependencies (listed in
+// packages/core/package.json `dependencies`).
 import type LedgerHwTransport from '@ledgerhq/hw-transport';
 
 const DEFAULT_ACCOUNT_COUNT = 5;
@@ -37,10 +39,9 @@ export interface LedgerConnectorOptions {
 
 /**
  * Ledger hardware wallet via `@ledgerhq/hw-app-str`, transported over
- * WebHID or WebUSB. Both are peer dependencies alongside the transport
- * packages — install whichever transport(s) you target:
- * `@ledgerhq/hw-app-str`, `@ledgerhq/hw-transport-webhid`,
- * `@ledgerhq/hw-transport-webusb`.
+ * WebHID or WebUSB. All three Ledger packages (`@ledgerhq/hw-app-str`,
+ * `@ledgerhq/hw-transport-webhid`, `@ledgerhq/hw-transport-webusb`) are
+ * bundled dependencies — installed automatically, no manual install needed.
  *
  * Neither WebHID nor WebUSB is universally supported (notably, Firefox
  * supports neither as of this writing) — `getReachability()` reflects

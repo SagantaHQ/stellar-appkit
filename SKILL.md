@@ -23,24 +23,20 @@ Use this skill when the user wants to:
 ## Installation
 
 ```bash
-npm install @saganta/stellar-appkit @stellar/stellar-sdk
+npm install @saganta/stellar-appkit
 ```
 
-Install wallet SDKs for the connectors you use:
-```bash
-npm install @stellar/freighter-api           # Freighter
-npm install @albedo-link/intent              # Albedo
-npm install @creit.tech/xbull-wallet-connect # xBull
-npm install @walletconnect/sign-client       # WalletConnect
-```
+That's it — all wallet SDKs (`@stellar/stellar-sdk`, `@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/*`, `@walletconnect/sign-client`) and gesture libraries (`@use-gesture/vanilla`, `motion`) are bundled as regular dependencies. They're installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
 
-For framework wrappers (pick one):
+For framework wrappers (install the one for your framework — they're optional peer deps):
 ```bash
 npm install react react-dom    # @saganta/stellar-appkit/react
 npm install vue                # @saganta/stellar-appkit/vue
 npm install solid-js           # @saganta/stellar-appkit/solid
 npm install svelte             # @saganta/stellar-appkit/svelte
 ```
+
+Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs and gesture libs don't have this singleton constraint, so they're safe to bundle.
 
 ## Core patterns
 
@@ -329,12 +325,14 @@ try {
 
 ## Available connectors
 
-| Connector | Function | Peer dependency |
+All wallet SDKs are bundled as regular dependencies — no manual install needed. Tree-shaken out of your bundle if the connector isn't imported.
+
+| Connector | Function | Bundled SDK |
 |---|---|---|
 | Freighter | `createFreighterConnector()` | `@stellar/freighter-api` |
 | Albedo | `createAlbedoConnector()` | `@albedo-link/intent` |
 | xBull | `createXBullConnector()` | `@creit.tech/xbull-wallet-connect` |
-| Ledger | `createLedgerConnector()` | `@ledgerhq/hw-app-str` + transport |
+| Ledger | `createLedgerConnector()` | `@ledgerhq/hw-app-str` + `hw-transport-webhid` + `hw-transport-webusb` |
 | WalletConnect | `createWalletConnectConnector(opts)` | `@walletconnect/sign-client` |
 
 ## SIWS signing per wallet

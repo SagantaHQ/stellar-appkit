@@ -390,6 +390,22 @@ In addition to the hooks, each wrapper ships a typed component wrapping the unde
 
 **Why a Svelte action instead of a component:** Svelte renders unknown lowercase tags (like `<saganta-appkit-modal>`) as-is in templates, so wrapping it in a Svelte component would just add an extra layer of indirection without buying anything. Svelte actions (`use:stellarmodal`) are the idiomatic pattern for enhancing a DOM node — they're plain TS functions that take the node and return a destroy callback. This keeps the wrapper zero-runtime-overhead and avoids needing a Svelte compiler step in the build (the rest of the wrapper is plain TS).
 
+### Dependency strategy — bundled vs. peer
+
+The package.json has two classes of external packages, split by whether they have a singleton constraint:
+
+**Bundled as regular `dependencies`** (auto-installed, version-locked, tree-shaken if unused):
+- `@stellar/stellar-sdk` — core needs it for transaction building, Soroban RPC, and contract spec parsing. The public API takes XDR strings (not class instances), so `instanceof` issues don't apply even if the app installs a different major version — the library uses its own copy internally.
+- `@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/hw-app-str` + `hw-transport-webhid` + `hw-transport-webusb`, `@walletconnect/sign-client` — wallet SDKs, only used by the corresponding connector. The app doesn't typically need these directly. All are lazy-imported inside the connector's `connect()` / `signTransaction()` methods, so bundlers tree-shake them out if the connector isn't imported.
+- `@use-gesture/vanilla` + `motion` — gesture libraries for the draggable bottom-sheet. Lazy-imported inside `setupBottomSheetGestures()`, only called when `mode === 'bottom-sheet'`. Apps that don't use bottom-sheet mode never load them.
+
+**Kept as optional `peerDependencies`** (app installs the one it needs):
+- `react`, `vue`, `solid-js`, `svelte` — framework wrappers. These have a hard singleton constraint: two copies of React in the same bundle break hooks (React's `useState` checks `React.__SECRET_INTERNALS` on the instance, and if there are two React copies, the hook call from one copy doesn't match the renderer from the other). The app already has its own framework instance, so bundling a second copy would cause exactly this failure mode. Keeping them as optional peer deps lets the app's single framework instance satisfy the wrapper.
+
+This split means a consumer can do `npm install @saganta/stellar-appkit` and immediately use any connector without manually installing wallet SDKs — the only separate install is the framework wrapper they actually use (`npm install react react-dom` for the React wrapper, etc.).
+
+**Version locking:** the `dependencies` use caret ranges (`^`) pinned to the major version we test against (e.g. `@stellar/freighter-api: ^4.1.0`). This ensures the installed version is at least the one we tested with, while allowing patch and minor updates for security fixes. Consumers who explicitly install an older major version would get a nested install — but the library's dynamic imports resolve to its own (compatible) copy, so it still works.
+
 ---
 
 ## 8.8 Soroban contract layer — typed clients, failover, badges, fee estimation
@@ -591,6 +607,7 @@ These are maintained in the [docs repo](https://github.com/SagantaHQ/stellar-app
 | 2.1 | UI polish (§8.9) — wallet-provided avatars (`getAvatar()` on `WalletConnector` + deterministic gradient fallback + opt-in Stellar Expert avatars), copy-to-clipboard on all address displays (connected, account picker, transaction preview), smooth loading spinner (border-radius: 50% fix for the square-wobble bug), contract verification badges + fee estimate rendered in the transaction preview UI. 8 new tests (avatar utilities). Total suite now 134 tests. | **done** |
 | 2.6 | AI-readable files (§8.10) — `SKILL.md` (structured AI skill file with YAML frontmatter, trigger conditions, code patterns, API tables) and `llms.txt` (compact plain-text API index following the llmstxt.org convention) shipped at the repo root and in the npm tarball, so AI coding tools (Cursor, Copilot, Claude Code, Windsurf, Continue) can read the full API surface from `node_modules` or the raw GitHub URL. Docs site serves its own `llms.txt` / `llms-full.txt` companion files plus an `AI Integration` reference page. | **done** |
 | 2.7 | Framework-native modal components (§8.7) — `<StellarAppKitModal>` React component (`forwardRef` + `useImperativeHandle`), Vue component (`defineComponent` + `expose`), Solid component (with `ref` callback), and Svelte `use:stellarmodal` action. Shared prop types in `src/ui-web/modal-props.ts`. Components deliberately do NOT import `connect-modal.ts` (the Web Component class extends HTMLElement, undefined in pure-Node SSR) — consumers `import '@saganta/stellar-appkit/ui-web'` once at app entry. 18 new tests covering module structure, default exports, SSR safety, and the `stellarmodal` action contract. Total suite now 155 tests. | **done** |
+| 2.8 | Bundled dependencies (§8.7 Dependency strategy) — moved all wallet SDKs (`@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/*`, `@walletconnect/sign-client`), the Stellar SDK (`@stellar/stellar-sdk`), and gesture libraries (`@use-gesture/vanilla`, `motion`) from `peerDependencies` to `dependencies` in `packages/core/package.json`. Consumers now do a single `npm install @saganta/stellar-appkit` — no more manual wallet SDK installs, no version-mismatch breakage. Frameworks (`react`/`vue`/`solid-js`/`svelte`) remain as optional peer deps because of the singleton constraint (two React copies break hooks). Version bumped to 0.2.0. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | **done** |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |

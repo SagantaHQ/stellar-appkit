@@ -12,24 +12,27 @@ Stellar AppKit is a Web3Modal / Reown AppKit equivalent for Stellar. It provides
 ## Install
 
 ```bash
-npm install @saganta/stellar-appkit @stellar/stellar-sdk
+npm install @saganta/stellar-appkit
 ```
 
-Wallet SDKs (install only the ones you use):
+That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+
+Bundled dependencies (no manual install needed):
+- `@stellar/stellar-sdk` — core (transaction building, Soroban RPC, contract spec)
 - `@stellar/freighter-api` — Freighter connector
 - `@albedo-link/intent` — Albedo connector
 - `@creit.tech/xbull-wallet-connect` — xBull connector
-- `@ledgerhq/hw-app-str` + `@ledgerhq/hw-transport-webhid` — Ledger connector
+- `@ledgerhq/hw-app-str` + `@ledgerhq/hw-transport-webhid` + `@ledgerhq/hw-transport-webusb` — Ledger connector
 - `@walletconnect/sign-client` — WalletConnect connector
+- `@use-gesture/vanilla` + `motion` — draggable bottom-sheet (only loaded in bottom-sheet mode)
 
-Framework wrappers (optional, separate subpath exports):
+Framework wrappers are optional peer dependencies (install the one for your framework):
 - `react` + `react-dom` — `@saganta/stellar-appkit/react`
 - `vue` — `@saganta/stellar-appkit/vue`
 - `solid-js` — `@saganta/stellar-appkit/solid`
 - `svelte` — `@saganta/stellar-appkit/svelte`
 
-Gesture libraries (optional, for draggable bottom-sheet):
-- `@use-gesture/vanilla` + `motion`
+Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs and gesture libs don't have this singleton constraint, so they're safe to bundle.
 
 ## Quick Start
 

@@ -22,8 +22,9 @@ import { withNormalizedError } from './error-utils.js';
  * Wallet, and any wallet on both mobile and desktop that isn't a browser
  * extension).
  *
- * Uses `@walletconnect/sign-client` as a peer dependency (lazy-imported so
- * `core` doesn't force it on apps that don't use WalletConnect).
+ * Uses `@walletconnect/sign-client` as a bundled dependency (lazy-imported
+ * so it's only loaded when the WalletConnect connector is actually used —
+ * tree-shaken out otherwise).
  *
  * ## Flow
  *
@@ -44,12 +45,10 @@ import { withNormalizedError } from './error-utils.js';
  * the connector checks if the session is still active via
  * `client.session.get(topic)` and reconnects if so.
  *
- * ## Peer dependency
+ * ## Dependency
  *
- * `@walletconnect/sign-client` is an optional peer dependency — install
- * it only if you use `createWalletConnectConnector`:
- *
- *   npm install @walletconnect/sign-client
+ * `@walletconnect/sign-client` is a bundled dependency — installed
+ * automatically with `@saganta/stellar-appkit`. No manual install needed.
  */
 
 // Lazy SDK types — we import the SignClient dynamically to avoid forcing
