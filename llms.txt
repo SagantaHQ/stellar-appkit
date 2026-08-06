@@ -1,0 +1,258 @@
+# Stellar AppKit
+
+> One SDK for every Stellar wallet — unified wallet API, Soroban built in, real transaction previews, and framework wrappers for React, Vue, Solid, and Svelte.
+>
+> npm: `@saganta/stellar-appkit`
+> GitHub: https://github.com/SagantaHQ/stellar-appkit
+> Docs: https://stellar-appkit.saganta.com
+> License: MIT
+
+Stellar AppKit is a Web3Modal / Reown AppKit equivalent for Stellar. It provides one unified wallet API, a first-class Soroban layer, real transaction previews instead of raw XDR, and a themeable UI that works identically dropped into any site.
+
+## Install
+
+```bash
+npm install @saganta/stellar-appkit @stellar/stellar-sdk
+```
+
+Wallet SDKs (install only the ones you use):
+- `@stellar/freighter-api` — Freighter connector
+- `@albedo-link/intent` — Albedo connector
+- `@creit.tech/xbull-wallet-connect` — xBull connector
+- `@ledgerhq/hw-app-str` + `@ledgerhq/hw-transport-webhid` — Ledger connector
+- `@walletconnect/sign-client` — WalletConnect connector
+
+Framework wrappers (optional, separate subpath exports):
+- `react` + `react-dom` — `@saganta/stellar-appkit/react`
+- `vue` — `@saganta/stellar-appkit/vue`
+- `solid-js` — `@saganta/stellar-appkit/solid`
+- `svelte` — `@saganta/stellar-appkit/svelte`
+
+Gesture libraries (optional, for draggable bottom-sheet):
+- `@use-gesture/vanilla` + `motion`
+
+## Quick Start
+
+```ts
+import { StellarAppKit, createFreighterConnector } from '@saganta/stellar-appkit';
+import '@saganta/stellar-appkit/ui-web';
+
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  connectors: [createFreighterConnector()],
+  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+});
+
+const modal = document.querySelector('saganta-appkit-modal');
+modal.client = appkit;
+modal.open();
+
+await appkit.restore();
+```
+
+## Wallet Connection
+
+```ts
+// Connect
+await appkit.connect('freighter');
+
+// Session
+appkit.session;                    // ConnectSession | null
+appkit.activeConnector;            // WalletConnector | null
+
+// Events
+appkit.on('connect', (session) => {});
+appkit.on('disconnect', ({ walletId }) => {});
+appkit.on('sessionsChanged', (sessions) => {});
+appkit.on('error', (err) => {});
+
+// Network mismatch recovery
+await appkit.connect('freighter', { autoRetryNetworkMismatch: true });
+```
+
+## Signing
+
+```ts
+// Transaction (goes through preview flow automatically)
+const result = await appkit.signTransaction(xdr);
+const result = await appkit.signTransaction(xdr, { skipPreview: true });
+
+// Message
+const result = await appkit.signMessage(message);
+
+// SIWS (Sign-In With Stellar)
+const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
+  statement: 'Sign in to My App',
+  nonce: 'server-issued-nonce',
+});
+
+// Auth entry (Soroban delegated auth)
+const result = await appkit.signAuthEntry(preimageBase64);
+```
+
+## Soroban
+
+```ts
+import { SorobanConnection } from '@saganta/stellar-appkit';
+
+const soroban = new SorobanConnection({
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  // OR multi-provider failover:
+  rpcUrls: ['https://soroban-testnet.stellar.org', 'https://rpc-backup.example.com'],
+  networkPassphrase: Networks.TESTNET,
+  wallet: appkit,
+});
+
+// Full pipeline: build → simulate → prepare → sign → submit → poll
+const result = await soroban.invoke({ contractId, method: 'transfer', args });
+
+// Preview with balance deltas + fee estimate
+const preview = await soroban.previewInvoke({ contractId, method: 'transfer', args });
+// preview.balanceDeltas, preview.feeEstimate, preview.simulationStatus
+
+// Fee estimation
+const fee = await soroban.estimateFee(unsignedXdr);
+
+// Typed contract client
+const token = soroban.contract<TokenContract>('C...', { specEntries });
+await token.transfer({ from, to, amount: 100n });
+const balance = await token.simulate('balanceOf', { id });
+
+// RPC failover status
+soroban.getFailoverStatus();
+```
+
+## SIWS Verification (server-side)
+
+```ts
+import { verifySiws } from '@saganta/stellar-appkit-siws-verify';
+
+const result = await verifySiws(
+  { message, signedMessage, signerAddress, signedData },
+  { expectedDomain: 'app.example.com', expectedNonce, debug: true }
+);
+
+if (result.ok) {
+  console.log(result.claims.address);
+} else {
+  console.log(result.reason);
+  console.log(result.diagnostics); // when debug: true
+}
+```
+
+## Framework Wrappers
+
+### React
+```tsx
+import { StellarAppKitProvider, useConnect, useSession, useSoroban } from '@saganta/stellar-appkit/react';
+
+<StellarAppKitProvider config={{ network: 'TESTNET', connectors: [...] }}>
+  <WalletPanel />
+</StellarAppKitProvider>
+
+const { connect, isConnected } = useConnect();
+const session = useSession();
+const { invoke, soroban } = useSoroban({ rpcUrl, networkPassphrase });
+```
+
+### Vue
+```ts
+import { StellarAppKitPlugin, useConnect, useSession } from '@saganta/stellar-appkit/vue';
+app.use(StellarAppKitPlugin, { network: 'TESTNET', connectors: [...] });
+
+// In setup():
+const { connect } = useConnect();
+const session = useSession();
+```
+
+### Solid
+```tsx
+import { StellarAppKitProvider, useConnect, useSession } from '@saganta/stellar-appkit/solid';
+```
+
+### Svelte
+```svelte
+import { setStellarAppKitContext, useConnect, useSession } from '@saganta/stellar-appkit/svelte';
+setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
+const { connect } = useConnect();
+const session = useSession();
+// $isConnected, $session?.address
+```
+
+## Transaction Preview
+
+```ts
+const appkit = new StellarAppKit({
+  network: 'PUBLIC',
+  connectors: [...],
+  previewOptions: {
+    verifiedContracts: new Set(['CA...KNOWN']),
+    largeTransferThreshold: 1000,
+    contractMetadata: new Map([
+      ['CBETT2CX...', { name: 'USDC', verified: true, audited: true, auditUrl: '...' }],
+    ]),
+    includeFeeEstimate: true,
+  },
+  onPreviewTransaction: async (preview) => {
+    console.log(preview.operations, preview.riskFlags, preview.feeEstimate);
+    return true;
+  },
+  onPreviewAuthEntry: async (preview) => {
+    console.log(preview.authorizedContracts);
+    return true;
+  },
+});
+```
+
+## Theming
+
+```css
+saganta-appkit-modal {
+  --sak-color-bg: #0B0D0E;
+  --sak-color-accent: #6EE7B7;
+  --sak-radius-lg: 20px;
+  --sak-font-display: 'Geist Sans', sans-serif;
+}
+```
+
+```html
+<saganta-appkit-modal mode="auto" theme="dark" stellar-expert-avatars="true">
+</saganta-appkit-modal>
+```
+
+## Error Handling
+
+```ts
+import { ConnectError, NetworkMismatchError } from '@saganta/stellar-appkit';
+
+try {
+  await appkit.connect('freighter');
+} catch (err) {
+  if (err instanceof NetworkMismatchError) {
+    console.log(err.expectedNetwork, err.actualNetwork);
+  }
+  if (err instanceof ConnectError) {
+    console.log(err.code); // -1, -2, -3, -4
+  }
+}
+```
+
+## Tree-shaking
+
+Each connector and framework wrapper is a separate subpath export:
+- `@saganta/stellar-appkit` — core (no UI code)
+- `@saganta/stellar-appkit/ui-web` — modal Web Component
+- `@saganta/stellar-appkit/react` — React hooks
+- `@saganta/stellar-appkit/vue` — Vue composables
+- `@saganta/stellar-appkit/solid` — Solid hooks
+- `@saganta/stellar-appkit/svelte` — Svelte stores
+
+A React app never ships Vue/Svelte/Solid code.
+
+## Links
+
+- [GitHub](https://github.com/SagantaHQ/stellar-appkit)
+- [Documentation](https://stellar-appkit.saganta.com)
+- [npm: @saganta/stellar-appkit](https://www.npmjs.com/package/@saganta/stellar-appkit)
+- [npm: @saganta/stellar-appkit-siws-verify](https://www.npmjs.com/package/@saganta/stellar-appkit-siws-verify)
+- [License: MIT](https://github.com/SagantaHQ/stellar-appkit/blob/main/LICENSE)
