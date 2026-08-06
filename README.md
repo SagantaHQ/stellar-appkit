@@ -771,7 +771,7 @@ See [TESTING.md](./TESTING.md) for what each test file covers and how to add tes
 
 Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`. (The published npm package includes `dist/`, so consumers installing from npm don't need to build — only consumers installing directly from a git URL do, see above.)
 
-The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
+The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.2.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
 
 ---
 

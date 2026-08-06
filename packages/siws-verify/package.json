@@ -22,9 +22,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@saganta/stellar-appkit": "^0.1.0"
-  },
-  "peerDependencies": {
+    "@saganta/stellar-appkit": "^0.2.0",
     "@stellar/stellar-sdk": "^13.0.0"
   },
   "license": "MIT"
