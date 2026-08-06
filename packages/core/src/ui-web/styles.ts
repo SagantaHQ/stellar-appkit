@@ -151,27 +151,47 @@ export function buildStyles(theme: ConnectTheme): string {
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
 
-    /* connecting state: a circular hairline arc traces the selected
-     * wallet's tile outline. Uses border-radius: 50% (a perfect circle)
-     * rather than a rounded rectangle — a rounded-square border wobbles
-     * visibly when rotated because the corners trace a larger radius
-     * than the edges. A circle traces a constant radius, so the spin
-     * is smooth. The arc is 1px larger than the tile (inset: -2px) so
-     * it sits just outside the tile's border, and only the top ~40% of
-     * the border is colored (border-top + border-right), creating the
-     * "loading arc" effect. */
-    .wallet-tile.connecting::after {
+    /* connecting state: a conic-gradient "scanner" effect rotates around
+     * the wallet tile's rounded-rectangle border. This gives a modern
+     * loading-indicator feel (like AI dashboards) without the wobble of
+     * a spinning border. The ::before is a conic gradient that sits 2px
+     * outside the tile; ::after is a solid background that sits 2px inside,
+     * so only the gradient ring is visible.
+     *
+     * Uses conic-gradient instead of border + border-radius because a
+     * spinning border with border-radius wobbles — the corners trace a
+     * different radius than the edges. A conic gradient on a rounded
+     * rectangle traces smoothly because it's a fill, not a stroke. */
+    .wallet-tile.connecting {
+      position: relative;
+      z-index: 0;
+    }
+    .wallet-tile.connecting::before {
       content: "";
       position: absolute;
       inset: -2px;
-      border-radius: 50%;
-      border: 1.5px solid transparent;
-      border-top-color: ${v('colorAccent', theme)};
-      border-right-color: ${v('colorAccent', theme)};
-      animation: sc-spin 0.8s linear infinite;
+      border-radius: 12px;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0%,
+        ${v('colorAccent', theme)} 25%,
+        ${v('colorAccent', theme)} 40%,
+        transparent 60%,
+        transparent 100%
+      );
+      animation: sc-spin 1.2s linear infinite;
+      z-index: -1;
+    }
+    .wallet-tile.connecting::after {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: 9px;
+      background: ${v('colorBg', theme)};
+      z-index: -1;
     }
     @media (prefers-reduced-motion: reduce) {
-      .wallet-tile.connecting::after { animation-duration: 1.6s; }
+      .wallet-tile.connecting::before { animation-duration: 3s; }
     }
     @keyframes sc-spin { to { transform: rotate(360deg); } }
 
