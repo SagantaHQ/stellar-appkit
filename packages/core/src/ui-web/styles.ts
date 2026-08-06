@@ -27,14 +27,16 @@ export function buildStyles(theme: ConnectTheme): string {
       position: fixed;
       inset: 0;
       background: ${v('overlayColor', theme)};
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       display: flex;
       z-index: 2147483000;
       opacity: 0;
-      transition: opacity 180ms ease;
+      transition: opacity 220ms ease;
     }
     .overlay[data-open="true"] { opacity: 1; }
     @media (prefers-reduced-motion: reduce) {
-      .overlay { transition: none; }
+      .overlay { transition: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
     }
 
     /* ---------- layout: modal (desktop) ---------- */
@@ -43,11 +45,11 @@ export function buildStyles(theme: ConnectTheme): string {
       width: 100%;
       max-width: 380px;
       border-radius: ${v('radiusLg', theme)};
-      transform: scale(0.96);
+      transform: scale(0.94) translateY(8px);
       opacity: 0;
-      transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease;
+      transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 240ms ease;
     }
-    .overlay[data-mode="modal"][data-open="true"] .panel { transform: scale(1); opacity: 1; }
+    .overlay[data-mode="modal"][data-open="true"] .panel { transform: scale(1) translateY(0); opacity: 1; }
 
     /* ---------- layout: bottom-sheet (mobile web + always on RN) ---------- */
     .overlay[data-mode="bottomsheet"] { align-items: flex-end; justify-content: center; padding: 0; }
@@ -57,7 +59,7 @@ export function buildStyles(theme: ConnectTheme): string {
       border-radius: ${v('radiusLg', theme)} ${v('radiusLg', theme)} 0 0;
       padding-bottom: env(safe-area-inset-bottom, 0px);
       transform: translateY(100%);
-      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
       touch-action: pan-y;
       overscroll-behavior: contain;
     }
@@ -121,8 +123,10 @@ export function buildStyles(theme: ConnectTheme): string {
       color: ${v('colorTextMuted', theme)};
       cursor: pointer;
       flex-shrink: 0;
+      transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
     }
     .icon-btn:hover { background: ${v('colorSurfaceHover', theme)}; color: ${v('colorText', theme)}; }
+    .icon-btn:active { transform: scale(0.9); }
     .icon-btn:focus-visible { outline: 2px solid ${v('colorAccent', theme)}; outline-offset: 1px; }
     .icon-btn svg { width: 16px; height: 16px; }
 
@@ -144,6 +148,20 @@ export function buildStyles(theme: ConnectTheme): string {
       padding: 32px 24px 28px;
       gap: 0;
     }
+    /* Staggered entrance — each child fades in + slides up slightly,
+       with a small delay between each for a cascading reveal. */
+    .connecting-view > * {
+      opacity: 0;
+      animation: sak-connecting-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .connecting-view > *:nth-child(1) { animation-delay: 0ms; }
+    .connecting-view > *:nth-child(2) { animation-delay: 80ms; }
+    .connecting-view > *:nth-child(3) { animation-delay: 160ms; }
+    .connecting-view > *:nth-child(4) { animation-delay: 240ms; }
+    @keyframes sak-connecting-enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
     .connecting-view__logo-wrap {
       position: relative;
       width: 88px;
@@ -161,25 +179,35 @@ export function buildStyles(theme: ConnectTheme): string {
       position: relative;
       z-index: 1;
       background: ${v('colorSurface', theme)};
+      /* Subtle breathe — the logo gently scales up and down while
+         waiting for the wallet to respond. Slow enough to feel calm,
+         not anxious. */
+      animation: sak-logo-breathe 2.8s ease-in-out infinite;
+    }
+    @keyframes sak-logo-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.06); }
     }
     /* The spinner — an SVG <rect> with stroke-dasharray that animates
        around the perimeter of the rounded-square border. A solid line
-       segment (120px of the ~312px perimeter) travels around the rect,
-       creating a "drawing the border" effect. Uses stroke-dashoffset
-       animation (not rotation) so the line stays on the border path. */
+       segment travels around the rect, creating a "drawing the border"
+       effect. Uses ease-in-out timing for a smoother, more organic feel
+       than linear (which feels mechanical). */
     .connecting-view__arc {
       position: absolute;
       inset: 0;
       width: 88px;
       height: 88px;
       color: ${v('colorAccent', theme)};
-      animation: sak-connecting-dash 1.6s linear infinite;
+      animation: sak-connecting-dash 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
     @keyframes sak-connecting-dash {
       to { stroke-dashoffset: -360; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .connecting-view__arc { animation-duration: 6s; }
+      .connecting-view__arc { animation-duration: 8s; }
+      .connecting-view__logo { animation: none; }
+      .connecting-view > * { animation: none; opacity: 1; }
     }
     .connecting-view__title {
       font-size: 17px;
@@ -208,11 +236,15 @@ export function buildStyles(theme: ConnectTheme): string {
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: background-color 150ms ease, border-color 150ms ease;
+      transition: background-color 200ms ease, border-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .connecting-view__retry:hover {
       background: ${v('colorSurfaceHover', theme)};
       border-color: ${v('colorTextMuted', theme)};
+      transform: translateY(-1px);
+    }
+    .connecting-view__retry:active {
+      transform: translateY(0) scale(0.97);
     }
     .connecting-view__retry svg {
       width: 14px;
@@ -274,8 +306,10 @@ export function buildStyles(theme: ConnectTheme): string {
       border-radius: ${v('radiusMd', theme)};
       cursor: pointer;
       box-sizing: border-box;
+      transition: background-color 180ms ease, transform 180ms ease;
     }
     .wallet-row:hover { background: ${v('colorSurfaceHover', theme)}; }
+    .wallet-row:active { transform: scale(0.985); }
     .wallet-row:focus-visible { outline: 2px solid ${v('colorAccent', theme)}; outline-offset: -2px; }
     .wallet-row[data-unavailable="true"] { opacity: 0.55; }
     .wallet-tile {
@@ -290,7 +324,10 @@ export function buildStyles(theme: ConnectTheme): string {
       justify-content: center;
       flex-shrink: 0;
       overflow: hidden;
+      transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
     }
+    /* Wallet tile icon scales up subtly on row hover — feels responsive. */
+    .wallet-row:hover .wallet-tile { transform: scale(1.08); }
     .wallet-tile img {
       width: 28px;
       height: 28px;
@@ -316,9 +353,10 @@ export function buildStyles(theme: ConnectTheme): string {
       font-weight: 600;
       text-decoration: none;
       flex-shrink: 0;
-      transition: opacity 150ms ease;
+      transition: opacity 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .wallet-install-btn:hover { opacity: 0.85; }
+    .wallet-install-btn:hover { opacity: 0.9; transform: scale(1.05); }
+    .wallet-install-btn:active { transform: scale(0.95); }
     /* When a wallet isn't installed, don't dim the row — the Install button
        is the primary CTA, so it should be prominent. */
     .wallet-row--not-installed { opacity: 1; }
