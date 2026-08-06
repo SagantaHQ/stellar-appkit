@@ -27,6 +27,8 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private view;
     private walletList;
     private connectingWalletId;
+    /** Error message from the last connect() attempt — set when the client emits an 'error' event while view === 'connecting'. Cleared on retry. */
+    private connectingError;
     private lastError;
     private copyState;
     /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
@@ -91,22 +93,52 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private resolveTheme;
     private render;
     private renderPanel;
+    /**
+     * Builds an explorer URL for an account or transaction.
+     *
+     * Defaults:
+     * - Mainnet (PUBLIC): https://stellarchain.io
+     * - Testnet: https://testnet.stellarchain.io
+     *
+     * Override with the `explorer-url` attribute — set it to your preferred
+     * explorer's base URL (with or without a trailing slash). The `path`
+     * argument is appended to the base.
+     *
+     * Examples:
+     *   explorer-url="https://stellar.expert/explorer/public"
+     *   → https://stellar.expert/explorer/public/account/GA...
+     *
+     *   explorer-url="https://my-explorer.com/" (trailing slash)
+     *   → https://my-explorer.com/account/GA...
+     *
+     *   (no attribute, mainnet)
+     *   → https://stellarchain.io/account/GA...
+     *
+     *   (no attribute, testnet)
+     *   → https://testnet.stellarchain.io/account/GA...
+     */
+    private explorerUrl;
     private defaultTitle;
     private renderPanelHeader;
     private renderBody;
     /**
      * Dedicated connecting view — shown while the wallet's connect() promise
-     * is in flight. Matches the "Continue in [Wallet]" layout:
+     * is in flight, or when it fails. Two variants:
      *
+     * Normal (connecting):
      *   [wallet logo with spinner arc]
-     *
      *   Continue in [Wallet]
      *   Accept connection request in the wallet
      *
+     * Error (connection failed):
+     *   [wallet logo — no spinner]
+     *   Continue in [Wallet]
+     *   Connection declined or failed
      *   [↻ Try again]
      *
-     * The "Try again" button re-triggers the connect call — useful when the
-     * wallet prompt was dismissed without resolving.
+     * The "Try again" button only appears on the error variant. It re-triggers
+     * selectWallet() for the same connector. The header keeps the wallet name
+     * + back arrow + close in both variants so the user can always navigate away.
      */
     private renderConnecting;
     private renderWalletList;

@@ -229,6 +229,16 @@ export function buildStyles(theme) {
       height: 14px;
     }
 
+    /* Error variant — the spinner arc is hidden, subtitle shows the error
+       message, and the retry button is shown. The logo stays in place
+       (no rotation) so the user sees which wallet failed. */
+    .connecting-view--error .connecting-view__logo-wrap {
+      margin-bottom: 24px;
+    }
+    .connecting-view--error .connecting-view__subtitle {
+      color: ${v('colorDanger', theme)};
+    }
+
     .body {
       padding: 4px 10px 12px;
       overflow-y: auto;
@@ -300,6 +310,29 @@ export function buildStyles(theme) {
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
+
+    /* "Install" button for not-installed wallets — appears on the right
+       side of the wallet row instead of the subLabel. The row itself is
+       still clickable (opens the install URL); the button is a visual
+       affordance that this wallet needs to be installed first. */
+    .wallet-install-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 12px;
+      border-radius: ${v('radiusSm', theme)};
+      background: ${v('colorAccent', theme)};
+      color: ${v('colorBg', theme)};
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      flex-shrink: 0;
+      transition: opacity 150ms ease;
+    }
+    .wallet-install-btn:hover { opacity: 0.85; }
+    /* When a wallet isn't installed, don't dim the row — the Install button
+       is the primary CTA, so it should be prominent. */
+    .wallet-row--not-installed { opacity: 1; }
+    .wallet-row--not-installed .wallet-sub { display: none; }
 
     /* connecting state: a conic-gradient "scanner" effect rotates around
      * the wallet tile's rounded-rectangle border. This gives a modern

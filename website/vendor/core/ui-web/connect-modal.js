@@ -24,7 +24,7 @@ const MOBILE_BREAKPOINT_PX = 640;
  */
 export class SagantaAppKitModal extends HTMLElement {
     static get observedAttributes() {
-        return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars'];
+        return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars', 'explorer-url'];
     }
     constructor() {
         super();
@@ -35,6 +35,8 @@ export class SagantaAppKitModal extends HTMLElement {
         this.view = 'wallet-list';
         this.walletList = [];
         this.connectingWalletId = null;
+        /** Error message from the last connect() attempt — set when the client emits an 'error' event while view === 'connecting'. Cleared on retry. */
+        this.connectingError = null;
         this.lastError = null;
         this.copyState = 'idle';
         /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
@@ -98,7 +100,15 @@ export class SagantaAppKitModal extends HTMLElement {
                 this.render();
         }), client.on('error', (err) => {
             this.lastError = err;
-            this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
+            // If we're in the connecting view and the error isn't a network mismatch,
+            // stay on the connecting view but show the error + "Try again" button.
+            // Network mismatches get their own dedicated view with network-switch guidance.
+            if (this.view === 'connecting' && this.connectingWalletId && !(err instanceof NetworkMismatchError)) {
+                this.connectingError = err.message || String(err);
+            }
+            else {
+                this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
+            }
             this.dispatchEvent(new CustomEvent('sc-error', { detail: err, bubbles: true, composed: true }));
             this.render();
         }));
@@ -254,6 +264,7 @@ export class SagantaAppKitModal extends HTMLElement {
         if (reachability === 'unavailable')
             return;
         this.connectingWalletId = connector.id;
+        this.connectingError = null;
         this.view = 'connecting';
         this.render();
         try {
@@ -274,10 +285,28 @@ export class SagantaAppKitModal extends HTMLElement {
             }
             this.view = 'connected';
             this.render();
-            // 'error'/'network-mismatch' views are set by the client's 'error' event handler above on failure.
+        }
+        catch {
+            // The client's 'error' event handler (wired in the client setter) already
+            // set this.connectingError and re-rendered. We keep connectingWalletId
+            // set so the header still shows the wallet name + back arrow + close
+            // button on the error view — the user can retry or go back.
+            // Only clear connectingWalletId if the error handler didn't set connectingError
+            // (e.g. network mismatch which switches to a different view).
+            if (this.view === 'connecting' && !this.connectingError) {
+                this.connectingWalletId = null;
+                this.view = 'wallet-list';
+                this.render();
+            }
         }
         finally {
-            this.connectingWalletId = null;
+            // Clear connectingWalletId only if we successfully left the connecting view
+            // (connected, account-picker, network-mismatch, or wallet-list).
+            // If we're still on 'connecting' with an error, keep it so the header
+            // shows the wallet name.
+            if (this.view !== 'connecting') {
+                this.connectingWalletId = null;
+            }
         }
     }
     async pickAccount(address) {
@@ -428,6 +457,39 @@ export class SagantaAppKitModal extends HTMLElement {
       </div>
     `;
     }
+    /**
+     * Builds an explorer URL for an account or transaction.
+     *
+     * Defaults:
+     * - Mainnet (PUBLIC): https://stellarchain.io
+     * - Testnet: https://testnet.stellarchain.io
+     *
+     * Override with the `explorer-url` attribute — set it to your preferred
+     * explorer's base URL (with or without a trailing slash). The `path`
+     * argument is appended to the base.
+     *
+     * Examples:
+     *   explorer-url="https://stellar.expert/explorer/public"
+     *   → https://stellar.expert/explorer/public/account/GA...
+     *
+     *   explorer-url="https://my-explorer.com/" (trailing slash)
+     *   → https://my-explorer.com/account/GA...
+     *
+     *   (no attribute, mainnet)
+     *   → https://stellarchain.io/account/GA...
+     *
+     *   (no attribute, testnet)
+     *   → https://testnet.stellarchain.io/account/GA...
+     */
+    explorerUrl(path, isTestnet) {
+        const custom = this.getAttribute('explorer-url');
+        if (custom) {
+            const base = custom.endsWith('/') ? custom.slice(0, -1) : custom;
+            return `${base}/${path}`;
+        }
+        const defaultBase = isTestnet ? 'https://testnet.stellarchain.io' : 'https://stellarchain.io';
+        return `${defaultBase}/${path}`;
+    }
     defaultTitle() {
         switch (this.view) {
             case 'connected': {
@@ -511,17 +573,22 @@ export class SagantaAppKitModal extends HTMLElement {
     }
     /**
      * Dedicated connecting view — shown while the wallet's connect() promise
-     * is in flight. Matches the "Continue in [Wallet]" layout:
+     * is in flight, or when it fails. Two variants:
      *
+     * Normal (connecting):
      *   [wallet logo with spinner arc]
-     *
      *   Continue in [Wallet]
      *   Accept connection request in the wallet
      *
+     * Error (connection failed):
+     *   [wallet logo — no spinner]
+     *   Continue in [Wallet]
+     *   Connection declined or failed
      *   [↻ Try again]
      *
-     * The "Try again" button re-triggers the connect call — useful when the
-     * wallet prompt was dismissed without resolving.
+     * The "Try again" button only appears on the error variant. It re-triggers
+     * selectWallet() for the same connector. The header keeps the wallet name
+     * + back arrow + close in both variants so the user can always navigate away.
      */
     renderConnecting() {
         if (!this.connectingWalletId)
@@ -535,22 +602,32 @@ export class SagantaAppKitModal extends HTMLElement {
         const onerrorHandler = fallbackIcon
             ? `this.src='${fallbackIcon}'; this.onerror=null;`
             : `this.style.display='none';`;
+        const hasError = this.connectingError !== null;
+        const subtitle = hasError
+            ? 'Connection declined or failed. Try again or pick a different wallet.'
+            : 'Accept connection request in the wallet';
+        const arcHtml = hasError
+            ? '' // no spinner on error
+            : `<div class="connecting-view__arc" aria-hidden="true"></div>`;
+        const retryHtml = hasError
+            ? `<button class="connecting-view__retry" data-action="retry-connecting">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+             <path d="M3 12a9 9 0 1 0 9-9" />
+             <path d="M3 4v5h5" />
+           </svg>
+           Try again
+         </button>`
+            : '';
         return `
-      <div class="connecting-view">
+      <div class="connecting-view ${hasError ? 'connecting-view--error' : ''}">
         <div class="connecting-view__logo-wrap">
-          <div class="connecting-view__arc" aria-hidden="true"></div>
+          ${arcHtml}
           <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
                onerror="${onerrorHandler}" />
         </div>
         <h2 class="connecting-view__title">Continue in ${escapeHtml(walletName)}</h2>
-        <p class="connecting-view__subtitle">Accept connection request in the wallet</p>
-        <button class="connecting-view__retry" data-action="retry-connecting">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 9-9" />
-            <path d="M3 4v5h5" />
-          </svg>
-          Try again
-        </button>
+        <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
+        ${retryHtml}
       </div>
     `;
     }
@@ -561,18 +638,36 @@ export class SagantaAppKitModal extends HTMLElement {
         return this.walletList
             .map(({ connector, reachability }) => {
             const isConnecting = this.connectingWalletId === connector.id;
-            const subLabel = isConnecting ? 'Connecting…'
-                : reachability === 'not-installed' ? 'Install'
-                    : reachability === 'locked' ? 'Locked'
-                        : reachability === 'unavailable' ? 'Unavailable'
-                            : '';
-            const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
+            const notInstalled = reachability === 'not-installed';
+            const installUrl = pickInstallUrl(connector);
             // Use the wallet's official icon URL first; fall back to our
             // bundled inline SVG data-URI if the URL fails to load.
             const fallbackIcon = getWalletIconDataUri(connector.id);
             const onerrorHandler = fallbackIcon
                 ? `this.src='${fallbackIcon}'; this.onerror=null;`
                 : `this.style.display='none'; this.nextElementSibling.style.display='flex';`;
+            // For not-installed wallets, render an "Install" button on the right
+            // instead of the subLabel. The row itself is still clickable (opens
+            // the install URL) — the button is a visual affordance.
+            if (notInstalled) {
+                return `
+            <button class="wallet-row wallet-row--not-installed" data-action="select-wallet" data-wallet-id="${connector.id}">
+              <span class="wallet-tile">
+                <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="${onerrorHandler}" />
+                ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
+              </span>
+              <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
+              <span class="wallet-sub">Not installed</span>
+              ${installUrl ? `<a class="wallet-install-btn" href="${escapeAttr(installUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation();">Install</a>` : ''}
+            </button>
+          `;
+            }
+            // For installed wallets, show status subLabel (Connecting… / Locked / etc.)
+            const subLabel = isConnecting ? 'Connecting…'
+                : reachability === 'locked' ? 'Locked'
+                    : reachability === 'unavailable' ? 'Unavailable'
+                        : '';
+            const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
             return `
           <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability !== 'available'}" ${disabled ? 'disabled' : ''}>
             <span class="wallet-tile ${isConnecting ? 'connecting' : ''}">
@@ -625,7 +720,7 @@ export class SagantaAppKitModal extends HTMLElement {
         const networkColor = isTestnet ? '#f59e0b' : '#6EE7B7';
         const networkLabel = session.network.toLowerCase();
         const pendingCount = this._client?.pendingSignCount ?? 0;
-        const explorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/account/${session.address}`;
+        const explorerUrl = this.explorerUrl(`account/${session.address}`, isTestnet);
         // Balance — skeleton shimmer while loading, then large number
         const balanceHtml = this.cachedBalance
             ? `<span class="balance-value">${escapeHtml(this.cachedBalance)}</span><span class="balance-unit">XLM</span>`
@@ -642,7 +737,7 @@ export class SagantaAppKitModal extends HTMLElement {
             ? this.cachedTxHistory.map((tx) => {
                 const icon = tx.success ? '✓' : '✗';
                 const iconClass = tx.success ? 'tx-success' : 'tx-failed';
-                const txExplorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/tx/${tx.hash}`;
+                const txExplorerUrl = this.explorerUrl(`tx/${tx.hash}`, isTestnet);
                 return `
             <a class="tx-row" href="${escapeAttr(txExplorerUrl)}" target="_blank" rel="noopener">
               <span class="tx-icon ${iconClass}">${icon}</span>
@@ -671,7 +766,7 @@ export class SagantaAppKitModal extends HTMLElement {
                 <span class="network-dot"></span>
                 ${escapeHtml(networkLabel)}
               </span>
-              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="View on stellar.expert">
+              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="View on explorer">
                 ${icons.externalLink}
               </a>
             </div>
@@ -916,6 +1011,7 @@ export class SagantaAppKitModal extends HTMLElement {
         // navigated away by then).
         this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
             this.connectingWalletId = null;
+            this.connectingError = null;
             this.view = 'wallet-list';
             this.render();
         });
@@ -924,6 +1020,7 @@ export class SagantaAppKitModal extends HTMLElement {
             const walletId = this.connectingWalletId;
             if (!walletId)
                 return;
+            this.connectingError = null;
             const connector = this._client?.registry.get(walletId);
             if (connector)
                 this.selectWallet(connector);
