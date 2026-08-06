@@ -611,7 +611,13 @@ export class SagantaAppKitModal extends HTMLElement {
             : 'Accept connection request in the wallet';
         const arcHtml = hasError
             ? '' // no spinner on error
-            : `<div class="connecting-view__arc" aria-hidden="true"></div>`;
+            : `<svg class="connecting-view__arc" viewBox="0 0 88 88" fill="none" aria-hidden="true">
+           <rect x="3" y="3" width="82" height="82" rx="20" ry="20"
+                 stroke="currentColor"
+                 stroke-width="2.5"
+                 stroke-linecap="round"
+                 stroke-dasharray="120 240" />
+         </svg>`;
         const retryHtml = hasError
             ? `<button class="connecting-view__retry" data-action="retry-connecting">
            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -159,37 +159,21 @@ export function buildStyles(theme) {
       z-index: 1;
       background: ${v('colorSurface', theme)};
     }
-    /* The spinner — a square with rounded corners, using a conic-gradient
-       background masked into a border-ring shape. The gradient sweeps
-       ~270° (open at the top) and rotates to create the loading effect.
-       Square (not circular) to match the modern squircle aesthetic. */
+    /* The spinner — an SVG <rect> with stroke-dasharray that animates
+       around the perimeter of the rounded-square border. A solid line
+       segment (120px of the ~312px perimeter) travels around the rect,
+       creating a "drawing the border" effect. Uses stroke-dashoffset
+       animation (not rotation) so the line stays on the border path. */
     .connecting-view__arc {
       position: absolute;
       inset: 0;
-      border-radius: 22px;
-      background: conic-gradient(
-        from 0deg,
-        transparent 0deg,
-        transparent 90deg,
-        ${v('colorAccent', theme)} 270deg,
-        ${v('colorAccent', theme)} 360deg
-      );
-      /* Mask into a 4px-thick border ring (square with rounded corners).
-         The mask is a rounded-rectangle outline: solid black except for
-         an inset transparent rectangle, leaving only the border visible. */
-      -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-      mask-composite: exclude;
-      padding: 4px;
-      animation: sak-connecting-spin 1.4s linear infinite;
+      width: 88px;
+      height: 88px;
+      color: ${v('colorAccent', theme)};
+      animation: sak-connecting-dash 1.6s linear infinite;
     }
-    @keyframes sak-connecting-spin {
-      to { transform: rotate(360deg); }
+    @keyframes sak-connecting-dash {
+      to { stroke-dashoffset: -360; }
     }
     @media (prefers-reduced-motion: reduce) {
       .connecting-view__arc { animation-duration: 6s; }
