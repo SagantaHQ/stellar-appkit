@@ -62,31 +62,59 @@ import { withNormalizedError } from './error-utils.js';
  * page load; if it doesn't appear in that window, the extension is
  * almost certainly not installed.
  */
-const XBULL_EXTENSION_INJECTION_TIMEOUT_MS = 2000;
+const XBULL_EXTENSION_INJECTION_TIMEOUT_MS = 5000;
 
 /**
- * Polls for `window.xBullSDK` to be injected by the xBull extension's
- * content script. Returns true if the extension is detected within the
- * timeout, false otherwise.
+ * Polls for the xBull extension to inject its SDK global. Returns true if
+ * the extension is detected within the timeout, false otherwise.
  *
- * The extension injects asynchronously (content scripts run after the
- * page's main JS), so a synchronous `typeof window.xBullSDK !== 'undefined'`
- * check at connect time can return false even when the extension IS
- * installed — causing the SDK's bridge to silently fall back to the web
- * wallet popup. This poll gives the injection time to complete.
+ * The xBull extension injects `window.xBullSDK` asynchronously via a content
+ * script — content scripts run after the page's main JS begins executing.
+ * On a fast page-load → user-click-connect flow, our code can race ahead
+ * of the injection, causing the SDK's bridge to silently fall back to
+ * opening the xBull web wallet popup even though the extension IS installed.
+ *
+ * We check multiple possible injection points because xBull has changed
+ * the property name across versions:
+ *   - `window.xBullSDK` (the documented one, v0.4.0+)
+ *   - `window.xBull` (older versions)
+ *   - Any property on window starting with "xBull" (defensive)
  */
 async function waitForXBullExtension(timeoutMs = XBULL_EXTENSION_INJECTION_TIMEOUT_MS): Promise<boolean> {
-  // Use globalThis rather than window — in a browser, `window === globalThis`,
-  // so this is equivalent. In Node/bun (SSR, tests), `globalThis` exists but
-  // `window` doesn't, so this avoids a ReferenceError without needing a
-  // typeof window guard.
-  const g = globalThis as { xBullSDK?: unknown };
-  if (g.xBullSDK) return true;
+  if (typeof window === 'undefined' && typeof (globalThis as { xBullSDK?: unknown }).xBullSDK === 'undefined') return false;
+
+  // Check multiple possible injection points
+  const checkExtension = (): boolean => {
+    const w = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
+    // Primary: the documented injection point
+    if (w.xBullSDK) return true;
+    // Fallback: older xBull versions may use a shorter name
+    if (w.xBull) return true;
+    // Defensive: scan for any xBull-prefixed property (future-proofing)
+    for (const key of Object.keys(w)) {
+      if (key.toLowerCase().startsWith('xbull') && w[key] != null) return true;
+    }
+    return false;
+  };
+
+  if (checkExtension()) return true;
+
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setTimeout(r, 50));
-    if (g.xBullSDK) return true;
+    await new Promise((r) => setTimeout(r, 100));
+    if (checkExtension()) return true;
   }
+
+  // Log a diagnostic warning so the user knows WHY the web wallet popup
+  // is opening instead of the extension. This is the #1 support question
+  // for xBull — without this log, the popup just appears with no context.
+  console.warn(
+    '[saganta-appkit] xBull extension not detected after ' + (timeoutMs / 1000) + 's. ' +
+    'Falling back to the xBull web wallet popup. If you have the xBull extension ' +
+    'installed, make sure it is enabled and up to date. Checked: window.xBullSDK, ' +
+    'window.xBull, and all xBull-prefixed properties.'
+  );
+
   return false;
 }
 
