@@ -1,0 +1,276 @@
+---
+name: stellar-appkit
+description: Build Stellar/Soroban dApps with unified wallet connections, transaction previews, and Soroban contract calls. Use when building a Stellar dApp frontend that needs wallet connection, transaction signing, Soroban smart contract interaction, or Sign-In With Stellar authentication.
+license: MIT
+---
+
+# Stellar AppKit — AI Developer Skill
+
+> **One SDK for every Stellar wallet.** Unified wallet API, real transaction previews, Soroban built in, framework wrappers for React/Vue/Solid/Svelte.
+
+## When to use this skill
+
+Use this skill when the user wants to:
+- Build a Stellar or Soroban dApp frontend
+- Connect Stellar wallets (Freighter, Albedo, xBull, Ledger, WalletConnect)
+- Sign and submit transactions on the Stellar network
+- Call Soroban smart contracts from a web app
+- Implement Sign-In With Stellar (SIWS) authentication
+- Show transaction previews with risk flags before signing
+- Use React/Vue/Solid/Svelte hooks for wallet state management
+- Build a wallet connection modal UI
+
+## Installation
+
+```bash
+npm install @saganta/stellar-appkit @stellar/stellar-sdk
+```
+
+Install wallet SDKs for the connectors you use:
+```bash
+npm install @stellar/freighter-api           # Freighter
+npm install @albedo-link/intent              # Albedo
+npm install @creit.tech/xbull-wallet-connect # xBull
+npm install @walletconnect/sign-client       # WalletConnect
+```
+
+For framework wrappers (pick one):
+```bash
+npm install react react-dom    # @saganta/stellar-appkit/react
+npm install vue                # @saganta/stellar-appkit/vue
+npm install solid-js           # @saganta/stellar-appkit/solid
+npm install svelte             # @saganta/stellar-appkit/svelte
+```
+
+## Core patterns
+
+### Basic wallet connection
+
+```ts
+import { StellarAppKit, createFreighterConnector } from '@saganta/stellar-appkit';
+import '@saganta/stellar-appkit/ui-web';
+
+const appkit = new StellarAppKit({
+  network: 'TESTNET', // or 'PUBLIC'
+  connectors: [createFreighterConnector()],
+  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+});
+
+const modal = document.querySelector('saganta-appkit-modal');
+modal.client = appkit;
+
+connectButton.addEventListener('click', () => modal.open());
+await appkit.restore(); // resume persisted session
+```
+
+### Signing transactions
+
+```ts
+// Goes through the preview flow (onPreviewTransaction) before reaching the wallet
+const result = await appkit.signTransaction(unsignedXdr);
+// Skip preview for already-confirmed flows
+const result = await appkit.signTransaction(unsignedXdr, { skipPreview: true });
+```
+
+### Soroban contract calls
+
+```ts
+import { SorobanConnection } from '@saganta/stellar-appkit';
+
+const soroban = new SorobanConnection({
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  wallet: appkit,
+});
+
+// Full pipeline: build → simulate → prepare → sign → submit → poll
+const result = await soroban.invoke({
+  contractId: 'CBETT2CX...',
+  method: 'transfer',
+  args: [fromAddress, toAddress, amount],
+});
+
+// Preview before signing
+const preview = await soroban.previewInvoke({ contractId, method, args });
+console.log(preview.balanceDeltas);  // [{ kind: 'account', delta: '-100', ... }]
+console.log(preview.feeEstimate);     // { totalFeeXlm: '0.00501 XLM', ... }
+```
+
+### Typed contract client
+
+```ts
+import { defineContractSpec } from '@saganta/stellar-appkit';
+
+interface TokenContract extends defineContractSpec<{
+  transfer: (args: { from: string; to: string; amount: bigint }) => Promise<boolean>;
+  balanceOf: (args: { id: string }) => Promise<bigint>;
+}> {}
+
+const token = soroban.contract<TokenContract>('CBETT2CX...', {
+  specEntries: ['AAA==', 'BBB=='], // from `stellar contract bindings typescript`
+});
+
+await token.transfer({ from, to, amount: 100n }); // fully typed
+const balance = await token.simulate('balanceOf', { id }); // read-only
+```
+
+### Sign-In With Stellar
+
+```ts
+// Client side
+const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
+  statement: 'Sign in to My App',
+  nonce: await fetch('/api/nonce').then(r => r.text()),
+});
+
+// Server side
+import { verifySiws } from '@saganta/stellar-appkit-siws-verify';
+
+const result = await verifySiws(
+  { message, signedMessage, signerAddress, signedData },
+  { expectedDomain: 'app.example.com', expectedNonce }
+);
+if (result.ok) { /* result.claims.address is verified */ }
+```
+
+### React hooks
+
+```tsx
+import { StellarAppKitProvider, useConnect, useSession, useSoroban } from '@saganta/stellar-appkit/react';
+
+function App() {
+  return (
+    <StellarAppKitProvider config={{ network: 'TESTNET', connectors: [...] }}>
+      <WalletPanel />
+    </StellarAppKitProvider>
+  );
+}
+
+function WalletPanel() {
+  const { connect, isConnected } = useConnect();
+  const session = useSession();
+  const { invoke, soroban } = useSoroban({ rpcUrl: '...', networkPassphrase: '...' });
+
+  if (!isConnected) return <button onClick={() => connect('freighter')}>Connect</button>;
+  return <p>{session?.address}</p>;
+}
+```
+
+### Transaction preview configuration
+
+```ts
+const appkit = new StellarAppKit({
+  network: 'PUBLIC',
+  connectors: [...],
+  previewOptions: {
+    verifiedContracts: new Set(['CA...KNOWN_CONTRACT']),
+    largeTransferThreshold: 1000,
+    contractMetadata: new Map([
+      ['CBETT2CX...', { name: 'USDC', verified: true, audited: true, auditUrl: '...' }],
+    ]),
+    includeFeeEstimate: true,
+  },
+  onPreviewTransaction: async (preview) => {
+    // Show preview UI, return true to approve, false to reject
+    return true;
+  },
+});
+```
+
+### RPC failover
+
+```ts
+const soroban = new SorobanConnection({
+  rpcUrls: [
+    'https://soroban-testnet.stellar.org',
+    'https://rpc-backup.example.com',
+  ],
+  failoverOptions: {
+    unhealthyCooldownMs: 30_000,
+    onFailover: ({ method, error }) => console.warn(`Failover: ${error}`),
+  },
+  networkPassphrase: Networks.TESTNET,
+  wallet: appkit,
+});
+```
+
+### Error handling
+
+```ts
+import { ConnectError, NetworkMismatchError } from '@saganta/stellar-appkit';
+
+try {
+  await appkit.connect('freighter');
+} catch (err) {
+  if (err instanceof NetworkMismatchError) {
+    // err.expectedNetwork, err.actualNetwork
+  }
+  if (err instanceof ConnectError) {
+    // err.code: -1 (internal), -2 (external), -3 (invalid request), -4 (rejected)
+  }
+}
+```
+
+## Key API reference
+
+### StellarAppKit
+- `connect(walletId, opts?)` — connect a wallet
+- `disconnect(walletId?)` — disconnect
+- `signTransaction(xdr, opts?)` — sign (with preview)
+- `signMessage(message, opts?)` — sign raw message
+- `signIn(opts)` — SIWS sign-in
+- `signAuthEntry(xdr, opts?)` — Soroban auth entry
+- `session` — active ConnectSession
+- `pendingSignCount` — queued sign requests
+- `on(event, handler)` — event subscription
+
+### SorobanConnection
+- `invoke(opts)` — full pipeline (build → sign → submit → poll)
+- `previewInvoke(opts)` — simulate + decode (no signing)
+- `estimateFee(xdr)` — fee breakdown
+- `contract<T>(id, { specEntries })` — typed client
+- `getFailoverStatus()` — RPC health
+
+### verifySiws
+- `verifySiws(payload, opts)` — server-side SIWS verification
+- `opts.debug: true` — diagnostics dump on failure
+- Multi-candidate verification (8+ byte sequences tried)
+
+## Available connectors
+
+| Connector | Function | Peer dependency |
+|---|---|---|
+| Freighter | `createFreighterConnector()` | `@stellar/freighter-api` |
+| Albedo | `createAlbedoConnector()` | `@albedo-link/intent` |
+| xBull | `createXBullConnector()` | `@creit.tech/xbull-wallet-connect` |
+| Ledger | `createLedgerConnector()` | `@ledgerhq/hw-app-str` + transport |
+| WalletConnect | `createWalletConnectConnector(opts)` | `@walletconnect/sign-client` |
+
+## SIWS signing per wallet
+
+| Wallet | What gets signed | `signedData` |
+|---|---|---|
+| Freighter | `sha256("Stellar Signed Message:\n" + message)` (SEP-0053) | Base64 of the hash |
+| Albedo | `res.signed_message` (server-derived hash) | Base64 of hex-decoded bytes |
+| xBull | `utf8(message)` (best-effort) | Base64 of UTF-8 bytes |
+| Ledger | `utf8(message)` (direct signer) | Base64 of UTF-8 bytes |
+
+## Theming
+
+```css
+saganta-appkit-modal {
+  --sak-color-bg: #0B0D0E;
+  --sak-color-surface: #14171A;
+  --sak-color-accent: #6EE7B7;
+  --sak-color-text: #F5F6F7;
+  --sak-radius-lg: 20px;
+  --sak-font-display: 'Geist Sans', sans-serif;
+  --sak-font-mono: 'Geist Mono', monospace;
+}
+```
+
+## Links
+
+- [GitHub](https://github.com/SagantaHQ/stellar-appkit)
+- [Documentation](https://stellar-appkit.saganta.com)
+- [npm](https://www.npmjs.com/package/@saganta/stellar-appkit)

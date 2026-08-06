@@ -641,7 +641,11 @@ packages/
 examples/
   web-demo.html          # no-bundler live demo
 ARCHITECTURE.md          # design rationale, positioning, phased roadmap
+SKILL.md                 # AI skill file — trigger conditions + code patterns for AI agents
+llms.txt                 # AI-readable API index (llmstxt.org convention)
 ```
+
+Both `SKILL.md` and `llms.txt` ship at the repo root and inside the published npm tarball, so AI coding tools (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can pick up the full API surface without you having to paste docs into chat. See [AI integration](#ai-integration) below.
 
 ---
 
@@ -663,6 +667,37 @@ See [TESTING.md](./TESTING.md) for what each test file covers and how to add tes
 Each package's `package.json` has an explicit `"files": ["dist", "src"]`. This matters more than it looks: `dist/` is (correctly) gitignored, but with no `.npmignore` or `files` override, `npm publish` falls back to `.gitignore` rules too — which silently excluded `dist/` from every published tarball, shipping packages whose `main`/`types` fields pointed at files that didn't exist. Verify with `npm pack --dry-run` inside a package directory before publishing; it should list `dist/*` files, not just `src/*.ts`. (The published npm package includes `dist/`, so consumers installing from npm don't need to build — only consumers installing directly from a git URL do, see above.)
 
 The workspace-internal dependency (`siws-verify` depends on `@saganta/stellar-appkit`) is pinned to `^0.1.0`, not a bare `*` — a real version range on a real published package, not just something that happens to resolve inside this monorepo via workspace linking. This monorepo publishes exactly two packages — `npm publish --workspaces` from the root handles both in one command (it automatically skips the root itself, since that's `"private": true`).
+
+---
+
+## AI integration
+
+This repo ships two AI-readable files at the root, so AI coding assistants can write correct Stellar AppKit code on the first try without you having to paste half the docs into chat:
+
+- **[`SKILL.md`](./SKILL.md)** — a structured AI skill file with YAML frontmatter (`name`, `description`, `license`) and a body covering trigger conditions, install commands, common code patterns (basic connection, signing, Soroban, typed contract client, SIWS, React hooks), API reference tables, the connectors table, the per-wallet SIWS signing table, theming, and links. Used by skill-aware agents (Claude Code with skills, custom agents).
+- **[`llms.txt`](./llms.txt)** — a compact (~250-line) plain-text API index following the [llms.txt convention](https://llmstxt.org/). Sections: header, install, quick start, wallet connection, signing, Soroban, SIWS verification, framework wrappers, transaction preview, theming, error handling, tree-shaking, links. Read by any agent that reads repo files (Cursor, Continue, Copilot).
+
+Both files are kept in sync with the API in the same commit that changes the API. The published npm tarball includes them, so once `@saganta/stellar-appkit` is in your `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
+
+### How to load them
+
+```bash
+# From the raw GitHub URL (no install needed):
+curl -O https://raw.githubusercontent.com/SagantaHQ/stellar-appkit/main/SKILL.md
+curl -O https://raw.githubusercontent.com/SagantaHQ/stellar-appkit/main/llms.txt
+
+# From node_modules (after npm install @saganta/stellar-appkit):
+cat node_modules/@saganta/stellar-appkit/llms.txt
+```
+
+In Cursor: add `SKILL.md` to the project's always-included files, or use `@SKILL.md` in chat. In Claude Code: drop the file in your project and reference it in your prompt ("use the stellar-appkit skill to add a Freighter connect button"). For full docs context, point the agent at the docs site's own `llms-full.txt`:
+
+```
+https://stellar-appkit.saganta.com/llms.txt        # compact index of every docs page
+https://stellar-appkit.saganta.com/llms-full.txt   # full docs content concatenated (~160 lines)
+```
+
+See the [AI Integration docs page](https://stellar-appkit.saganta.com/reference/ai-integration/) for the full agent workflow and per-tool setup notes.
 
 ---
 

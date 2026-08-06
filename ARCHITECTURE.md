@@ -502,6 +502,64 @@ The fee estimate from §8.8 is also surfaced in the preview — `Fee 0.00501 XLM
 
 ---
 
+## 8.10 AI-readable files — `SKILL.md` and `llms.txt`
+
+The repo ships two AI-readable files at the root so AI coding assistants (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can produce correct Stellar AppKit code on the first try without the user pasting docs into chat. Both are included in the published npm tarball alongside `dist/` and `src/`, so once a consumer app has `@saganta/stellar-appkit` in its `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
+
+### 1. `SKILL.md` — structured AI skill file
+
+Follows the [skill file convention](https://llmstxt.org/) with YAML frontmatter:
+
+```yaml
+---
+name: stellar-appkit
+description: Build Stellar/Soroban dApps with unified wallet connections, transaction previews, and Soroban contract calls. Use when building a Stellar dApp frontend that needs wallet connection, transaction signing, Soroban smart contract interaction, or Sign-In With Stellar authentication.
+license: MIT
+---
+```
+
+The `description` is the trigger sentence — it's what an agent reads first to decide whether to load the rest of the file. After the frontmatter, the body covers:
+
+- **When to use this skill** — concrete trigger conditions
+- **Installation** — core package + per-connector and per-framework peer deps
+- **Core patterns** — copy-pasteable code for: basic connection, signing transactions, Soroban contract calls, typed contract client, SIWS (client + server), React hooks, transaction preview configuration, RPC failover, error handling
+- **Key API reference** — quick method lists for `StellarAppKit`, `SorobanConnection`, `verifySiws`
+- **Available connectors** — table with function names and peer deps
+- **SIWS signing per wallet** — table mapping each wallet to what bytes it actually signs (the most common source of bugs, so it gets its own table)
+- **Theming** — CSS custom properties with example values
+- **Links** — GitHub, docs, npm
+
+Skill-aware agents (Claude Code with skills loaded, custom agent runtimes that follow the skill convention) use this file as a skill. Plain agents just read it as Markdown — it works either way.
+
+### 2. `llms.txt` — compact plain-text API index
+
+Follows the [llms.txt convention](https://llmstxt.org/). About 250 lines, structured for token-efficient recall — an agent can read it once and have enough context to write correct code for ~90% of use cases. Sections: header, install, quick start, wallet connection, signing, Soroban, SIWS verification, framework wrappers (React/Vue/Solid/Svelte — one snippet each), transaction preview, theming, error handling, tree-shaking, links.
+
+### Why both files
+
+They cover different consumption modes:
+
+| File | Audience | Format | Optimized for |
+|---|---|---|---|
+| `SKILL.md` | Skill-aware agents | YAML frontmatter + structured Markdown | Triggering — "should I use this skill?" decisions, with code snippets for common patterns |
+| `llms.txt` | Any LLM that reads repo files | Plain text, compact | API surface recall — install commands, hook names, method signatures, connector table |
+
+### Maintenance contract
+
+Both files are kept in sync with the API **in the same commit that changes the API**. If a connector's `signedData` shape changes, both files are updated together. If a new method is added to `StellarAppKit`, both files list it. This is enforced by review, not by automation — but it's part of the PR checklist.
+
+### Docs site companion files
+
+The documentation site at [stellar-appkit.saganta.com](https://stellar-appkit.saganta.com) serves its own companion files:
+
+- `https://stellar-appkit.saganta.com/llms.txt` — compact index of every docs page (one line per page with a link)
+- `https://stellar-appkit.saganta.com/llms-full.txt` — the full docs content concatenated into a single file (~160 lines), so an agent can read the entire docs in one fetch
+- `https://stellar-appkit.saganta.com/reference/ai-integration/` — a human-readable docs page explaining both files and the recommended agent workflow
+
+These are maintained in the [docs repo](https://github.com/SagantaHQ/stellar-appkit-docs), separately from the library's own `SKILL.md` and `llms.txt`.
+
+---
+
 ## 9. Phased roadmap
 
 | Phase | Scope | Status |
@@ -514,6 +572,7 @@ The fee estimate from §8.8 is also surfaced in the preview — `Fee 0.00501 XLM
 | 1.9 | Framework wrappers (§8.7) — React (`/react`), Vue (`/vue`), Solid (`/solid`), Svelte (`/svelte`) as subpath exports. Shared hook surface (`useAppKit`, `useConnect`, `useSession`, `useSignTransaction`, `useSignMessage`, `useSignIn`, `useSoroban`, `usePreviewTransaction`, `usePreviewAuthEntry`) with per-framework reactivity primitives. Tree-shakable: each wrapper is a separate entry point; framework packages are optional peer deps. 15 wrapper tests covering module structure, provider/plugin surface, and tree-shakability contract. Total suite now 95 tests. | **done** |
 | 2.0 | Soroban contract layer (§8.8) — typed contract client (`ContractClient<T>` from `stellar contract bindings`), RPC failover (`FailoverRpcServer` with health tracking + cooldown), contract verification badges (`PreviewOptions.contractMetadata` → `ContractBadge[]`), pre-simulate fee estimation (`FeeEstimate` on `previewInvoke()` + `estimateFee()`). 26 new tests (contract, rpc-failover, badges+fee). Total suite now 121 tests. | **done** |
 | 2.1 | UI polish (§8.9) — wallet-provided avatars (`getAvatar()` on `WalletConnector` + deterministic gradient fallback + opt-in Stellar Expert avatars), copy-to-clipboard on all address displays (connected, account picker, transaction preview), smooth loading spinner (border-radius: 50% fix for the square-wobble bug), contract verification badges + fee estimate rendered in the transaction preview UI. 8 new tests (avatar utilities). Total suite now 134 tests. | **done** |
+| 2.6 | AI-readable files (§8.10) — `SKILL.md` (structured AI skill file with YAML frontmatter, trigger conditions, code patterns, API tables) and `llms.txt` (compact plain-text API index following the llmstxt.org convention) shipped at the repo root and in the npm tarball, so AI coding tools (Cursor, Copilot, Claude Code, Windsurf, Continue) can read the full API surface from `node_modules` or the raw GitHub URL. Docs site serves its own `llms.txt` / `llms-full.txt` companion files plus an `AI Integration` reference page. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | **done** |
 | 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
