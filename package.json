@@ -12,7 +12,7 @@
     "test:core": "bun test --cwd packages/core",
     "test:siws-verify": "bun test --cwd packages/siws-verify",
     "version": "npm --workspaces version",
-    "publish": "npm --workspaces publish --access public"
+    "publish": "bun run build && npm --workspaces publish --access public"
   },
   "engines": {
     "node": ">=18"
