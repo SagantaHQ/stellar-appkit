@@ -15,6 +15,12 @@
  *    etc. Each pulls state from the provider via context and exposes
  *    reactive accessors (Solid's `() => T` pattern).
  *
+ * 3. `<StellarAppKitModal>` — a Solid component wrapping the underlying
+ *    `<saganta-appkit-modal>` Web Component with typed props, event
+ *    handlers, and an imperative `ref` handle. Re-exported from
+ *    `./modal.tsx` so consumers can do `import { StellarAppKitModal }`
+ *    from the same subpath.
+ *
  * Tree-shakability: this subpath is a separate module — bundlers only
  * pull it in if the consumer actually imports `@saganta/stellar-appkit/solid`.
  *
@@ -322,4 +328,7 @@ export function usePreviewAuthEntry() {
         isPending: () => preview() !== null,
     };
 }
+// Re-export the modal component so it's available from
+// `@saganta/stellar-appkit/solid` directly.
+export { StellarAppKitModal, default as StellarAppKitModalDefault, } from './modal.js';
 //# sourceMappingURL=index.js.map

@@ -39,9 +39,14 @@ export class SagantaAppKitModal extends HTMLElement {
         this.copyState = 'idle';
         /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
         this.copiedAddress = null;
+        /** Cached XLM balance for the connected account (in lumens, e.g. "123.4567890"). */
+        this.cachedBalance = null;
+        /** Cached transaction history for the connected account (latest 5). */
+        this.cachedTxHistory = [];
         this.pendingAccountPicker = null;
         this.pendingPreview = null;
         this.releaseFocusTrap = null;
+        this.gestureDestroyer = null;
         this.clientUnsubscribers = [];
         this.mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
         /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
@@ -60,6 +65,7 @@ export class SagantaAppKitModal extends HTMLElement {
     }
     disconnectedCallback() {
         this.releaseFocusTrap?.();
+        this.gestureDestroyer?.destroy();
         this.clientUnsubscribers.forEach((unsub) => unsub());
     }
     attributeChangedCallback() {
@@ -85,8 +91,11 @@ export class SagantaAppKitModal extends HTMLElement {
             this.view = 'connected';
             this.render();
         }), client.on('sessionsChanged', () => {
-            this.refreshAvatars();
-            this.render();
+            this.refreshAccountData();
+        }), client.on('signQueueChange', () => {
+            // Re-render the connected view to update the pending-signature banner
+            if (this.view === 'connected')
+                this.render();
         }), client.on('error', (err) => {
             this.lastError = err;
             this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
@@ -153,34 +162,83 @@ export class SagantaAppKitModal extends HTMLElement {
         this.render();
     }
     /**
-     * Fetches avatars for all connected sessions (and account-picker
-     * accounts) in parallel, then re-renders. Uses the avatar cache so
-     * already-fetched avatars aren't re-fetched. Called on sessionsChanged
-     * and when the account picker appears.
+     * Fetches avatars + balance + transaction history for the connected
+     * account, then re-renders. Called on connect and sessionsChanged.
      */
-    async refreshAvatars() {
+    async refreshAccountData() {
         if (!this._client)
             return;
-        // Collect all addresses that need avatars: connected sessions + account picker.
-        const addressesToFetch = [];
-        for (const session of this._client.sessions) {
-            addressesToFetch.push({
-                address: session.address,
-                connector: this._client.registry.get(session.walletId) ?? null,
-            });
+        const session = this._client.session;
+        if (!session) {
+            this.cachedBalance = null;
+            this.cachedTxHistory = [];
+            return;
         }
-        if (this.pendingAccountPicker) {
-            for (const account of this.pendingAccountPicker.accounts) {
-                addressesToFetch.push({
-                    address: account.address,
-                    connector: this.pendingAccountPicker.connector,
-                });
+        // Fetch avatar
+        const connector = this._client.activeConnector;
+        await this.fetchAvatar(session.address, connector);
+        // Fetch XLM balance + transaction history from Horizon
+        try {
+            const sdk = await import('@stellar/stellar-sdk');
+            const network = session.network;
+            const horizonUrl = network === 'PUBLIC'
+                ? 'https://horizon.stellar.org'
+                : 'https://horizon-testnet.stellar.org';
+            const horizon = new sdk.Horizon.Server(horizonUrl);
+            // Balance
+            try {
+                const account = await horizon.loadAccount(session.address);
+                const xlmBalance = account.balances.find((b) => b.asset_type === 'native');
+                if (xlmBalance) {
+                    this.cachedBalance = parseFloat(xlmBalance.balance).toFixed(2);
+                }
+                else {
+                    this.cachedBalance = '0.00';
+                }
+            }
+            catch {
+                this.cachedBalance = '0.00';
+            }
+            // Transaction history (latest 5)
+            try {
+                const txs = await horizon.transactions().forAccount(session.address).limit(5).call();
+                const history = [];
+                for (const tx of txs.records) {
+                    // Determine transaction type from the operations
+                    let type = 'Transaction';
+                    let amount = '';
+                    let asset = 'XLM';
+                    try {
+                        const ops = await horizon.operations().forTransaction(tx.hash).limit(1).call();
+                        if (ops.records.length > 0) {
+                            const op = ops.records[0];
+                            type = op.type || 'Transaction';
+                            if (op.type === 'payment' || op.type === 'create_account') {
+                                amount = parseFloat(op.amount || '0').toFixed(2);
+                                if (op.asset_type && op.asset_type !== 'native') {
+                                    asset = op.asset_code || 'UNKNOWN';
+                                }
+                            }
+                        }
+                    }
+                    catch { /* skip if ops can't be loaded */ }
+                    const date = tx.created_at ? new Date(tx.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+                    const success = tx.successful !== false;
+                    // For received payments, amount is positive; for sent, negative
+                    // (Horizon doesn't tell us direction easily, so we show it as-is)
+                    history.push({ hash: tx.hash, type, amount: amount || '—', asset, date, success });
+                }
+                this.cachedTxHistory = history;
+            }
+            catch {
+                this.cachedTxHistory = [];
             }
         }
-        // Fetch in parallel — each call checks the cache first, so already-fetched
-        // avatars return immediately.
-        await Promise.all(addressesToFetch.map(({ address, connector }) => this.fetchAvatar(address, connector)));
-        // Re-render with the now-populated avatar cache.
+        catch {
+            // stellar-sdk not available or network error — show without balance/history
+            this.cachedBalance = null;
+            this.cachedTxHistory = [];
+        }
         this.render();
     }
     async selectWallet(connector) {
@@ -210,7 +268,7 @@ export class SagantaAppKitModal extends HTMLElement {
                     // Fetch avatars for the picker accounts in the background —
                     // the initial render shows gradient fallbacks, then avatars
                     // pop in once fetched.
-                    void this.refreshAvatars();
+                    void this.refreshAccountData();
                     return;
                 }
             }
@@ -360,28 +418,27 @@ export class SagantaAppKitModal extends HTMLElement {
         this.wireEvents(effectiveMode);
     }
     renderPanel(effectiveMode) {
-        const showClose = effectiveMode !== 'inline';
         const title = this.getAttribute('title') ?? this.defaultTitle();
-        const logoSrc = this.getAttribute('logo-src');
         return `
       <div class="panel" role="dialog" aria-modal="${effectiveMode !== 'inline'}" aria-label="${title}">
         ${effectiveMode === 'bottom-sheet' ? '<div class="drag-handle"></div>' : ''}
-        <div class="header">
-          <div class="brand">
-            ${logoSrc ? `<img src="${escapeAttr(logoSrc)}" alt="" />` : '<slot name="logo"></slot>'}
-            <span class="title">${escapeHtml(title)}</span>
-          </div>
-          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
-        </div>
+        ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
-        <div class="footer">Powered by Stellar AppKit</div>
+        <div class="footer">Powered by <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
       </div>
     `;
     }
     defaultTitle() {
         switch (this.view) {
-            case 'connected':
-                return (this._client?.sessions.length ?? 0) > 1 ? 'Accounts' : 'Account';
+            case 'connected': {
+                // Show wallet icon + name instead of "Account"
+                const connector = this._client?.activeConnector;
+                if (connector) {
+                    const icon = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+                    return connector.meta.name;
+                }
+                return 'Account';
+            }
             case 'account-picker':
                 return 'Choose an account';
             case 'network-mismatch':
@@ -391,6 +448,47 @@ export class SagantaAppKitModal extends HTMLElement {
             default:
                 return 'Connect a wallet';
         }
+    }
+    renderPanelHeader(effectiveMode) {
+        const showClose = effectiveMode !== 'inline';
+        const title = this.getAttribute('title') ?? this.defaultTitle();
+        const logoSrc = this.getAttribute('logo-src');
+        // When connecting, show the wallet name centered with a back arrow on the left
+        // (back cancels the connecting state and returns to the wallet list).
+        if (this.view === 'connecting' && this.connectingWalletId) {
+            const connector = this._client?.registry.get(this.connectingWalletId);
+            const walletName = connector?.meta.name ?? 'Wallet';
+            return `
+        <div class="header header--connecting">
+          <button class="icon-btn" data-action="cancel-connecting" aria-label="Back">${icons.chevronLeft}</button>
+          <span class="title">${escapeHtml(walletName)}</span>
+          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+        </div>
+      `;
+        }
+        // When connected, show wallet icon + name in the header instead of the app logo
+        let headerBrand;
+        if (this.view === 'connected' && this._client?.activeConnector) {
+            const connector = this._client.activeConnector;
+            const iconUrl = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+            headerBrand = `
+        <img src="${escapeAttr(iconUrl)}" alt="" class="header-wallet-icon"
+             onerror="this.style.display='none'" />
+        <span class="title">${escapeHtml(connector.meta.name)}</span>
+      `;
+        }
+        else {
+            headerBrand = `
+        ${logoSrc ? `<img src="${escapeAttr(logoSrc)}" alt="" />` : '<slot name="logo"></slot>'}
+        <span class="title">${escapeHtml(title)}</span>
+      `;
+        }
+        return `
+      <div class="header">
+        <div class="brand">${headerBrand}</div>
+        ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+      </div>
+    `;
     }
     renderBody() {
         switch (this.view) {
@@ -405,10 +503,56 @@ export class SagantaAppKitModal extends HTMLElement {
             case 'error':
                 return this.renderError();
             case 'connecting':
+                return this.renderConnecting();
             case 'wallet-list':
             default:
                 return this.renderWalletList();
         }
+    }
+    /**
+     * Dedicated connecting view — shown while the wallet's connect() promise
+     * is in flight. Matches the "Continue in [Wallet]" layout:
+     *
+     *   [wallet logo with spinner arc]
+     *
+     *   Continue in [Wallet]
+     *   Accept connection request in the wallet
+     *
+     *   [↻ Try again]
+     *
+     * The "Try again" button re-triggers the connect call — useful when the
+     * wallet prompt was dismissed without resolving.
+     */
+    renderConnecting() {
+        if (!this.connectingWalletId)
+            return this.renderWalletList();
+        const connector = this._client?.registry.get(this.connectingWalletId);
+        if (!connector)
+            return this.renderWalletList();
+        const walletName = connector.meta.name;
+        const iconUrl = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+        const fallbackIcon = getWalletIconDataUri(connector.id);
+        const onerrorHandler = fallbackIcon
+            ? `this.src='${fallbackIcon}'; this.onerror=null;`
+            : `this.style.display='none';`;
+        return `
+      <div class="connecting-view">
+        <div class="connecting-view__logo-wrap">
+          <div class="connecting-view__arc" aria-hidden="true"></div>
+          <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
+               onerror="${onerrorHandler}" />
+        </div>
+        <h2 class="connecting-view__title">Continue in ${escapeHtml(walletName)}</h2>
+        <p class="connecting-view__subtitle">Accept connection request in the wallet</p>
+        <button class="connecting-view__retry" data-action="retry-connecting">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 9-9" />
+            <path d="M3 4v5h5" />
+          </svg>
+          Try again
+        </button>
+      </div>
+    `;
     }
     renderWalletList() {
         if (this.walletList.length === 0) {
@@ -468,38 +612,101 @@ export class SagantaAppKitModal extends HTMLElement {
             .join('');
     }
     renderConnected() {
-        const sessions = this._client?.sessions ?? [];
-        const activeWalletId = this._client?.activeConnector?.id;
-        if (sessions.length === 0)
+        const session = this._client?.session;
+        if (!session)
             return this.renderWalletList();
-        const rows = sessions
-            .map((session) => {
-            const isActive = session.walletId === activeWalletId;
-            const gradient = gradientFromAddress(session.address);
-            const avatarUrl = this.avatarCache.get(session.address);
-            const avatarHtml = avatarUrl
-                ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
-                : '';
-            const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
-            return `
-          <div class="account-row" data-active="${isActive}" style="${isActive ? '' : 'opacity:0.7;'}">
-            <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
-            <div style="min-width:0; flex:1; cursor:${isActive ? 'default' : 'pointer'};" data-action="${isActive ? '' : 'switch-account'}" data-wallet-id="${session.walletId}">
-              <div class="account-address">${truncateAddress(session.address)}</div>
-              <div class="account-network">${escapeHtml(session.network)}${isActive ? ' · active' : ''}</div>
-            </div>
-            <div class="account-actions">
-              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
-              <button class="icon-btn" data-action="disconnect-one" data-wallet-id="${session.walletId}" aria-label="Disconnect">${icons.close}</button>
-            </div>
-          </div>
-        `;
-        })
-            .join('');
+        const gradient = gradientFromAddress(session.address);
+        const avatarUrl = this.avatarCache.get(session.address);
+        const avatarHtml = avatarUrl
+            ? `<img src="${escapeAttr(avatarUrl)}" alt="" onerror="this.style.display='none'; this.parentElement.style.background='${gradient}';" />`
+            : '';
+        const isCopied = this.copiedAddress === session.address && this.copyState === 'copied';
+        const isTestnet = session.network !== 'PUBLIC';
+        const networkColor = isTestnet ? '#f59e0b' : '#6EE7B7';
+        const networkLabel = session.network.toLowerCase();
+        const pendingCount = this._client?.pendingSignCount ?? 0;
+        const explorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/account/${session.address}`;
+        // Balance — skeleton shimmer while loading, then large number
+        const balanceHtml = this.cachedBalance
+            ? `<span class="balance-value">${escapeHtml(this.cachedBalance)}</span><span class="balance-unit">XLM</span>`
+            : `<div class="balance-skeleton"></div>`;
+        // Pending signatures banner — only shows when pendingSignCount > 0
+        const pendingBanner = pendingCount > 0
+            ? `<div class="pending-banner">
+           <span class="pending-spinner"></span>
+           <span>${pendingCount} pending signature${pendingCount > 1 ? 's' : ''}</span>
+         </div>`
+            : '';
+        // Transaction history with explorer links + relative time
+        const historyHtml = this.cachedTxHistory.length > 0
+            ? this.cachedTxHistory.map((tx) => {
+                const icon = tx.success ? '✓' : '✗';
+                const iconClass = tx.success ? 'tx-success' : 'tx-failed';
+                const txExplorerUrl = `https://stellar.expert/explorer/${isTestnet ? 'testnet' : 'public'}/tx/${tx.hash}`;
+                return `
+            <a class="tx-row" href="${escapeAttr(txExplorerUrl)}" target="_blank" rel="noopener">
+              <span class="tx-icon ${iconClass}">${icon}</span>
+              <div class="tx-info">
+                <span class="tx-type">${escapeHtml(tx.type)}</span>
+                <span class="tx-date">${escapeHtml(tx.date)}</span>
+              </div>
+              <span class="tx-amount ${tx.amount.startsWith('-') ? 'tx-out' : 'tx-in'}">${escapeHtml(tx.amount)} ${escapeHtml(tx.asset)}</span>
+              <span class="tx-external">${icons.externalLink}</span>
+            </a>
+          `;
+            }).join('')
+            : `<div class="tx-empty">No recent transactions</div>`;
         return `
       <div class="account">
-        ${rows}
-        <button class="btn" data-action="connect-another">+ Connect another wallet</button>
+        <!-- Account header: avatar + address (clickable to copy) + network pill + overflow -->
+        <div class="account-header">
+          <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
+          <div class="account-info">
+            <div class="account-address-row" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" title="Click to copy address">
+              <span class="account-address">${truncateAddress(session.address)}</span>
+              <span class="account-copy-icon">${isCopied ? icons.check : icons.copy}</span>
+            </div>
+            <div class="account-meta">
+              <span class="network-pill" style="--net-color: ${networkColor};">
+                <span class="network-dot"></span>
+                ${escapeHtml(networkLabel)}
+              </span>
+              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="View on stellar.expert">
+                ${icons.externalLink}
+              </a>
+            </div>
+          </div>
+          <button class="icon-btn" data-action="toggle-overflow" aria-label="More options" title="More options">
+            <svg viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="10" r="2"/><circle cx="10" cy="10" r="2"/><circle cx="16" cy="10" r="2"/></svg>
+          </button>
+        </div>
+
+        <!-- Overflow menu (hidden by default) -->
+        <div class="overflow-menu" data-overflow="false">
+          <button class="overflow-item" data-action="switch-wallet">
+            ${icons.wallet}
+            <span>Switch Wallet</span>
+          </button>
+          <button class="overflow-item overflow-danger" data-action="disconnect">
+            ${icons.logOut}
+            <span>Disconnect</span>
+          </button>
+        </div>
+
+        <!-- Pending signature banner -->
+        ${pendingBanner}
+
+        <!-- Balance — large typography, no card border -->
+        <div class="balance-section">
+          <div class="balance-label">XLM Balance</div>
+          <div class="balance-amount">${balanceHtml}</div>
+        </div>
+
+        <!-- Transaction history -->
+        <div class="tx-history">
+          <div class="tx-header">Recent Activity</div>
+          ${historyHtml}
+        </div>
       </div>
     `;
     }
@@ -573,6 +780,114 @@ export class SagantaAppKitModal extends HTMLElement {
       </div>
     `;
     }
+    /**
+     * Wires up the drag-to-dismiss gesture for the bottom-sheet using
+     * @use-gesture/vanilla + motion. Lazy-imported so apps that don't use
+     * bottom-sheet mode (or don't have the packages installed) don't pay
+     * the cost.
+     *
+     * Behavior:
+     * - Drag down on the sheet's header area (drag handle + header) moves the sheet
+     * - Release with velocity > 0.5 or drag > 40% of sheet height → close
+     * - Release otherwise → spring back to open position
+     * - Only vertical dragging is enabled (horizontal swipes are ignored)
+     * - Works with both touch and mouse pointers (for desktop testing)
+     *
+     * If the gesture packages aren't installed, this silently no-ops — the
+     * bottom-sheet still works via the close button and backdrop tap.
+     *
+     * IMPORTANT: this must be called after every render() that touches the
+     * bottom-sheet DOM, because render() replaces innerHTML and destroys the
+     * element the gesture was bound to. wireEvents() calls this automatically.
+     */
+    async setupBottomSheetGestures() {
+        let gestureModule = null;
+        let motionModule = null;
+        try {
+            [gestureModule, motionModule] = await Promise.all([
+                import('@use-gesture/vanilla'),
+                import('motion'),
+            ]);
+        }
+        catch {
+            // Packages not installed — bottom-sheet works without gestures
+            // (close button + backdrop tap still functional).
+            return;
+        }
+        const panel = this.root.querySelector('.panel');
+        if (!panel)
+            return;
+        // Use Gesture (the multi-gesture recognizer), NOT DragGesture.
+        // DragGesture(target, handler, config) wraps the 2nd arg as { drag: handler }
+        // and the Engine calls this.handler(state) as a FUNCTION — so the 2nd arg
+        // must be a single function, not an object with onDrag/onDragStart/onDragEnd.
+        //
+        // Gesture(target, handlers, config) calls parseMergedHandlers internally,
+        // which properly wraps onDrag/onDragStart/onDragEnd into a single function.
+        const Gesture = gestureModule.Gesture;
+        const animate = motionModule.animate;
+        let currentY = 0;
+        let sheetHeight = 0;
+        const measureSheet = () => {
+            sheetHeight = panel.offsetHeight;
+        };
+        // Clean up any previous gesture handler (e.g. from a re-render)
+        this.gestureDestroyer?.destroy();
+        // Gesture(target, handlers, config):
+        //   handlers = { onDragStart, onDrag, onDragEnd } — parseMergedHandlers
+        //   wraps these into a single fn that the Engine calls as this.handler(state)
+        //   config = { drag: { axis, filterTaps, pointer } } — nested under 'drag'
+        const gesture = Gesture(panel, {
+            onDragStart: () => {
+                measureSheet();
+                panel.style.transition = 'none';
+                panel.style.willChange = 'transform';
+            },
+            onDrag: (state) => {
+                const my = state.movement[1];
+                currentY = Math.max(0, my);
+                panel.style.transform = `translateY(${currentY}px)`;
+                const overlay = this.root.querySelector('.overlay');
+                if (overlay && sheetHeight > 0) {
+                    const progress = currentY / sheetHeight;
+                    overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
+                }
+            },
+            onDragEnd: (state) => {
+                const velocity = state.velocity;
+                panel.style.willChange = 'auto';
+                panel.style.transition = '';
+                const shouldClose = velocity[1] > 0.5 || currentY > sheetHeight * 0.4;
+                if (shouldClose) {
+                    animate(panel, { transform: `translateY(${sheetHeight + 100}px)` }, { duration: 0.25, easing: 'ease-in' });
+                    const overlay = this.root.querySelector('.overlay');
+                    if (overlay) {
+                        animate(overlay, { opacity: 0 }, { duration: 0.25 });
+                    }
+                    setTimeout(() => {
+                        this.close();
+                        panel.style.transform = '';
+                        currentY = 0;
+                    }, 250);
+                }
+                else {
+                    animate(panel, { transform: 'translateY(0px)' }, { type: 'spring', stiffness: 300, damping: 30 });
+                    const overlay = this.root.querySelector('.overlay');
+                    if (overlay) {
+                        animate(overlay, { opacity: 1 }, { type: 'spring', stiffness: 300, damping: 30 });
+                    }
+                    currentY = 0;
+                }
+            },
+        }, {
+            drag: {
+                axis: 'y',
+                filterTaps: true,
+                pointer: { capture: true },
+            },
+        });
+        this.gestureDestroyer = gesture;
+    }
     wireEvents(effectiveMode) {
         this.root.querySelector('[data-action="close"]')?.addEventListener('click', () => this.close());
         if (effectiveMode !== 'inline') {
@@ -580,6 +895,12 @@ export class SagantaAppKitModal extends HTMLElement {
                 if (e.target === e.currentTarget)
                     this.close();
             });
+        }
+        // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
+        // Uses @use-gesture/vanilla + motion (lazy-imported bundled deps)
+        // so apps that don't use the bottom-sheet mode don't need them installed.
+        if (effectiveMode === 'bottom-sheet') {
+            void this.setupBottomSheetGestures();
         }
         this.root.querySelectorAll('[data-action="select-wallet"]').forEach((el) => {
             el.addEventListener('click', () => {
@@ -589,6 +910,24 @@ export class SagantaAppKitModal extends HTMLElement {
                     this.selectWallet(found.connector);
             });
         });
+        // Cancel the connecting state — returns to the wallet list without
+        // rejecting the in-flight connect() promise (the promise will resolve
+        // or reject on its own when the wallet responds, but the user has
+        // navigated away by then).
+        this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
+            this.connectingWalletId = null;
+            this.view = 'wallet-list';
+            this.render();
+        });
+        // Retry connecting — re-triggers selectWallet() for the same wallet.
+        this.root.querySelector('[data-action="retry-connecting"]')?.addEventListener('click', () => {
+            const walletId = this.connectingWalletId;
+            if (!walletId)
+                return;
+            const connector = this._client?.registry.get(walletId);
+            if (connector)
+                this.selectWallet(connector);
+        });
         this.root.querySelectorAll('[data-action="pick-account"]').forEach((el) => {
             el.addEventListener('click', () => {
                 const address = el.dataset.address;
@@ -596,24 +935,38 @@ export class SagantaAppKitModal extends HTMLElement {
                     this.pickAccount(address);
             });
         });
+        this.root.querySelector('[data-action="switch-wallet"]')?.addEventListener('click', async () => {
+            // Properly disconnect the current wallet before showing the wallet list.
+            // This closes the Ledger transport handle, clears the persisted session,
+            // and prevents restore() from reconnecting both wallets on next load.
+            if (this._client?.session) {
+                await this._client.disconnect();
+            }
+            this.cachedBalance = null;
+            this.cachedTxHistory = [];
+            this.view = 'wallet-list';
+            await this.refreshWalletList();
+        });
+        this.root.querySelector('[data-action="disconnect"]')?.addEventListener('click', async () => {
+            await this._client?.disconnect();
+            this.cachedBalance = null;
+            this.cachedTxHistory = [];
+        });
+        // Overflow menu toggle
+        this.root.querySelector('[data-action="toggle-overflow"]')?.addEventListener('click', () => {
+            const menu = this.root.querySelector('.overflow-menu');
+            if (menu) {
+                const isOpen = menu.getAttribute('data-overflow') === 'true';
+                menu.setAttribute('data-overflow', isOpen ? 'false' : 'true');
+            }
+        });
+        // Legacy: still handle switch-account for multi-account wallets (Ledger)
         this.root.querySelectorAll('[data-action="switch-account"]').forEach((el) => {
             el.addEventListener('click', () => {
                 const walletId = el.dataset.walletId;
                 if (walletId)
                     this._client?.switchAccount(walletId);
             });
-        });
-        this.root.querySelectorAll('[data-action="disconnect-one"]').forEach((el) => {
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const walletId = el.dataset.walletId;
-                if (walletId)
-                    this._client?.disconnect(walletId);
-            });
-        });
-        this.root.querySelector('[data-action="connect-another"]')?.addEventListener('click', () => {
-            this.view = 'wallet-list';
-            this.render();
         });
         this.root.querySelector('[data-action="approve-preview"]')?.addEventListener('click', () => this.resolvePreview(true));
         this.root.querySelector('[data-action="reject-preview"]')?.addEventListener('click', () => this.resolvePreview(false));

@@ -55,14 +55,23 @@ export function buildStyles(theme) {
       padding-bottom: env(safe-area-inset-bottom, 0px);
       transform: translateY(100%);
       transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      touch-action: pan-y;
+      overscroll-behavior: contain;
     }
     .overlay[data-mode="bottom-sheet"][data-open="true"] .panel { transform: translateY(0); }
     .drag-handle {
       width: 36px;
-      height: 4px;
+      height: 5px;
       border-radius: 4px;
       background: ${v('colorBorder', theme)};
       margin: 10px auto 2px;
+      cursor: grab;
+      touch-action: none;
+      transition: background 0.15s ease;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+      background: ${v('colorTextMuted', theme)};
     }
     .overlay[data-mode="modal"] .drag-handle { display: none; }
 
@@ -114,7 +123,145 @@ export function buildStyles(theme) {
     .icon-btn:focus-visible { outline: 2px solid ${v('colorAccent', theme)}; outline-offset: 1px; }
     .icon-btn svg { width: 16px; height: 16px; }
 
-    .body { padding: 4px 10px 12px; overflow-y: auto; }
+    /* Header variant for the connecting view: back arrow + centered title + close */
+    .header--connecting {
+      justify-content: space-between;
+    }
+    .header--connecting .title {
+      text-align: center;
+      flex: 1;
+    }
+
+    /* ---- Connecting view ---- */
+    .connecting-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 32px 24px 28px;
+      gap: 0;
+    }
+    .connecting-view__logo-wrap {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .connecting-view__logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      object-fit: contain;
+      position: relative;
+      z-index: 1;
+      background: ${v('colorSurface', theme)};
+    }
+    /* The arc — a conic-gradient spinner that rotates around the logo.
+       Uses a partial sweep (not a full circle) to match the mockup's
+       "open arc" aesthetic. */
+    .connecting-view__arc {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 90deg,
+        ${v('colorAccent', theme)} 270deg,
+        ${v('colorAccent', theme)} 360deg
+      );
+      -webkit-mask: radial-gradient(
+        farthest-side,
+        transparent calc(100% - 4px),
+        black calc(100% - 4px)
+      );
+      mask: radial-gradient(
+        farthest-side,
+        transparent calc(100% - 4px),
+        black calc(100% - 4px)
+      );
+      animation: sak-connecting-spin 1.4s linear infinite;
+    }
+    @keyframes sak-connecting-spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .connecting-view__arc { animation-duration: 6s; }
+    }
+    .connecting-view__title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: ${v('colorText', theme)};
+      margin: 0 0 8px;
+      line-height: 1.3;
+    }
+    .connecting-view__subtitle {
+      font-size: 14px;
+      line-height: 1.5;
+      color: ${v('colorTextMuted', theme)};
+      margin: 0 0 32px;
+      max-width: 280px;
+    }
+    .connecting-view__retry {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: transparent;
+      color: ${v('colorText', theme)};
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 150ms ease, border-color 150ms ease;
+    }
+    .connecting-view__retry:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+    }
+    .connecting-view__retry svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .body {
+      padding: 4px 10px 12px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: ${v('colorBorder', theme)} transparent;
+    }
+
+    /* Webkit (Chrome, Safari, Edge) — sleek custom scrollbar
+     * Uses the theme's border color for the thumb (subtle, not distracting),
+     * and the accent color on hover so the user can spot it when they need it.
+     * The thumb is narrow (4px) and rounded, matching the panel's radius language.
+     * Track is fully transparent — no secondary background stripe. */
+    .body::-webkit-scrollbar { width: 6px; }
+    .body::-webkit-scrollbar-track { background: transparent; }
+    .body::-webkit-scrollbar-thumb {
+      background: ${v('colorBorder', theme)};
+      border-radius: 9999px;
+      border: 1px solid transparent;
+      background-clip: padding-box;
+    }
+    .body::-webkit-scrollbar-thumb:hover {
+      background: ${v('colorAccent', theme)};
+      background-clip: padding-box;
+    }
+    /* Hide the scrollbar when not hovered — fades in on hover (sleek, macOS-style) */
+    .body { scrollbar-width: none; }
+    .body:hover { scrollbar-width: thin; }
+    .body::-webkit-scrollbar { width: 0; transition: width 0.2s ease; }
+    .body:hover::-webkit-scrollbar { width: 6px; }
+    /* Firefox fallback — always visible thin scrollbar (Firefox doesn't support hover-show) */
+    @supports not selector(::-webkit-scrollbar) {
+      .body { scrollbar-width: thin; }
+    }
 
     /* ---------- wallet list ---------- */
     .wallet-row {
@@ -144,7 +291,13 @@ export function buildStyles(theme) {
       flex-shrink: 0;
       overflow: hidden;
     }
-    .wallet-tile img { width: 22px; height: 22px; object-fit: contain; }
+    .wallet-tile img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      border-radius: 7px;
+      padding: 0;
+    }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
 
@@ -196,44 +349,266 @@ export function buildStyles(theme) {
     .account {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 20px;
       padding: 6px 10px 14px;
     }
-    .account-row {
+
+    /* Header wallet icon in panel header */
+    .header-wallet-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      display: block;
+    }
+
+    /* Account header — avatar + address (clickable) + network pill + overflow */
+    .account-header {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px;
-      border-radius: ${v('radiusMd', theme)};
-      background: ${v('colorBg', theme)};
-      border: 1px solid ${v('colorBorder', theme)};
+      padding: 2px 0;
     }
-    .account-avatar {
-      width: 36px; height: 36px; border-radius: 50%;
-      background: ${v('colorAccent', theme)};
-      flex-shrink: 0;
+    .account-header .account-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
-    .account-avatar img {
+    .account-header .account-avatar img {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      border-radius: 50%;
+      border-radius: 12px;
+    }
+    .account-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .account-address-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
     }
     .account-address {
       font-family: ${v('fontMono', theme)};
-      font-size: 13px;
-      letter-spacing: -0.01em;
+      font-size: 14px;
+      font-weight: 500;
     }
-    .account-network {
-      font-size: 12px;
+    .account-copy-icon {
+      display: flex;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .account-copy-icon svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
+    .account-address-row:hover .account-copy-icon { opacity: 1; }
+    .account-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .network-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      text-transform: capitalize;
+      color: ${v('colorTextMuted', theme)};
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: ${v('colorSurfaceHover', theme)};
+    }
+    .network-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--net-color, ${v('colorAccent', theme)});
+    }
+    .explorer-link {
+      display: flex;
+      opacity: 0.5;
+      transition: opacity 0.15s ease;
+    }
+    .explorer-link:hover { opacity: 1; }
+    .explorer-link svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
+
+    /* Overflow menu — hidden by default, toggled by ••• button */
+    .overflow-menu {
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      padding: 6px;
+      border-radius: ${v('radiusMd', theme)};
+      background: ${v('colorSurfaceHover', theme)};
+      border: 1px solid ${v('colorBorder', theme)};
+    }
+    .overflow-menu[data-overflow="true"] {
+      display: flex;
+    }
+    .overflow-item {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: ${v('radiusSm', theme)};
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: ${v('colorText', theme)};
+      transition: background 0.15s ease;
+    }
+    .overflow-item:hover { background: ${v('colorBg', theme)}; }
+    .overflow-item svg { width: 18px; height: 18px; color: ${v('colorTextMuted', theme)}; }
+    .overflow-danger { color: #ef4444; }
+    .overflow-danger svg { color: #ef4444; }
+
+    /* Pending signature banner */
+    .pending-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: ${v('radiusMd', theme)};
+      background: rgba(110, 231, 183, 0.08);
+      border: 1px solid rgba(110, 231, 183, 0.2);
+      font-size: 13px;
+      color: ${v('colorAccent', theme)};
+    }
+    .pending-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(110, 231, 183, 0.2);
+      border-top-color: ${v('colorAccent', theme)};
+      border-radius: 50%;
+      animation: sc-spin 0.8s linear infinite;
+    }
+
+    /* Balance — large typography, no card */
+    .balance-section {
+      padding: 0 2px;
+    }
+    .balance-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${v('colorTextMuted', theme)};
+      margin-bottom: 6px;
+    }
+    .balance-amount {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .balance-value {
+      font-size: 32px;
+      font-weight: 700;
+      font-family: ${v('fontMono', theme)};
+      letter-spacing: -0.02em;
+    }
+    .balance-unit {
+      font-size: 15px;
+      color: ${v('colorTextMuted', theme)};
+      font-weight: 500;
+    }
+    .balance-skeleton {
+      width: 140px;
+      height: 32px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, ${v('colorSurfaceHover', theme)} 25%, ${v('colorBorder', theme)} 50%, ${v('colorSurfaceHover', theme)} 75%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    }
+    @keyframes skeleton-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Transaction history */
+    .tx-history {
+      display: flex;
+      flex-direction: column;
+    }
+    .tx-header {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${v('colorTextMuted', theme)};
+      padding: 4px 0 8px;
+    }
+    .tx-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px;
+      text-decoration: none;
+      color: inherit;
+      border-bottom: 1px solid ${v('colorBorder', theme)};
+      transition: background 0.15s ease;
+    }
+    .tx-row:last-child { border-bottom: none; }
+    .tx-row:hover { background: ${v('colorSurfaceHover', theme)}; }
+    .tx-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .tx-success {
+      background: rgba(110, 231, 183, 0.15);
+      color: ${v('colorAccent', theme)};
+    }
+    .tx-failed {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+    .tx-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .tx-type {
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: capitalize;
+    }
+    .tx-date {
+      font-size: 11px;
       color: ${v('colorTextMuted', theme)};
       margin-top: 2px;
     }
-    .account-actions { display: flex; gap: 8px; margin-left: auto; }
+    .tx-amount {
+      font-size: 13px;
+      font-family: ${v('fontMono', theme)};
+      font-weight: 500;
+    }
+    .tx-in { color: ${v('colorAccent', theme)}; }
+    .tx-out { color: ${v('colorText', theme)}; }
+    .tx-external {
+      display: flex;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .tx-row:hover .tx-external { opacity: 0.5; }
+    .tx-external svg { width: 14px; height: 14px; color: ${v('colorTextMuted', theme)}; }
+    .tx-empty {
+      padding: 24px 8px;
+      text-align: center;
+      font-size: 13px;
+      color: ${v('colorTextMuted', theme)};
+    }
     .btn {
       all: unset;
       box-sizing: border-box;

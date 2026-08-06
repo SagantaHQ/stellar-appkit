@@ -126,6 +126,112 @@ export function buildStyles(theme: ConnectTheme): string {
     .icon-btn:focus-visible { outline: 2px solid ${v('colorAccent', theme)}; outline-offset: 1px; }
     .icon-btn svg { width: 16px; height: 16px; }
 
+    /* Header variant for the connecting view: back arrow + centered title + close */
+    .header--connecting {
+      justify-content: space-between;
+    }
+    .header--connecting .title {
+      text-align: center;
+      flex: 1;
+    }
+
+    /* ---- Connecting view ---- */
+    .connecting-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 32px 24px 28px;
+      gap: 0;
+    }
+    .connecting-view__logo-wrap {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .connecting-view__logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      object-fit: contain;
+      position: relative;
+      z-index: 1;
+      background: ${v('colorSurface', theme)};
+    }
+    /* The arc — a conic-gradient spinner that rotates around the logo.
+       Uses a partial sweep (not a full circle) to match the mockup's
+       "open arc" aesthetic. */
+    .connecting-view__arc {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 90deg,
+        ${v('colorAccent', theme)} 270deg,
+        ${v('colorAccent', theme)} 360deg
+      );
+      -webkit-mask: radial-gradient(
+        farthest-side,
+        transparent calc(100% - 4px),
+        black calc(100% - 4px)
+      );
+      mask: radial-gradient(
+        farthest-side,
+        transparent calc(100% - 4px),
+        black calc(100% - 4px)
+      );
+      animation: sak-connecting-spin 1.4s linear infinite;
+    }
+    @keyframes sak-connecting-spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .connecting-view__arc { animation-duration: 6s; }
+    }
+    .connecting-view__title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: ${v('colorText', theme)};
+      margin: 0 0 8px;
+      line-height: 1.3;
+    }
+    .connecting-view__subtitle {
+      font-size: 14px;
+      line-height: 1.5;
+      color: ${v('colorTextMuted', theme)};
+      margin: 0 0 32px;
+      max-width: 280px;
+    }
+    .connecting-view__retry {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: transparent;
+      color: ${v('colorText', theme)};
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 150ms ease, border-color 150ms ease;
+    }
+    .connecting-view__retry:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+    }
+    .connecting-view__retry svg {
+      width: 14px;
+      height: 14px;
+    }
+
     .body {
       padding: 4px 10px 12px;
       overflow-y: auto;

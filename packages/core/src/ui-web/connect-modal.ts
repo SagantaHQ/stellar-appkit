@@ -497,6 +497,20 @@ export class SagantaAppKitModal extends HTMLElement {
     const title = this.getAttribute('title') ?? this.defaultTitle();
     const logoSrc = this.getAttribute('logo-src');
 
+    // When connecting, show the wallet name centered with a back arrow on the left
+    // (back cancels the connecting state and returns to the wallet list).
+    if (this.view === 'connecting' && this.connectingWalletId) {
+      const connector = this._client?.registry.get(this.connectingWalletId);
+      const walletName = connector?.meta.name ?? 'Wallet';
+      return `
+        <div class="header header--connecting">
+          <button class="icon-btn" data-action="cancel-connecting" aria-label="Back">${icons.chevronLeft}</button>
+          <span class="title">${escapeHtml(walletName)}</span>
+          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+        </div>
+      `;
+    }
+
     // When connected, show wallet icon + name in the header instead of the app logo
     let headerBrand: string;
     if (this.view === 'connected' && this._client?.activeConnector) {
@@ -535,10 +549,57 @@ export class SagantaAppKitModal extends HTMLElement {
       case 'error':
         return this.renderError();
       case 'connecting':
+        return this.renderConnecting();
       case 'wallet-list':
       default:
         return this.renderWalletList();
     }
+  }
+
+  /**
+   * Dedicated connecting view — shown while the wallet's connect() promise
+   * is in flight. Matches the "Continue in [Wallet]" layout:
+   *
+   *   [wallet logo with spinner arc]
+   *
+   *   Continue in [Wallet]
+   *   Accept connection request in the wallet
+   *
+   *   [↻ Try again]
+   *
+   * The "Try again" button re-triggers the connect call — useful when the
+   * wallet prompt was dismissed without resolving.
+   */
+  private renderConnecting(): string {
+    if (!this.connectingWalletId) return this.renderWalletList();
+    const connector = this._client?.registry.get(this.connectingWalletId);
+    if (!connector) return this.renderWalletList();
+
+    const walletName = connector.meta.name;
+    const iconUrl = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
+    const fallbackIcon = getWalletIconDataUri(connector.id);
+    const onerrorHandler = fallbackIcon
+      ? `this.src='${fallbackIcon}'; this.onerror=null;`
+      : `this.style.display='none';`;
+
+    return `
+      <div class="connecting-view">
+        <div class="connecting-view__logo-wrap">
+          <div class="connecting-view__arc" aria-hidden="true"></div>
+          <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
+               onerror="${onerrorHandler}" />
+        </div>
+        <h2 class="connecting-view__title">Continue in ${escapeHtml(walletName)}</h2>
+        <p class="connecting-view__subtitle">Accept connection request in the wallet</p>
+        <button class="connecting-view__retry" data-action="retry-connecting">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 9-9" />
+            <path d="M3 4v5h5" />
+          </svg>
+          Try again
+        </button>
+      </div>
+    `;
   }
 
   private renderWalletList(): string {
@@ -935,6 +996,24 @@ export class SagantaAppKitModal extends HTMLElement {
         const found = this.walletList.find((w) => w.connector.id === walletId);
         if (found) this.selectWallet(found.connector);
       });
+    });
+
+    // Cancel the connecting state — returns to the wallet list without
+    // rejecting the in-flight connect() promise (the promise will resolve
+    // or reject on its own when the wallet responds, but the user has
+    // navigated away by then).
+    this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
+      this.connectingWalletId = null;
+      this.view = 'wallet-list';
+      this.render();
+    });
+
+    // Retry connecting — re-triggers selectWallet() for the same wallet.
+    this.root.querySelector('[data-action="retry-connecting"]')?.addEventListener('click', () => {
+      const walletId = this.connectingWalletId;
+      if (!walletId) return;
+      const connector = this._client?.registry.get(walletId);
+      if (connector) this.selectWallet(connector);
     });
 
     this.root.querySelectorAll<HTMLElement>('[data-action="pick-account"]').forEach((el) => {

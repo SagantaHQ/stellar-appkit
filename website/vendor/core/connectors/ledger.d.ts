@@ -7,10 +7,9 @@ export interface LedgerConnectorOptions {
 }
 /**
  * Ledger hardware wallet via `@ledgerhq/hw-app-str`, transported over
- * WebHID or WebUSB. Both are peer dependencies alongside the transport
- * packages — install whichever transport(s) you target:
- * `@ledgerhq/hw-app-str`, `@ledgerhq/hw-transport-webhid`,
- * `@ledgerhq/hw-transport-webusb`.
+ * WebHID or WebUSB. All three Ledger packages (`@ledgerhq/hw-app-str`,
+ * `@ledgerhq/hw-transport-webhid`, `@ledgerhq/hw-transport-webusb`) are
+ * bundled dependencies — installed automatically, no manual install needed.
  *
  * Neither WebHID nor WebUSB is universally supported (notably, Firefox
  * supports neither as of this writing) — `getReachability()` reflects

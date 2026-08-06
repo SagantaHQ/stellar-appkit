@@ -31,9 +31,14 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private copyState;
     /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
     private copiedAddress;
+    /** Cached XLM balance for the connected account (in lumens, e.g. "123.4567890"). */
+    private cachedBalance;
+    /** Cached transaction history for the connected account (latest 5). */
+    private cachedTxHistory;
     private pendingAccountPicker;
     private pendingPreview;
     private releaseFocusTrap;
+    private gestureDestroyer;
     private clientUnsubscribers;
     private mediaQuery;
     /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
@@ -50,12 +55,10 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private handleGlobalKeydown;
     private refreshWalletList;
     /**
-     * Fetches avatars for all connected sessions (and account-picker
-     * accounts) in parallel, then re-renders. Uses the avatar cache so
-     * already-fetched avatars aren't re-fetched. Called on sessionsChanged
-     * and when the account picker appears.
+     * Fetches avatars + balance + transaction history for the connected
+     * account, then re-renders. Called on connect and sessionsChanged.
      */
-    private refreshAvatars;
+    private refreshAccountData;
     private selectWallet;
     private pickAccount;
     /**
@@ -89,13 +92,50 @@ export declare class SagantaAppKitModal extends HTMLElement {
     private render;
     private renderPanel;
     private defaultTitle;
+    private renderPanelHeader;
     private renderBody;
+    /**
+     * Dedicated connecting view — shown while the wallet's connect() promise
+     * is in flight. Matches the "Continue in [Wallet]" layout:
+     *
+     *   [wallet logo with spinner arc]
+     *
+     *   Continue in [Wallet]
+     *   Accept connection request in the wallet
+     *
+     *   [↻ Try again]
+     *
+     * The "Try again" button re-triggers the connect call — useful when the
+     * wallet prompt was dismissed without resolving.
+     */
+    private renderConnecting;
     private renderWalletList;
     private renderAccountPicker;
     private renderConnected;
     private renderTransactionPreview;
     private renderNetworkMismatch;
     private renderError;
+    /**
+     * Wires up the drag-to-dismiss gesture for the bottom-sheet using
+     * @use-gesture/vanilla + motion. Lazy-imported so apps that don't use
+     * bottom-sheet mode (or don't have the packages installed) don't pay
+     * the cost.
+     *
+     * Behavior:
+     * - Drag down on the sheet's header area (drag handle + header) moves the sheet
+     * - Release with velocity > 0.5 or drag > 40% of sheet height → close
+     * - Release otherwise → spring back to open position
+     * - Only vertical dragging is enabled (horizontal swipes are ignored)
+     * - Works with both touch and mouse pointers (for desktop testing)
+     *
+     * If the gesture packages aren't installed, this silently no-ops — the
+     * bottom-sheet still works via the close button and backdrop tap.
+     *
+     * IMPORTANT: this must be called after every render() that touches the
+     * bottom-sheet DOM, because render() replaces innerHTML and destroys the
+     * element the gesture was bound to. wireEvents() calls this automatically.
+     */
+    private setupBottomSheetGestures;
     private wireEvents;
 }
 //# sourceMappingURL=connect-modal.d.ts.map

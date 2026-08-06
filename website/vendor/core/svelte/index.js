@@ -17,6 +17,12 @@
  *    or stores (Svelte 4 fallback). Each subscribes to the relevant
  *    slice of the client's event emitter and updates on change.
  *
+ * 3. `use:stellarmodal` action + `openModal()` / `closeModal()` helpers —
+ *    wrap the underlying `<saganta-appkit-modal>` Web Component. The
+ *    action wires up the `client` automatically; events are forwarded as
+ *    standard `on:sc-connect`, `on:sc-disconnect`, `on:sc-error` Svelte
+ *    event listeners on the host element. Re-exported from `./modal.ts`.
+ *
  * Tree-shakability: this subpath is a separate module — bundlers only
  * pull it in if the consumer actually imports `@saganta/stellar-appkit/svelte`.
  *
@@ -379,4 +385,7 @@ export const useSignIn = useSignInStore;
 export const useSoroban = useSorobanStore;
 export const usePreviewTransaction = usePreviewTransactionStore;
 export const usePreviewAuthEntry = usePreviewAuthEntryStore;
+// Re-export the modal Svelte action + helpers so they're available from
+// `@saganta/stellar-appkit/svelte` directly.
+export { stellarmodal, openModal, closeModal, isStellarAppKitModal, } from './modal.js';
 //# sourceMappingURL=index.js.map

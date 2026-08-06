@@ -17,6 +17,11 @@
  *    subscribes to the relevant slice of the client's event emitter and
  *    updates its ref on change.
  *
+ * 3. `<StellarAppKitModal>` — a Vue SFC-style component wrapping the
+ *    underlying `<saganta-appkit-modal>` Web Component with typed props,
+ *    emits (`connect`/`disconnect`/`error`), and an imperative `open()` /
+ *    `close()` API via template refs. Re-exported from `./modal.ts`.
+ *
  * Tree-shakability: this subpath is a separate module — bundlers only
  * pull it in if the consumer actually imports `@saganta/stellar-appkit/vue`.
  *
@@ -158,4 +163,5 @@ export declare function usePreviewAuthEntry(): {
     respond: (approve: boolean) => void;
     isPending: ComputedRef<boolean>;
 };
+export { StellarAppKitModal, default as StellarAppKitModalDefault, type StellarAppKitModalProps, type StellarAppKitModalHandle, type StellarAppKitModalEvents, } from './modal.js';
 //# sourceMappingURL=index.d.ts.map
