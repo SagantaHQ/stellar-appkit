@@ -14,14 +14,14 @@ import { test, expect, describe, mock, beforeEach } from 'bun:test';
 
 // Mock the gesture + motion packages
 const mockGestureDestroy = mock(() => {});
-const mockDragGesture = mock((_el: HTMLElement, _handlers: unknown, _config?: unknown) => ({
+const mockGesture = mock((_el: HTMLElement, _handlers: unknown, _config?: unknown) => ({
   destroy: mockGestureDestroy,
 }));
 
 const mockAnimate = mock((_el: HTMLElement, _keyframes: unknown, _opts?: unknown) => {});
 
 mock.module('@use-gesture/vanilla', () => ({
-  DragGesture: mockDragGesture,
+  Gesture: mockGesture,
 }));
 
 mock.module('motion', () => ({
@@ -39,26 +39,26 @@ mock.module('@stellar/freighter-api', () => ({
 }));
 
 beforeEach(() => {
-  mockDragGesture.mockClear();
+  mockGesture.mockClear();
   mockAnimate.mockClear();
   mockGestureDestroy.mockClear();
 });
 
 describe('Bottom-sheet gesture setup', () => {
-  test('DragGesture from @use-gesture/vanilla is importable and callable', async () => {
+  test('Gesture from @use-gesture/vanilla is importable and callable', async () => {
     const vanillaMod = await import('@use-gesture/vanilla');
-    expect(vanillaMod.DragGesture).toBeDefined();
-    expect(typeof vanillaMod.DragGesture).toBe('function');
+    expect(vanillaMod.Gesture).toBeDefined();
+    expect(typeof vanillaMod.Gesture).toBe('function');
 
     // Verify it can be called with a fake element, handlers, and config
     const fakeEl = { style: {}, addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
-    const result = vanillaMod.DragGesture(fakeEl, {
+    const result = vanillaMod.Gesture(fakeEl, {
       onDrag: () => {},
       onDragEnd: () => {},
-    }, { axis: 'y' });
+    }, { drag: { axis: 'y' } });
     expect(result).toBeDefined();
     expect(typeof result.destroy).toBe('function');
-    expect(mockDragGesture).toHaveBeenCalled();
+    expect(mockGesture).toHaveBeenCalled();
   });
 
   test('animate from motion is importable and callable', async () => {

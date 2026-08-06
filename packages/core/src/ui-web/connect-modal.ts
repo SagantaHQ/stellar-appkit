@@ -672,12 +672,16 @@ export class SagantaAppKitModal extends HTMLElement {
     const panel = this.root.querySelector<HTMLElement>('.panel');
     if (!panel) return;
 
-    // Use DragGesture (the pre-built drag recognizer), NOT createGesture
-    // (which is a low-level factory that takes an array of action names).
-    // DragGesture(target, handlers, config) → { destroy() }
-    const DragGesture = (gestureModule as unknown as {
-      DragGesture: (el: HTMLElement, handlers: unknown, config?: unknown) => { destroy: () => void };
-    }).DragGesture;
+    // Use Gesture (the multi-gesture recognizer), NOT DragGesture.
+    // DragGesture(target, handler, config) wraps the 2nd arg as { drag: handler }
+    // and the Engine calls this.handler(state) as a FUNCTION — so the 2nd arg
+    // must be a single function, not an object with onDrag/onDragStart/onDragEnd.
+    //
+    // Gesture(target, handlers, config) calls parseMergedHandlers internally,
+    // which properly wraps onDrag/onDragStart/onDragEnd into a single function.
+    const Gesture = (gestureModule as unknown as {
+      Gesture: (el: HTMLElement, handlers: unknown, config?: unknown) => { destroy: () => void };
+    }).Gesture;
     const animate = (motionModule as unknown as {
       animate: (el: HTMLElement, keyframes: unknown, opts?: unknown) => void;
     }).animate;
@@ -692,13 +696,11 @@ export class SagantaAppKitModal extends HTMLElement {
     // Clean up any previous gesture handler (e.g. from a re-render)
     this.gestureDestroyer?.destroy();
 
-    // DragGesture(target, handlers, config):
-    //   handlers = { onDragStart, onDrag, onDragEnd } (the drag event handlers)
-    //   config = { axis, filterTaps, pointer } (the gesture configuration)
-    // The previous version merged handlers + config into the first object,
-    // which caused 'this.handler is not a function' because the DragEngine
-    // tried to call config properties (like 'axis') as handler functions.
-    const gesture = DragGesture(panel, {
+    // Gesture(target, handlers, config):
+    //   handlers = { onDragStart, onDrag, onDragEnd } — parseMergedHandlers
+    //   wraps these into a single fn that the Engine calls as this.handler(state)
+    //   config = { drag: { axis, filterTaps, pointer } } — nested under 'drag'
+    const gesture = Gesture(panel, {
       onDragStart: () => {
         measureSheet();
         panel.style.transition = 'none';
@@ -750,9 +752,11 @@ export class SagantaAppKitModal extends HTMLElement {
         }
       },
     }, {
-      axis: 'y',
-      filterTaps: true,
-      pointer: { capture: true },
+      drag: {
+        axis: 'y',
+        filterTaps: true,
+        pointer: { capture: true },
+      },
     });
 
     this.gestureDestroyer = gesture;
