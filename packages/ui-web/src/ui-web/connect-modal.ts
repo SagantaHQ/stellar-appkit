@@ -55,6 +55,10 @@ export class SagantaAppKitModal extends ModalBase {
   private view: ViewState = 'wallet-list';
   private walletList: { connector: WalletConnector; reachability: WalletReachability }[] = [];
   private connectingWalletId: string | null = null;
+  /** WalletConnect pairing URI — set via the connector's setOnUri() hook
+   *  before connect() is called. When non-null, the connecting view renders
+   *  a QR code + deep link instead of the generic spinner. */
+  private wcPairingUri: string | null = null;
   /** Error message from the last connect() attempt — set when the client emits an 'error' event while view === 'connecting'. Cleared on retry. */
   private connectingError: string | null = null;
   /** The preview that was approved — kept so we can retry the sign after a wallet-side rejection. */
@@ -550,8 +554,23 @@ export class SagantaAppKitModal extends ModalBase {
 
     this.connectingWalletId = connector.id;
     this.connectingError = null;
+    this.wcPairingUri = null; // reset any previous WC URI
     this.view = 'connecting';
     this.render();
+
+    // If the connector supports late-bound onUri (WalletConnect does),
+    // hook in so we can render the pairing URI as a QR code in the
+    // connecting view. This is what makes WC work inside the modal —
+    // without it, the user sees a generic spinner with no QR code.
+    const wcConnector = connector as WalletConnector & {
+      setOnUri?: (fn: ((uri: string) => void) | null) => void;
+    };
+    if (typeof wcConnector.setOnUri === 'function') {
+      wcConnector.setOnUri((uri: string) => {
+        this.wcPairingUri = uri;
+        this.render();
+      });
+    }
 
     try {
       const autoRetry = this.getAttribute('auto-retry-network') === 'true';
@@ -582,6 +601,7 @@ export class SagantaAppKitModal extends ModalBase {
       // (e.g. network mismatch which switches to a different view).
       if (this.view === 'connecting' && !this.connectingError) {
         this.connectingWalletId = null;
+      this.wcPairingUri = null;
         this.view = 'wallet-list';
         this.render();
       }
@@ -592,6 +612,7 @@ export class SagantaAppKitModal extends ModalBase {
       // shows the wallet name.
       if (this.view !== 'connecting') {
         this.connectingWalletId = null;
+      this.wcPairingUri = null;
       }
     }
   }
@@ -936,9 +957,56 @@ export class SagantaAppKitModal extends ModalBase {
 
     const hasError = this.connectingError !== null;
 
+    // WalletConnect special case: if we have a pairing URI, render a QR code
+    // + deep link instead of the generic spinner. This is what makes WC
+    // actually usable inside the modal — the user needs to scan a QR code,
+    // not just see a "Continue in WalletConnect" message.
+    const isWalletConnect = connector.id === 'walletconnect';
+    const hasQrUri = !hasError && isWalletConnect && this.wcPairingUri !== null;
+
+    if (hasQrUri) {
+      const uri = this.wcPairingUri!;
+      // Use a data URI QR code from api.qrserver.com (free, no auth, returns PNG).
+      // This avoids adding a QR library dependency to the ui-web package.
+      // The request is lazy (only fires when WC is connecting) and cached by the browser.
+      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&margin=1&data=${encodeURIComponent(uri)}`;
+
+      return `
+        <div class="connecting-view connecting-view--wc">
+          <div class="wc-qr-wrap">
+            <div class="wc-qr-frame">
+              <img src="${escapeAttr(qrImgUrl)}" alt="WalletConnect QR code" class="wc-qr-img"
+                   onerror="this.style.display='none'; this.parentElement.classList.add('wc-qr-frame--error');" />
+              <div class="wc-qr-fallback" style="display:none;">
+                <span style="font-size: 11px; color: var(--sak-color-text-muted); text-align: center; padding: 0 12px;">
+                  QR service unavailable. Use the deep link below or copy the URI.
+                </span>
+              </div>
+            </div>
+            <img src="${escapeAttr(iconUrl)}" alt="" class="wc-qr-logo"
+                 onerror="${onerrorHandler}" />
+          </div>
+          <h2 class="connecting-view__title">Scan with ${escapeHtml(walletName)}</h2>
+          <p class="connecting-view__subtitle">Open Hana, Lobstr, or Hot Wallet and scan this QR code to connect.</p>
+          <div class="wc-actions">
+            <a class="wc-deeplink" href="${escapeAttr(uri)}" target="_blank" rel="noopener">
+              ${icons.externalLink}
+              Open in wallet app
+            </a>
+            <button class="wc-copy-uri" data-action="copy-wc-uri" data-uri="${escapeAttr(uri)}">
+              ${icons.copy}
+              Copy URI
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
     const subtitle = hasError
       ? 'Connection declined or failed. Try again or pick a different wallet.'
-      : 'Accept connection request in the wallet';
+      : isWalletConnect
+        ? 'Generating pairing code…'
+        : 'Accept connection request in the wallet';
 
     const arcHtml = hasError
       ? '' // no spinner on error
@@ -1562,6 +1630,7 @@ export class SagantaAppKitModal extends ModalBase {
     // navigated away by then).
     this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
       this.connectingWalletId = null;
+      this.wcPairingUri = null;
       this.connectingError = null;
       this.view = 'wallet-list';
       this.render();
@@ -1656,6 +1725,21 @@ export class SagantaAppKitModal extends ModalBase {
     });
     this.root.querySelector('[data-action="copy-address"]')?.addEventListener('click', () => {
       if (this._client?.session) this.copyAddress(this._client.session.address);
+    });
+
+    // Copy WalletConnect pairing URI to clipboard (for manual QR generation
+    // or debugging). The URI is in data-uri on the copy button.
+    this.root.querySelector<HTMLElement>('[data-action="copy-wc-uri"]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const uri = (e.currentTarget as HTMLElement)?.dataset?.uri;
+      if (uri) {
+        navigator.clipboard?.writeText(uri).catch(() => {});
+        // Brief visual feedback — swap the copy icon for a check
+        const btn = e.currentTarget as HTMLElement;
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = `${icons.check} <span>Copied!</span>`;
+        setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
+      }
     });
 
     // Copy-to-clipboard for any address displayed inline (account picker,

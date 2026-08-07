@@ -261,6 +261,90 @@ export function buildStyles(theme: ConnectTheme): string {
       color: ${v('colorDanger', theme)};
     }
 
+    /* ---- WalletConnect QR view ---- */
+    /* Shown when the WC connector fires onUri with a pairing URI.
+       Replaces the generic spinner with a scannable QR code + deep link. */
+    .connecting-view--wc {
+      padding: 24px 20px 20px;
+    }
+    .wc-qr-wrap {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wc-qr-frame {
+      width: 220px;
+      height: 220px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #fff;
+      padding: 8px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .wc-qr-frame--error {
+      background: ${v('colorSurface', theme)};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wc-qr-frame--error .wc-qr-fallback {
+      display: flex !important;
+    }
+    .wc-qr-img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    .wc-qr-logo {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #fff;
+      padding: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      z-index: 1;
+    }
+    .wc-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .wc-deeplink, .wc-copy-uri {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background-color 200ms ease, border-color 200ms ease;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: ${v('colorSurface', theme)};
+      color: ${v('colorText', theme)};
+    }
+    .wc-deeplink:hover, .wc-copy-uri:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorAccent', theme)};
+    }
+    .wc-deeplink svg, .wc-copy-uri svg {
+      width: 14px;
+      height: 14px;
+    }
+
     /* ---- Signing view (after preview is approved) ---- */
     /* Reuses the connecting-view layout but with different semantics:
        "Continue in your wallet" while the wallet processes the sign request. */

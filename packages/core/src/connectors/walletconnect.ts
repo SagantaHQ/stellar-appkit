@@ -114,6 +114,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let cachedNetwork: { network: string; networkPassphrase: string } | null = null;
 
   /**
+   * Late-bound URI handler. The constructor-time `opts.onUri` is copied here,
+   * but the modal can overwrite this at runtime (before calling connect())
+   * to intercept the pairing URI and render a QR code inside the modal itself.
+   *
+   * This is what makes WalletConnect work inside <stellar-appkit-modal> without
+   * the app having to render its own QR code — the modal sets this property
+   * to its own handler, then calls connect(), and the URI flows into the
+   * modal's connecting view where the QR is rendered.
+   */
+  let onUriHandler: ((uri: string) => void) | null = opts.onUri ?? null;
+
+  /**
    * Lazy-imports @walletconnect/sign-client and initializes the SignClient
    * (if not already done). The client is a singleton — we only init once
    * per connector instance.
@@ -179,8 +191,9 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           },
         });
 
-        // Surface the URI for the app to render as a QR code or deep link
-        if (uri) opts.onUri(uri);
+        // Surface the URI for the app to render as a QR code or deep link.
+        // Uses the late-bound handler (may have been overwritten by the modal).
+        if (uri && onUriHandler) onUriHandler(uri);
 
         // Wait for the wallet to approve — resolves with the session object
         const session = await approval() as {
@@ -354,6 +367,19 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         }
       });
     },
+  };
+
+  /**
+   * Late-bound URI handler setter. The modal calls this before connect()
+   * to intercept the pairing URI and render a QR code inside the modal.
+   *
+   * This is a non-standard extension on the WalletConnect connector only —
+   * other connectors don't need it because they don't use QR pairing.
+   * The modal checks for its existence with `typeof connector.setOnUri === 'function'`
+   * before calling it.
+   */
+  (connector as WalletConnector & { setOnUri?: (fn: ((uri: string) => void) | null) => void }).setOnUri = (fn: ((uri: string) => void) | null) => {
+    onUriHandler = fn;
   };
 
   return connector;
