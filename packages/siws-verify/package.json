@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit-siws-verify",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Server-side SIWS signature/envelope verification.",
   "type": "module",
   "sideEffects": false,
@@ -22,7 +22,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@saganta/stellar-appkit": "^0.2.4",
+    "@saganta/stellar-appkit": "^0.2.5",
     "@stellar/stellar-sdk": "^13.0.0"
   },
   "license": "MIT"
