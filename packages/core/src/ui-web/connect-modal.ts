@@ -29,7 +29,14 @@ const MOBILE_BREAKPOINT_PX = 640;
  * DOM reference to this element (e.g. from a template) don't need the
  * client instance to react to state changes.
  */
-export class SagantaAppKitModal extends HTMLElement {
+// Use a conditional base class so the module can be imported during SSR
+// (where HTMLElement is undefined) without throwing. In the browser,
+// HTMLElement is available and the class extends it normally.
+// In Node.js (SSR), the class extends a plain no-op base — it's never
+// instantiated during SSR, so the missing DOM API doesn't matter.
+const ModalBase = typeof HTMLElement !== 'undefined' ? HTMLElement : class {} as typeof HTMLElement;
+
+export class SagantaAppKitModal extends ModalBase {
   static get observedAttributes() {
     return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars', 'explorer-url'];
   }
@@ -1234,6 +1241,14 @@ function escapeAttr(input: string): string {
   return escapeHtml(input);
 }
 
-if (!customElements.get('saganta-appkit-modal')) {
-  customElements.define('saganta-appkit-modal', SagantaAppKitModal);
+// Guard: only define the custom element in browser environments where
+// HTMLElement and customElements are available. This allows the module
+// to be imported safely during SSR (Node.js) without throwing — the class
+// declaration is hoisted but not evaluated until an instance is created.
+// The `typeof` check prevents ReferenceError on `HTMLElement` which is
+// undefined in Node.js.
+if (typeof HTMLElement !== 'undefined' && typeof customElements !== 'undefined') {
+  if (!customElements.get('saganta-appkit-modal')) {
+    customElements.define('saganta-appkit-modal', SagantaAppKitModal);
+  }
 }
