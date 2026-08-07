@@ -73,7 +73,7 @@ export interface StellarAppKitProviderConfig {
   network: StellarNetwork;
   /** Wallet connectors to register. Optional — defaults to all bundled browser-side wallets. */
   connectors?: WalletConnector[];
-  appMetadata?: { name: string; domain: string; uri: string };
+  appMetadata?: { name: string; domain?: string; uri?: string };
   networkPassphrase?: string;
   syncAcrossTabs?: boolean;
   previewOptions?: PreviewOptions;

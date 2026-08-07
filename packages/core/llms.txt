@@ -40,9 +40,10 @@ import { StellarAppKit } from '@saganta/stellar-appkit';
 import '@saganta/stellar-appkit-ui-web';
 
 // connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
+// domain + uri are optional too — auto-derived from window.location in the browser
 const appkit = new StellarAppKit({
   network: 'TESTNET',
-  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  appMetadata: { name: 'Example App' },
 });
 
 const modal = document.querySelector('stellar-appkit-modal');
@@ -52,7 +53,9 @@ modal.open();
 await appkit.restore();
 ```
 
-Zero-config: omit `connectors` to auto-register Freighter + Albedo + xBull + Ledger. Use `defaultConnectors()` to extend the default set with WalletConnect (which requires a `projectId`).
+Zero-config:
+- `connectors` — omit to auto-register Freighter + Albedo + xBull + Ledger. Use `defaultConnectors()` to extend with WalletConnect (requires `projectId`).
+- `appMetadata.domain` / `appMetadata.uri` — omit to auto-derive from `window.location` (`hostname` + `origin`). Auto-formatted if passed explicitly: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`. In SSR, pass them explicitly.
 
 ### WalletConnect (Hana, Lobstr, Hot Wallet)
 
@@ -112,7 +115,7 @@ const result = await appkit.signMessage(message);
 
 // SIWS (Sign-In With Stellar)
 const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
-  statement: 'Sign in to My App',
+  statement: 'Sign in to Example App',
   nonce: 'server-issued-nonce',
 });
 

@@ -204,9 +204,10 @@ import { StellarAppKit } from '@saganta/stellar-appkit';
 import '@saganta/stellar-appkit-ui-web'; // registers <stellar-appkit-modal>
 
 // connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
+// domain + uri are optional too — auto-derived from window.location in the browser
 const appkit = new StellarAppKit({
   network: 'PUBLIC',
-  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  appMetadata: { name: 'Example App' },
 });
 
 const modal = document.querySelector('stellar-appkit-modal');
@@ -223,7 +224,12 @@ await appkit.restore(); // resume a persisted session on page load, if any
 
 That's a working wallet connect flow. Everything past here is what you reach for as you need it.
 
-The modal ships with default open/close animations (`scale-blur` for desktop modal, `slide-up` for mobile bottom-sheet) — no configuration needed. Override per-modal via the `animation` attribute, or globally via `StellarAppKit`'s `modal.animation` config. See [The `<stellar-appkit-modal>` element](#the-stellar-appkit-modal-element) for the full list of animation presets.
+**Zero-config defaults:**
+- **`connectors`** — omit to auto-register Freighter, Albedo, xBull, and Ledger. Use `defaultConnectors()` to extend the set with WalletConnect.
+- **`appMetadata.domain` and `appMetadata.uri`** — omit to auto-derive from `window.location` (`hostname` and `origin`). If you pass them explicitly, they're auto-formatted: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`.
+- **Modal animations** — `scale-blur` for desktop modal, `slide-up` for mobile bottom-sheet, out of the box. Override via the `animation` attribute or `modal.animation` config.
+
+See [The `<stellar-appkit-modal>` element](#the-stellar-appkit-modal-element) for the full list of animation presets.
 
 ---
 
@@ -467,7 +473,7 @@ const appkit = new StellarAppKit({
 
 ```ts
 const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
-  statement: 'Sign in to My App',
+  statement: 'Sign in to Example App',
   nonce: await fetch('/api/siws/nonce').then((r) => r.text()),
 });
 // POST { message, signedMessage, signerAddress, signedData } to your backend
@@ -519,7 +525,7 @@ export function App() {
     <StellarAppKitProvider config={{
       network: 'TESTNET',
       connectors: [createFreighterConnector()],
-      appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+      appMetadata: { name: 'Example App' },
     }}>
       <WalletPanel />
     </StellarAppKitProvider>
@@ -556,7 +562,7 @@ const app = createApp(App);
 app.use(StellarAppKitPlugin, {
   network: 'TESTNET',
   connectors: [createFreighterConnector()],
-  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  appMetadata: { name: 'Example App' },
 });
 
 // Or inside a component's setup():
@@ -623,7 +629,7 @@ npm install svelte @saganta/stellar-appkit
   setStellarAppKitContext({
     network: 'TESTNET',
     connectors: [createFreighterConnector()],
-    appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+    appMetadata: { name: 'Example App' },
   });
 
   const { connect, isConnected, isConnecting } = useConnect();
@@ -776,7 +782,7 @@ import '@saganta/stellar-appkit-ui-web';
 // Zero-config — Freighter, Albedo, xBull, and Ledger are all registered automatically.
 const appkit = new StellarAppKit({
   network: 'TESTNET',
-  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  appMetadata: { name: 'Example App' },
 });
 ```
 

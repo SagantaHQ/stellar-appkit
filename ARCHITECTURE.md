@@ -632,15 +632,64 @@ The connector factories themselves are lightweight — each connector lazy-impor
 
 The wallet list previously showed an empty sub-label for installed, available wallets — making it visually ambiguous whether a wallet was actually ready to use or just present in the registry. The fix:
 
-- `available` wallets → green accent-colored pill labeled **"Installed"** (with a small dot)
+- `available` wallets → green pill labeled **"Installed"** (green-200 background `#d1fae5`, green-700 text `#047857`, green-300 border `#a7f3d0`)
 - `not-installed` wallets → "Install" button (unchanged)
 - `locked` / `unavailable` / `connecting` → status text (unchanged)
 
-The badge uses CSS custom properties (`--sak-color-accent`) so it automatically picks up the active theme's accent color — no theme-specific styling needed.
+The badge uses a fixed green palette (not the theme's accent color) so the "ready to use" signal is consistent across light and dark themes — green = go, regardless of branding.
 
 ---
 
-## 8.13 AI-readable files — `SKILL.md` and `llms.txt`
+## 8.13 Auto-derived `appMetadata` — `normalizeAppMetadata()`
+
+The `StellarAppKitConfig.appMetadata` field previously required all three fields (`name`, `domain`, `uri`) to be set explicitly. This was boilerplate — in the browser, the domain and URI are almost always just the current page's hostname and origin.
+
+### What's optional now
+
+- `name` — still required (used in the SIWS message header and the modal header)
+- `domain` — **optional**. If omitted, auto-derived from `window.location.hostname`
+- `uri` — **optional**. If omitted, auto-derived from `window.location.origin`
+
+### Auto-formatting
+
+When the user does pass `domain` or `uri` explicitly, they're auto-formatted to the canonical shape:
+
+- `domain: "https://example.com"` → `"example.com"` (protocol stripped)
+- `domain: "example.com/path"` → `"example.com"` (path stripped)
+- `uri: "example.com"` → `"https://example.com"` (protocol added)
+- `uri: "http://localhost:3000"` → unchanged (already has a protocol)
+
+This lets users write `appMetadata: { name: 'Example App' }` in the browser and have the SIWS message automatically include the correct domain + URI without hardcoding them.
+
+### SSR safety
+
+In Node.js (no `window`), omitted `domain` and `uri` remain `undefined`. The `signIn()` method checks for their presence and throws a clear error if they're missing:
+
+```
+signIn() requires appMetadata.domain and appMetadata.uri. They're auto-derived
+from window.location in the browser, but you're likely running in SSR/Node.js
+where window is undefined. Pass them explicitly:
+appMetadata: { name: 'My App', domain: 'example.com', uri: 'https://example.com' }.
+```
+
+### Implementation
+
+The `normalizeAppMetadata()` function is exported from `@saganta/stellar-appkit` so it can be called directly (e.g. in a server context where you want to normalize user input before passing it to `StellarAppKit`).
+
+```ts
+import { normalizeAppMetadata } from '@saganta/stellar-appkit';
+
+const meta = normalizeAppMetadata({
+  name: 'Example App',
+  domain: 'https://example.com',  // will be stripped to "example.com"
+  uri: 'example.com',             // will be prefixed with "https://"
+});
+// → { name: 'Example App', domain: 'example.com', uri: 'https://example.com' }
+```
+
+---
+
+## 8.14 AI-readable files — `SKILL.md` and `llms.txt`
 
 The repo ships two AI-readable files at the root so AI coding assistants (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can produce correct Stellar AppKit code on the first try without the user pasting docs into chat. Both are included in the published npm tarball alongside `dist/` and `src/`, so once a consumer app has `@saganta/stellar-appkit` in its `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
 

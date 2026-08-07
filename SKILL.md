@@ -49,9 +49,10 @@ import { StellarAppKit } from '@saganta/stellar-appkit';
 import '@saganta/stellar-appkit-ui-web';
 
 // connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
+// domain + uri are optional too — auto-derived from window.location in the browser
 const appkit = new StellarAppKit({
   network: 'TESTNET', // or 'PUBLIC'
-  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+  appMetadata: { name: 'Example App' },
 });
 
 const modal = document.querySelector('stellar-appkit-modal');
@@ -61,7 +62,9 @@ connectButton.addEventListener('click', () => modal.open());
 await appkit.restore(); // resume persisted session
 ```
 
-**Zero-config defaults:** if you omit `connectors`, the SDK auto-registers Freighter, Albedo, xBull, and Ledger. WalletConnect is excluded from defaults (requires a `projectId`). Use `defaultConnectors()` to extend rather than replace the default set.
+**Zero-config defaults:**
+- **`connectors`** — omit to auto-register Freighter, Albedo, xBull, Ledger. WalletConnect excluded (requires `projectId`). Use `defaultConnectors()` to extend.
+- **`appMetadata.domain` / `appMetadata.uri`** — omit to auto-derive from `window.location` (`hostname` and `origin`). Auto-formatted if passed: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`. In SSR (no `window`), pass them explicitly.
 
 ### Signing transactions
 
@@ -119,7 +122,7 @@ const balance = await token.simulate('balanceOf', { id }); // read-only
 ```ts
 // Client side
 const { message, signedMessage, signerAddress, signedData } = await appkit.signIn({
-  statement: 'Sign in to My App',
+  statement: 'Sign in to Example App',
   nonce: await fetch('/api/nonce').then(r => r.text()),
 });
 

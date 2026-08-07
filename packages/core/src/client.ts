@@ -47,8 +47,25 @@ export interface StellarAppKitConfig {
   networkPassphrase?: string;
   /** Defaults to localStorage on web. Pass a RN-backed implementation for React Native. */
   storage?: ConnectStorage;
-  /** App identity surfaced in Sign-In With Stellar messages. */
-  appMetadata?: { name: string; domain: string; uri: string };
+  /**
+   * App identity surfaced in Sign-In With Stellar (SIWS) messages.
+   *
+   * `name` is always required if you use `signIn()`.
+   * `domain` and `uri` are **optional** — if omitted, they're auto-derived
+   * from `window.location` (web) at construction time:
+   *   - `domain` ← `window.location.hostname` (e.g. `"app.example.com"`)
+   *   - `uri`    ← `window.location.origin`  (e.g. `"https://app.example.com"`)
+   *
+   * If you pass them explicitly, they're auto-formatted:
+   *   - `domain` with a protocol (`"https://example.com"`) → stripped to `"example.com"`
+   *   - `uri` without a protocol (`"example.com"`) → prefixed with `"https://"`
+   *
+   * This lets you write `{ name: 'My App' }` in the browser and have the
+   * SIWS message automatically include the correct domain + URI without
+   * hardcoding them. In SSR/Node.js (no `window`), `domain` and `uri`
+   * remain `undefined` if not passed — pass them explicitly for SSR apps.
+   */
+  appMetadata?: { name: string; domain?: string; uri?: string };
   /** Set false to disable cross-tab session sync (on by default, no-ops where BroadcastChannel isn't available anyway). */
   syncAcrossTabs?: boolean;
   /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
@@ -117,6 +134,58 @@ export function defaultConnectors(): WalletConnector[] {
   ];
 }
 
+/**
+ * Normalizes the user-provided `appMetadata` into the fully-resolved shape
+ * the SIWS message builder expects (`{ name, domain, uri }` — all required).
+ *
+ * Auto-derivation (browser only — `window` must exist):
+ *   - If `domain` is omitted → `window.location.hostname`
+ *   - If `uri` is omitted → `window.location.origin`
+ *
+ * Auto-formatting (always applied when the field is present):
+ *   - `domain` with a protocol (`"https://example.com"`) → stripped to `"example.com"`
+ *   - `uri` without a protocol (`"example.com"`) → prefixed with `"https://"`
+ *
+ * In SSR (Node.js, no `window`), omitted fields remain `undefined` — the
+ * caller is expected to pass them explicitly for server-side signIn() flows.
+ * If signIn() is called with an undefined domain/uri, it throws a clear error
+ * (see StellarAppKit.signIn()).
+ */
+export function normalizeAppMetadata(
+  meta: { name: string; domain?: string; uri?: string },
+): { name: string; domain?: string; uri?: string } {
+  let { name, domain, uri } = meta;
+
+  // Auto-derive from window.location when available (browser only)
+  if (typeof window !== 'undefined' && window.location) {
+    if (!domain) domain = window.location.hostname || undefined;
+    if (!uri) uri = window.location.origin || undefined;
+  }
+
+  // Auto-format domain: strip protocol + path, keep just the hostname
+  if (domain) {
+    domain = domain.trim();
+    // Strip protocol (http://, https://, ws://, etc.)
+    domain = domain.replace(/^[a-z]+:\/\//i, '');
+    // Strip any path (e.g. "example.com/path" → "example.com")
+    // Also handles any leftover slashes after protocol stripping
+    const slashIdx = domain.indexOf('/');
+    if (slashIdx >= 0) {
+      domain = domain.slice(0, slashIdx);
+    }
+  }
+
+  // Auto-format uri: ensure it has a protocol
+  if (uri) {
+    uri = uri.trim();
+    if (!/^[a-z]+:\/\//i.test(uri)) {
+      uri = `https://${uri}`;
+    }
+  }
+
+  return { name, domain, uri };
+}
+
 export interface AppKitConnectOptions {
   /**
    * If the wallet's live network doesn't match, poll until it does instead
@@ -178,7 +247,7 @@ export class StellarAppKit {
       : defaultConnectors();
     this.registry.registerMany(connectors);
     this.network = config.network;
-    this.appMetadata = config.appMetadata;
+    this.appMetadata = config.appMetadata ? normalizeAppMetadata(config.appMetadata) : undefined;
     this.storage = config.storage ?? createWebStorage();
     this.customNetworkPassphrase = config.networkPassphrase;
     this.onPreviewTransaction = config.onPreviewTransaction ?? null;
@@ -635,7 +704,15 @@ export class StellarAppKit {
     const connector = this.requireActiveConnector();
     if (!this.appMetadata) {
       throw ConnectError.invalidRequest(
-        'signIn() requires appMetadata (name, domain, uri) to be set in the StellarAppKit config.'
+        'signIn() requires appMetadata.name to be set in the StellarAppKit config. ' +
+        'domain and uri are auto-derived from window.location in the browser, but name must be provided explicitly.'
+      );
+    }
+    if (!this.appMetadata.domain || !this.appMetadata.uri) {
+      throw ConnectError.invalidRequest(
+        `signIn() requires appMetadata.domain and appMetadata.uri. They're auto-derived from window.location in the browser, ` +
+        `but you're likely running in SSR/Node.js where window is undefined. Pass them explicitly: ` +
+        `appMetadata: { name: 'My App', domain: 'example.com', uri: 'https://example.com' }.`
       );
     }
     return this.enqueueSign(async () => {
@@ -658,7 +735,16 @@ export class StellarAppKit {
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return signInWithStellar({ ...opts, connector, network: this.network, appMetadata: this.appMetadata! });
+      return signInWithStellar({
+        ...opts,
+        connector,
+        network: this.network,
+        appMetadata: {
+          name: this.appMetadata!.name,
+          domain: this.appMetadata!.domain!,
+          uri: this.appMetadata!.uri!,
+        },
+      });
     });
   }
 }
