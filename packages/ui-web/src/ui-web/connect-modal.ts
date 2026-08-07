@@ -1201,129 +1201,182 @@ export class SagantaAppKitModal extends ModalBase {
 
   /**
    * Wires up the drag-to-dismiss gesture for the bottom-sheet using
-   * @use-gesture/vanilla + motion. Lazy-imported so apps that don't use
-   * bottom-sheet mode (or don't have the packages installed) don't pay
-   * the cost.
+   * native pointer events + a custom spring engine. Zero dependencies —
+   * no @use-gesture/vanilla, no motion. The spring is ~30 lines of code
+   * and gives an iOS-like drawer feel with GPU-composited transforms.
    *
    * Behavior:
-   * - Drag down on the sheet's header area (drag handle + header) moves the sheet
-   * - Release with velocity > 0.5 or drag > 40% of sheet height → close
+   * - Drag down on the sheet moves it following the pointer
+   * - Release with velocity > 0.5px/ms or drag > 40% of sheet height → close
    * - Release otherwise → spring back to open position
    * - Only vertical dragging is enabled (horizontal swipes are ignored)
-   * - Works with both touch and mouse pointers (for desktop testing)
-   *
-   * If the gesture packages aren't installed, this silently no-ops — the
-   * bottom-sheet still works via the close button and backdrop tap.
+   * - Works with both touch and mouse pointers
    *
    * IMPORTANT: this must be called after every render() that touches the
    * bottom-sheet DOM, because render() replaces innerHTML and destroys the
    * element the gesture was bound to. wireEvents() calls this automatically.
    */
-  private async setupBottomSheetGestures() {
-    let gestureModule: typeof import('@use-gesture/vanilla') | null = null;
-    let motionModule: typeof import('motion') | null = null;
-    try {
-      [gestureModule, motionModule] = await Promise.all([
-        import('@use-gesture/vanilla'),
-        import('motion'),
-      ]);
-    } catch {
-      // Packages not installed — bottom-sheet works without gestures
-      // (close button + backdrop tap still functional).
-      return;
-    }
-
+  private setupBottomSheetGestures() {
     const panel = this.root.querySelector<HTMLElement>('.panel');
     if (!panel) return;
-
-    // Use Gesture (the multi-gesture recognizer), NOT DragGesture.
-    // DragGesture(target, handler, config) wraps the 2nd arg as { drag: handler }
-    // and the Engine calls this.handler(state) as a FUNCTION — so the 2nd arg
-    // must be a single function, not an object with onDrag/onDragStart/onDragEnd.
-    //
-    // Gesture(target, handlers, config) calls parseMergedHandlers internally,
-    // which properly wraps onDrag/onDragStart/onDragEnd into a single function.
-    const Gesture = (gestureModule as unknown as {
-      Gesture: (el: HTMLElement, handlers: unknown, config?: unknown) => { destroy: () => void };
-    }).Gesture;
-    const animate = (motionModule as unknown as {
-      animate: (el: HTMLElement, keyframes: unknown, opts?: unknown) => void;
-    }).animate;
-
-    let currentY = 0;
-    let sheetHeight = 0;
-
-    const measureSheet = () => {
-      sheetHeight = panel.offsetHeight;
-    };
 
     // Clean up any previous gesture handler (e.g. from a re-render)
     this.gestureDestroyer?.destroy();
 
-    // Gesture(target, handlers, config):
-    //   handlers = { onDragStart, onDrag, onDragEnd } — parseMergedHandlers
-    //   wraps these into a single fn that the Engine calls as this.handler(state)
-    //   config = { drag: { axis, filterTaps, pointer } } — nested under 'drag'
-    const gesture = Gesture(panel, {
-      onDragStart: () => {
-        measureSheet();
-        panel.style.transition = 'none';
-        panel.style.willChange = 'transform';
-      },
-      onDrag: (state: { movement: [number, number] }) => {
-        const my = state.movement[1];
-        currentY = Math.max(0, my);
-        panel.style.transform = `translateY(${currentY}px)`;
-        const overlay = this.root.querySelector<HTMLElement>('.overlay');
-        if (overlay && sheetHeight > 0) {
-          const progress = currentY / sheetHeight;
-          overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
-        }
-      },
-      onDragEnd: (state: { velocity: [number, number] }) => {
-        const velocity = state.velocity;
-        panel.style.willChange = 'auto';
-        panel.style.transition = '';
+    let startY = 0;
+    let currentY = 0;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocity = 0;
+    let sheetHeight = 0;
+    let dragging = false;
+    let rafId = 0;
 
-        const shouldClose = velocity[1] > 0.5 || currentY > sheetHeight * 0.4;
+    const onPointerDown = (e: PointerEvent) => {
+      // Only respond to primary button (touch or left-click)
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      dragging = true;
+      startY = e.clientY;
+      lastY = e.clientY;
+      lastTime = performance.now();
+      velocity = 0;
+      sheetHeight = panel.offsetHeight;
+      panel.style.transition = 'none';
+      panel.style.willChange = 'transform';
+      panel.setPointerCapture(e.pointerId);
+      cancelAnimationFrame(rafId);
+    };
 
-        if (shouldClose) {
-          animate(
-            panel,
-            { transform: `translateY(${sheetHeight + 100}px)` },
-            { duration: 0.25, easing: 'ease-in' }
-          );
-          const overlay = this.root.querySelector<HTMLElement>('.overlay');
-          if (overlay) {
-            animate(overlay, { opacity: 0 }, { duration: 0.25 });
-          }
-          setTimeout(() => {
-            this.close();
-            panel.style.transform = '';
-            currentY = 0;
-          }, 250);
-        } else {
-          animate(
-            panel,
-            { transform: 'translateY(0px)' },
-            { type: 'spring', stiffness: 300, damping: 30 }
-          );
-          const overlay = this.root.querySelector<HTMLElement>('.overlay');
-          if (overlay) {
-            animate(overlay, { opacity: 1 }, { type: 'spring', stiffness: 300, damping: 30 });
-          }
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const dy = e.clientY - startY;
+      currentY = Math.max(0, dy);
+      panel.style.transform = `translate3d(0, ${currentY}px, 0)`;
+
+      // Fade the overlay as the sheet moves down
+      const overlay = this.root.querySelector<HTMLElement>('.overlay');
+      if (overlay && sheetHeight > 0) {
+        const progress = currentY / sheetHeight;
+        overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
+      }
+
+      // Track velocity (px/ms)
+      const now = performance.now();
+      const dt = now - lastTime;
+      if (dt > 0) {
+        velocity = (e.clientY - lastY) / dt;
+        lastY = e.clientY;
+        lastTime = now;
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!dragging) return;
+      dragging = false;
+      panel.releasePointerCapture(e.pointerId);
+      panel.style.willChange = 'auto';
+
+      const shouldClose = Math.abs(velocity) > 0.5 || currentY > sheetHeight * 0.4;
+
+      if (shouldClose) {
+        // Animate to closed position
+        this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
+          this.close();
+          panel.style.transform = '';
           currentY = 0;
+        });
+        const overlay = this.root.querySelector<HTMLElement>('.overlay');
+        if (overlay) {
+          this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity), 0, 0, 0.25, () => {
+            overlay.style.opacity = '';
+          }, 'opacity');
         }
-      },
-    }, {
-      drag: {
-        axis: 'y',
-        filterTaps: true,
-        pointer: { capture: true },
-      },
-    });
+      } else {
+        // Spring back to open position
+        this.springTo(panel, currentY, 0, velocity, 0.3, () => {
+          panel.style.transform = '';
+          currentY = 0;
+        });
+        const overlay = this.root.querySelector<HTMLElement>('.overlay');
+        if (overlay) {
+          this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity) || 0, 1, 0, 0.3, () => {
+            overlay.style.opacity = '';
+          }, 'opacity');
+        }
+      }
+    };
 
-    this.gestureDestroyer = gesture;
+    panel.addEventListener('pointerdown', onPointerDown);
+    panel.addEventListener('pointermove', onPointerMove);
+    panel.addEventListener('pointerup', onPointerUp);
+    panel.addEventListener('pointercancel', onPointerUp);
+
+    this.gestureDestroyer = {
+      destroy: () => {
+        cancelAnimationFrame(rafId);
+        panel.removeEventListener('pointerdown', onPointerDown);
+        panel.removeEventListener('pointermove', onPointerMove);
+        panel.removeEventListener('pointerup', onPointerUp);
+        panel.removeEventListener('pointercancel', onPointerUp);
+      },
+    };
+  }
+
+  /**
+   * Custom spring animation engine — zero dependencies.
+   * Uses requestAnimationFrame for smooth 60fps animation.
+   *
+   * @param el Element to animate
+   * @param from Starting value
+   * @param to Target value
+   * @param velocity Initial velocity (px/ms)
+   * @param duration Approximate duration in seconds (used to compute stiffness)
+   * @param onComplete Callback when animation finishes
+   * @param property CSS property to animate ('transform' uses translateY, others set directly)
+   */
+  private springTo(
+    el: HTMLElement,
+    from: number,
+    to: number,
+    velocity: number,
+    duration: number,
+    onComplete: () => void,
+    property: 'transform' | 'opacity' = 'transform',
+  ) {
+    // Spring constants — tuned for iOS-like feel
+    const stiffness = 0.12; // How strongly it pulls toward target
+    const damping = 0.82;   // How quickly it stops oscillating
+    const epsilon = 0.1;    // Stop threshold
+
+    let current = from;
+    let vel = velocity * 16; // Convert px/ms to px/frame (approx 16ms/frame)
+
+    const animate = () => {
+      const force = (to - current) * stiffness;
+      vel += force;
+      vel *= damping;
+      current += vel;
+
+      if (property === 'transform') {
+        el.style.transform = `translate3d(0, ${current}px, 0)`;
+      } else {
+        el.style.opacity = String(Math.max(0, Math.min(1, current)));
+      }
+
+      if (Math.abs(vel) > epsilon || Math.abs(to - current) > epsilon) {
+        requestAnimationFrame(animate);
+      } else {
+        // Snap to final value
+        if (property === 'transform') {
+          el.style.transform = `translate3d(0, ${to}px, 0)`;
+        } else {
+          el.style.opacity = String(to);
+        }
+        onComplete();
+      }
+    };
+
+    requestAnimationFrame(animate);
   }
 
   private wireEvents(effectiveMode: EffectiveMode) {
