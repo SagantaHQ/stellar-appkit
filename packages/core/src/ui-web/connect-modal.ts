@@ -73,6 +73,9 @@ export class SagantaAppKitModal extends ModalBase {
   private cachedStyles: string | null = null;
   /** Cached theme hash — if the theme hasn't changed, we reuse cachedStyles. */
   private cachedThemeKey: string = '';
+  /** Set of image URLs that have been preloaded into the browser cache.
+      Prevents flash-of-empty-image when the modal first renders. */
+  private preloadedImages: Set<string> = new Set();
 
   constructor() {
     super();
@@ -169,6 +172,69 @@ export class SagantaAppKitModal extends ModalBase {
     // clicks "Connect wallet", the reachability data is already cached
     // and the modal opens instantly with the full wallet list.
     void this.refreshWalletList();
+    // Preload all wallet icons into the browser cache so they don't flash
+    // when the modal first renders. Both the bundled data-URI icons (which
+    // are instant since they're inline) and the remote URL icons (which
+    // need a network fetch) are preloaded.
+    this.preloadWalletIcons();
+    // If there's a connected session, preload its avatar too.
+    if (client.session) {
+      this.preloadImage(stellarExpertAvatarUrl(client.session.address));
+    }
+  }
+
+  /**
+   * Preloads all registered wallet icons into the browser's image cache.
+   * Uses new Image() to trigger the fetch without rendering — the browser
+   * caches the decoded image so when the modal renders <img> tags, they
+   * appear instantly without a flash of empty space.
+   *
+   * Handles both:
+   * - Bundled data-URI icons (getWalletIconDataUri) — instant, but we
+   *   preload anyway for consistency
+   * - Remote URL icons (connector.meta.icon) — these are the ones that
+   *   actually flash without preloading
+   */
+  private preloadWalletIcons(): void {
+    if (!this._client) return;
+    for (const connector of this._client.registry.list()) {
+      // Try the bundled data-URI icon first (instant, no network)
+      const dataUri = getWalletIconDataUri(connector.id);
+      if (dataUri) {
+        this.preloadImage(dataUri);
+      }
+      // Also preload the remote URL icon (may be different from the data URI)
+      if (connector.meta.icon && connector.meta.icon !== dataUri) {
+        this.preloadImage(connector.meta.icon);
+      }
+    }
+    // Also preload the app logo if set
+    const logoSrc = this.getAttribute('logo-src');
+    if (logoSrc) {
+      this.preloadImage(logoSrc);
+    }
+  }
+
+  /**
+   * Preloads a single image URL into the browser cache.
+   * Creates an Image() object, sets its src, and discards it — the
+   * browser caches the decoded image data. Subsequent <img> tags with
+   * the same src will render instantly from cache.
+   *
+   * Skips data: URIs that are already inline (they don't need preloading,
+   * but we do it anyway for consistency — it's a no-op for the browser).
+   */
+  private preloadImage(url: string): void {
+    if (!url || this.preloadedImages.has(url)) return;
+    if (typeof Image === 'undefined') return; // SSR guard
+    this.preloadedImages.add(url);
+    try {
+      const img = new Image();
+      img.src = url;
+    } catch {
+      // Silently ignore — if preloading fails, the <img onerror> handler
+      // in the rendered HTML will fall back to the data-URI icon.
+    }
   }
 
   get client(): StellarAppKit | null {
@@ -499,6 +565,7 @@ export class SagantaAppKitModal extends ModalBase {
       const walletAvatar = await fetchWalletAvatar(connector);
       if (walletAvatar) {
         this.avatarCache.set(cacheKey, walletAvatar);
+        this.preloadImage(walletAvatar);
         return walletAvatar;
       }
     }
@@ -507,6 +574,7 @@ export class SagantaAppKitModal extends ModalBase {
     if (this.getAttribute('stellar-expert-avatars') === 'true') {
       const url = stellarExpertAvatarUrl(address);
       this.avatarCache.set(cacheKey, url);
+      this.preloadImage(url);
       return url;
     }
 
