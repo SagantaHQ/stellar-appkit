@@ -343,6 +343,7 @@ A React app never ships Vue/Svelte/Solid code.
 
 - [GitHub](https://github.com/SagantaHQ/stellar-appkit)
 - [Documentation](https://stellar-appkit.saganta.com)
+- [Live Demos](https://demos.stellar-appkit.saganta.com)
 - [npm: @saganta/stellar-appkit](https://www.npmjs.com/package/@saganta/stellar-appkit)
 - [npm: @saganta/stellar-appkit-siws-verify](https://www.npmjs.com/package/@saganta/stellar-appkit-siws-verify)
 - [License: MIT](https://github.com/SagantaHQ/stellar-appkit/blob/main/LICENSE)

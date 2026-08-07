@@ -362,4 +362,5 @@ saganta-appkit-modal {
 
 - [GitHub](https://github.com/SagantaHQ/stellar-appkit)
 - [Documentation](https://stellar-appkit.saganta.com)
+- [Live Demos](https://demos.stellar-appkit.saganta.com)
 - [npm](https://www.npmjs.com/package/@saganta/stellar-appkit)

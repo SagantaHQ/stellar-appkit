@@ -76,7 +76,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 | [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath, plus framework wrappers at `/react`, `/vue`, `/solid`, `/svelte` — all separate entry points, so importing only the core client never pulls in UI or framework code. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 
-See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap. Full documentation is at **[docs.saganta.com](https://docs.saganta.com)**.
+See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap. Full documentation is at **[stellar-appkit.saganta.com](https://stellar-appkit.saganta.com)**. Live demos are at **[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)**.
 
 ---
 
@@ -706,6 +706,12 @@ Fires standard `CustomEvent`s (`sc-connect`, `sc-disconnect`, `sc-error`) mirror
 ---
 
 ## Demo
+
+### Live demos
+
+**[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** — 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route you can copy into your own app. Built with Next.js 15 + OpenNext for Cloudflare.
+
+### Local demo
 
 `examples/web-demo.html` loads the built packages directly as native ES modules — no bundler, no framework required to try it.
 

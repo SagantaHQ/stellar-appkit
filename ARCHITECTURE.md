@@ -591,6 +591,10 @@ The documentation site at [stellar-appkit.saganta.com](https://stellar-appkit.sa
 
 These are maintained in the [docs repo](https://github.com/SagantaHQ/stellar-appkit-docs), separately from the library's own `SKILL.md` and `llms.txt`.
 
+### Live demos site
+
+The demos site at [demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com) hosts 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route in the [demos repo](https://github.com/SagantaHQ/stellar-appkit-demos), built with Next.js 15 + OpenNext for Cloudflare Workers.
+
 ---
 
 ## 9. Phased roadmap
