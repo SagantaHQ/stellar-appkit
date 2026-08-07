@@ -19,7 +19,7 @@ type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' |
 const MOBILE_BREAKPOINT_PX = 640;
 
 /**
- * `<saganta-appkit-modal>` — the single UI entry point. Attach a
+ * `<stellar-appkit-modal>` — the single UI entry point. Attach a
  * `StellarAppKit` instance via the `.client` property (not an attribute —
  * it isn't serializable), then call `.open()`. Presentation mode, theme,
  * and branding are all set via attributes so they can be authored in
@@ -774,7 +774,7 @@ export class SagantaAppKitModal extends ModalBase {
         ${effectiveMode === 'bottomsheet' ? '<div class="drag-handle"></div>' : ''}
         ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
-        <div class="footer">Powered by <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
+        <div class="footer">Powered by <a href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
       </div>
     `;
   }
@@ -1717,7 +1717,7 @@ function escapeAttr(input: string): string {
 // The `typeof` check prevents ReferenceError on `HTMLElement` which is
 // undefined in Node.js.
 if (typeof HTMLElement !== 'undefined' && typeof customElements !== 'undefined') {
-  if (!customElements.get('saganta-appkit-modal')) {
-    customElements.define('saganta-appkit-modal', SagantaAppKitModal);
+  if (!customElements.get('stellar-appkit-modal')) {
+    customElements.define('stellar-appkit-modal', SagantaAppKitModal);
   }
 }

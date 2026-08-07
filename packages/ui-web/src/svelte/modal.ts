@@ -1,8 +1,8 @@
 /**
- * Svelte wrapper for the `<saganta-appkit-modal>` Web Component.
+ * Svelte wrapper for the `<stellar-appkit-modal>` Web Component.
  *
  * Why this exists: the underlying modal is a Web Component, which Svelte
- * can render directly (`<saganta-appkit-modal>` renders as-is in Svelte
+ * can render directly (`<stellar-appkit-modal>` renders as-is in Svelte
  * templates since the tag contains a hyphen). But to get typed props,
  * automatic `client` assignment, and event forwarding, we provide a
  * Svelte **action** (`use:stellarmodal`) plus a typed wrapper.
@@ -17,7 +17,7 @@
  *   let modal: { open: () => void; close: () => void };
  * </script>
  *
- * <saganta-appkit-modal
+ * <stellar-appkit-modal
  *   use:stellarmodal
  *   bind:this={modal}
  *   mode="auto"
@@ -44,7 +44,7 @@
  *   $: if (modalEl) modalEl.client = getAppKit();
  * </script>
  *
- * <saganta-appkit-modal bind:this={modalEl} mode="auto" />
+ * <stellar-appkit-modal bind:this={modalEl} mode="auto" />
  * ```
  *
  * The action approach is cleaner — let the library handle the wiring.
@@ -72,27 +72,27 @@ import type {
 // crash server-side rendering.
 //
 // Consumers must import `@saganta/stellar-appkit/ui-web` once at their
-// app entry point to register the `<saganta-appkit-modal>` custom element:
+// app entry point to register the `<stellar-appkit-modal>` custom element:
 //
 //   import '@saganta/stellar-appkit/ui-web';
 
 export type { StellarAppKitModalProps, StellarAppKitModalHandle, StellarAppKitModalEvents };
 
 /**
- * Svelte action that wires up the `<saganta-appkit-modal>` Web Component
+ * Svelte action that wires up the `<stellar-appkit-modal>` Web Component
  * to the `StellarAppKit` client from the module-level singleton.
  *
  * Use it like:
  *
  * ```svelte
- * <saganta-appkit-modal use:stellarmodal mode="auto" />
+ * <stellar-appkit-modal use:stellarmodal mode="auto" />
  * ```
  *
  * The action reads the client from `getAppKit()` (set via
  * `setStellarAppKitContext()`). If no client has been set, the action
  * throws — set the context before the modal mounts.
  *
- * @param node The `<saganta-appkit-modal>` DOM element.
+ * @param node The `<stellar-appkit-modal>` DOM element.
  * @returns An action object with a `destroy()` method that nulls the client.
  */
 export function stellarmodal(node: HTMLElement): {
@@ -114,7 +114,7 @@ export function stellarmodal(node: HTMLElement): {
 }
 
 /**
- * Imperative helper — opens a `<saganta-appkit-modal>` element by reference.
+ * Imperative helper — opens a `<stellar-appkit-modal>` element by reference.
  * Useful when you store the element via `bind:this` and want a typed open()
  * method.
  *
@@ -125,7 +125,7 @@ export function stellarmodal(node: HTMLElement): {
  *   let modalEl: HTMLElement;
  * </script>
  *
- * <saganta-appkit-modal use:stellarmodal bind:this={modalEl} />
+ * <stellar-appkit-modal use:stellarmodal bind:this={modalEl} />
  * <button on:click={() => openModal(modalEl)}>Connect</button>
  * ```
  */
@@ -134,14 +134,14 @@ export async function openModal(node: HTMLElement): Promise<void> {
 }
 
 /**
- * Imperative helper — closes a `<saganta-appkit-modal>` element by reference.
+ * Imperative helper — closes a `<stellar-appkit-modal>` element by reference.
  */
 export function closeModal(node: HTMLElement): void {
   (node as unknown as { close?: () => void })?.close?.();
 }
 
 /**
- * Type guard — checks whether a DOM element is a `<saganta-appkit-modal>`.
+ * Type guard — checks whether a DOM element is a `<stellar-appkit-modal>`.
  * Useful for narrowing in event handlers.
  */
 export function isStellarAppKitModal(node: unknown): node is HTMLElement & {

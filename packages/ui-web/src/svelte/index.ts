@@ -18,7 +18,7 @@
  *    slice of the client's event emitter and updates on change.
  *
  * 3. `use:stellarmodal` action + `openModal()` / `closeModal()` helpers —
- *    wrap the underlying `<saganta-appkit-modal>` Web Component. The
+ *    wrap the underlying `<stellar-appkit-modal>` Web Component. The
  *    action wires up the `client` automatically; events are forwarded as
  *    standard `on:sc-connect`, `on:sc-disconnect`, `on:sc-error` Svelte
  *    event listeners on the host element. Re-exported from `./modal.ts`.

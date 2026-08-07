@@ -4,7 +4,7 @@
  * API surface is identical across wrappers — only the implementation language
  * differs.
  *
- * These props mirror the underlying `<saganta-appkit-modal>` Web Component's
+ * These props mirror the underlying `<stellar-appkit-modal>` Web Component's
  * observed attributes (`mode`, `theme`, `branding`, `logo-src`, `title`,
  * `auto-retry-network`, `stellar-expert-avatars`) and its `client` property.
  *
@@ -36,7 +36,7 @@ export type ModalBranding = 'default' | 'minimal' | 'hidden';
  * Shared prop shape for all four framework modal components.
  *
  * Every prop here maps directly to an attribute or property on the underlying
- * `<saganta-appkit-modal>` element, so refer to the Web Component's docs for
+ * `<stellar-appkit-modal>` element, so refer to the Web Component's docs for
  * behavior details.
  */
 export interface StellarAppKitModalProps {

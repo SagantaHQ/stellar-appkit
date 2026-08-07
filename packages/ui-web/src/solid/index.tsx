@@ -16,7 +16,7 @@
  *    reactive accessors (Solid's `() => T` pattern).
  *
  * 3. `<StellarAppKitModal>` — a Solid component wrapping the underlying
- *    `<saganta-appkit-modal>` Web Component with typed props, event
+ *    `<stellar-appkit-modal>` Web Component with typed props, event
  *    handlers, and an imperative `ref` handle. Re-exported from
  *    `./modal.tsx` so consumers can do `import { StellarAppKitModal }`
  *    from the same subpath.

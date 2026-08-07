@@ -98,7 +98,7 @@
       <a href="./demo.html">Demo</a>
     </nav>
     <div class="site-header-actions">
-      <a class="btn btn-sm" href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-sm" href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </header>
@@ -149,7 +149,7 @@ npm install @ledgerhq/hw-app-str \
   createAlbedoConnector,
   createXBullConnector,
 } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
-<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
+<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;stellar-appkit-modal&gt;</span>
 
 <span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
   network: <span class="str">'PUBLIC'</span>,
@@ -157,13 +157,13 @@ npm install @ledgerhq/hw-app-str \
   appMetadata: { name: <span class="str">'My App'</span>, domain: <span class="str">'app.example.com'</span>, uri: <span class="str">'https://app.example.com'</span> },
 });
 
-<span class="kw">const</span> modal = document.querySelector(<span class="str">'saganta-appkit-modal'</span>);
+<span class="kw">const</span> modal = document.querySelector(<span class="str">'stellar-appkit-modal'</span>);
 modal.client = appkit; <span class="cm">// wires up the UI — preview, account switcher, everything</span>
 
 document.getElementById(<span class="str">'connect-button'</span>).addEventListener(<span class="str">'click'</span>, () =&gt; modal.open());
 
 <span class="kw">await</span> appkit.restore(); <span class="cm">// resume a persisted session on page load, if any</span></pre>
-      <pre class="code-block">&lt;saganta-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/saganta-appkit-modal&gt;</pre>
+      <pre class="code-block">&lt;stellar-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/stellar-appkit-modal&gt;</pre>
 
       <h2 id="wallets">Wallets supported</h2>
       <table class="docs-table">
@@ -205,7 +205,7 @@ appkit.session;                          <span class="cm">// the active one</spa
       <p>Sessions persist across browser tabs automatically via <code>BroadcastChannel</code> where available. Disable with <code>syncAcrossTabs: false</code> in the config.</p>
 
       <h2 id="preview">Signing, transaction preview, and risk flags</h2>
-      <p>Every <code>signTransaction()</code> call is decoded and shown to the user before the wallet's own signature prompt. Attaching <code>&lt;saganta-appkit-modal&gt;</code> wires this up automatically.</p>
+      <p>Every <code>signTransaction()</code> call is decoded and shown to the user before the wallet's own signature prompt. Attaching <code>&lt;stellar-appkit-modal&gt;</code> wires this up automatically.</p>
       <pre class="code-block"><span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
   network: <span class="str">'PUBLIC'</span>,
   connectors: [createFreighterConnector()],
@@ -254,13 +254,13 @@ appkit.onPreviewTransaction = <span class="kw">async</span> (preview) =&gt; {
 <span class="kw">if</span> (result.ok) { <span class="cm">/* result.claims.address is verified */</span> }</pre>
 
       <h2 id="theming">Theming</h2>
-      <pre class="code-block">&lt;saganta-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/saganta-appkit-modal&gt;
+      <pre class="code-block">&lt;stellar-appkit-modal mode=<span class="str">"auto"</span> theme=<span class="str">"dark"</span> title=<span class="str">"Connect a wallet"</span>&gt;&lt;/stellar-appkit-modal&gt;
 &lt;style&gt;
   <span class="cm">/* Overrides any token from the host page's own stylesheet — no JS needed. */</span>
-  saganta-appkit-modal { --sak-color-accent: #d4537e; }
+  stellar-appkit-modal { --sak-color-accent: #d4537e; }
 &lt;/style&gt;</pre>
 
-      <h2 id="element">The &lt;saganta-appkit-modal&gt; element</h2>
+      <h2 id="element">The &lt;stellar-appkit-modal&gt; element</h2>
       <table class="docs-table">
         <tr><th>Attribute</th><th>Values</th><th>Default</th></tr>
         <tr><td><code>mode</code></td><td>auto / modal / bottom-sheet / inline</td><td>auto</td></tr>
@@ -294,7 +294,7 @@ appkit.onPreviewTransaction = <span class="kw">async</span> (preview) =&gt; {
         <li>Ledger Soroban auth-entry signing</li>
         <li>Smart-account/passkey signer as a native connector, gas-sponsorship hook in the Soroban invoke pipeline</li>
       </ol>
-      <div class="callout">Full design rationale, positioning against prior art, and phase-by-phase detail live in <a class="inline-link" href="https://github.com/SagantaHQ/stellar-appkit/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a> in the repo.</div>
+      <div class="callout">Full design rationale, positioning against prior art, and phase-by-phase detail live in <a class="inline-link" href="https://github.com/sagantaHQ/stellar-appkit/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a> in the repo.</div>
     </div>
   </div>
 </div>
@@ -305,7 +305,7 @@ appkit.onPreviewTransaction = <span class="kw">async</span> (preview) =&gt; {
     <nav>
       <a href="./index.html">Overview</a>
       <a href="./demo.html">Demo</a>
-      <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
     </nav>
     <span class="fine">GPL-3.0-or-later licensed (see LICENSE)</span>
   </div>

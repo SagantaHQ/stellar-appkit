@@ -216,7 +216,7 @@ describe('Svelte wrapper — use:stellarmodal action', () => {
     action.destroy();
   });
 
-  test('isStellarAppKitModal returns true for a saganta-appkit-modal tag', async () => {
+  test('isStellarAppKitModal returns true for a stellar-appkit-modal tag', async () => {
     const { isStellarAppKitModal } = await import('../src/svelte/index.js');
     const fakeModal = {
       tagName: 'SAGANTA-APPKIT-MODAL',

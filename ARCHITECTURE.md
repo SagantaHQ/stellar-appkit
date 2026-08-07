@@ -157,7 +157,7 @@ Viewport detection (not UA sniffing) picks `modal` vs `bottom-sheet` automatical
 Every visual value is a design token, exposed as CSS custom properties on web and a `Theme` object on RN, so a host app can restyle the whole thing without forking it:
 
 ```css
-saganta-appkit-modal {
+stellar-appkit-modal {
   --sak-color-bg: #0B0D0E;
   --sak-color-surface: #14171A;
   --sak-color-border: rgba(255,255,255,0.08);
@@ -296,7 +296,7 @@ The preview layer is the actual differentiator over passing raw XDR through to a
 - `broad-auth-grant` (warning) — auto-flagged when an auth tree spans >1 contract or >3 invocations
 - `fee-bump` (info), `unrecognized-operation` (info)
 
-The preview is wired into `signTransaction()` via the `onPreviewTransaction` hook (set automatically when `<saganta-appkit-modal>` is attached, or assignable directly for non-UI flows). Returning `false` cancels the request before the wallet ever sees it, surfacing as a normal user-rejected error.
+The preview is wired into `signTransaction()` via the `onPreviewTransaction` hook (set automatically when `<stellar-appkit-modal>` is attached, or assignable directly for non-UI flows). Returning `false` cancels the request before the wallet ever sees it, surfacing as a normal user-rejected error.
 
 **2. `decodeSimulationDeltas(simulation)`** — extracts human-readable `BalanceDelta[]` from a Soroban `simulateTransaction` success response's `stateChanges` array. Each delta describes what changed for one ledger entry: account balances (XLM), trustline balances (assets), contract storage, offers, data entries, claimable balances, liquidity pools. For balance updates, the delta includes the before → after transition and the signed difference, e.g. `"XLM balance GA...: 1000 → 900 (−100)"`. This is the network's own authoritative statement of what would change — far more reliable than the previous approach of decoding intended amounts from call args.
 
@@ -371,24 +371,24 @@ The hook surface is synthesized from the official Stellar docs ([dapp-frontend t
 
 1. **Context provider instead of module-level singleton** — the official `soroban-example-dapp` uses a module-level `addressLookup` cache. We use a Context provider (React/Solid) / provide-inject (Vue) / module singleton (Svelte) so the client lifecycle is owned by the app root, not the import graph. This makes testing easier (inject a mock client) and supports multiple StellarAppKit instances in one app (rare but legitimate — e.g. a Testnet playground alongside a Mainnet dashboard).
 
-2. **`usePreviewTransaction` / `usePreviewAuthEntry` are first-class hooks** — the official examples don't have a preview flow. Ours surfaces the `onPreviewTransaction` / `onPreviewAuthEntry` payloads reactively, with a `respond(approve: boolean)` callback that resolves the pending preview. This lets apps build their own preview UI (instead of using `<saganta-appkit-modal>`) while still going through the same risk-flag pipeline.
+2. **`usePreviewTransaction` / `usePreviewAuthEntry` are first-class hooks** — the official examples don't have a preview flow. Ours surfaces the `onPreviewTransaction` / `onPreviewAuthEntry` payloads reactively, with a `respond(approve: boolean)` callback that resolves the pending preview. This lets apps build their own preview UI (instead of using `<stellar-appkit-modal>`) while still going through the same risk-flag pipeline.
 
 ### Framework-native modal components
 
-In addition to the hooks, each wrapper ships a typed component wrapping the underlying `<saganta-appkit-modal>` Web Component. The component handles client assignment (from the same context as the hooks), prop-to-attribute forwarding, and event listening — so consumers don't have to manage refs and CustomEvents by hand.
+In addition to the hooks, each wrapper ships a typed component wrapping the underlying `<stellar-appkit-modal>` Web Component. The component handles client assignment (from the same context as the hooks), prop-to-attribute forwarding, and event listening — so consumers don't have to manage refs and CustomEvents by hand.
 
 | Wrapper | File | Component | Pattern |
 |---|---|---|---|
 | React | `src/react/modal.tsx` | `<StellarAppKitModal>` | `forwardRef` component with `useImperativeHandle` exposing `open()` / `close()` / `element` |
 | Vue | `src/vue/modal.ts` | `<StellarAppKitModal>` | `defineComponent` with `expose()` for the imperative handle; emits `connect` / `disconnect` / `error` |
 | Solid | `src/solid/modal.tsx` | `<StellarAppKitModal>` | `Component` with a `ref` callback prop yielding the imperative handle |
-| Svelte | `src/svelte/modal.ts` | `use:stellarmodal` action | Svelte action on the raw `<saganta-appkit-modal>` element — the idiomatic Svelte pattern for wrapping Web Components |
+| Svelte | `src/svelte/modal.ts` | `use:stellarmodal` action | Svelte action on the raw `<stellar-appkit-modal>` element — the idiomatic Svelte pattern for wrapping Web Components |
 
 **Shared prop types** live in `src/ui-web/modal-props.ts` and are re-exported by each wrapper. The `propsToAttributes()` helper translates camelCase props to the kebab-case attributes the Web Component expects.
 
-**SSR safety contract:** the framework modal components deliberately do NOT import `connect-modal.ts` (the Web Component class). That class `extends HTMLElement`, which is undefined in pure-Node SSR/test contexts — importing it at module top-level would crash server-side rendering. Instead, consumers `import '@saganta/stellar-appkit/ui-web'` once at their app entry point to register the `<saganta-appkit-modal>` custom element. This keeps the framework wrappers fully SSR-safe and lets bundlers tree-shake the Web Component code out of server bundles. The 18 new modal-component tests verify this contract by importing each wrapper in a DOM-less bun:test environment — if any wrapper accidentally pulled in `connect-modal.ts`, the test would crash with `HTMLElement is not defined`.
+**SSR safety contract:** the framework modal components deliberately do NOT import `connect-modal.ts` (the Web Component class). That class `extends HTMLElement`, which is undefined in pure-Node SSR/test contexts — importing it at module top-level would crash server-side rendering. Instead, consumers `import '@saganta/stellar-appkit/ui-web'` once at their app entry point to register the `<stellar-appkit-modal>` custom element. This keeps the framework wrappers fully SSR-safe and lets bundlers tree-shake the Web Component code out of server bundles. The 18 new modal-component tests verify this contract by importing each wrapper in a DOM-less bun:test environment — if any wrapper accidentally pulled in `connect-modal.ts`, the test would crash with `HTMLElement is not defined`.
 
-**Why a Svelte action instead of a component:** Svelte renders unknown lowercase tags (like `<saganta-appkit-modal>`) as-is in templates, so wrapping it in a Svelte component would just add an extra layer of indirection without buying anything. Svelte actions (`use:stellarmodal`) are the idiomatic pattern for enhancing a DOM node — they're plain TS functions that take the node and return a destroy callback. This keeps the wrapper zero-runtime-overhead and avoids needing a Svelte compiler step in the build (the rest of the wrapper is plain TS).
+**Why a Svelte action instead of a component:** Svelte renders unknown lowercase tags (like `<stellar-appkit-modal>`) as-is in templates, so wrapping it in a Svelte component would just add an extra layer of indirection without buying anything. Svelte actions (`use:stellarmodal`) are the idiomatic pattern for enhancing a DOM node — they're plain TS functions that take the node and return a destroy callback. This keeps the wrapper zero-runtime-overhead and avoids needing a Svelte compiler step in the build (the rest of the wrapper is plain TS).
 
 ### Dependency strategy — bundled vs. peer
 
@@ -504,7 +504,7 @@ The `WalletConnector` interface now has an optional `getAvatar?()` method. Conne
 
 When no avatar is available (the wallet doesn't implement `getAvatar`, or it returns null), the modal falls back to a **deterministic gradient** generated from the address — same address always produces the same gradient, so users see a consistent visual identity across sessions. The gradient uses two hues derived from the address's bytes (after the version-byte prefix, for more visual variety).
 
-Opt-in **Stellar Expert avatars** via the `stellar-expert-avatars="true"` attribute on `<saganta-appkit-modal>`. This fetches a generated PNG from `api.stellar.expert/explorer/public/account/{address}/avatar` — a public third-party service. The `<img>` `onerror` handler falls back to the gradient if the service is down or the account has no avatar. Off by default because it's a third-party request.
+Opt-in **Stellar Expert avatars** via the `stellar-expert-avatars="true"` attribute on `<stellar-appkit-modal>`. This fetches a generated PNG from `api.stellar.expert/explorer/public/account/{address}/avatar` — a public third-party service. The `<img>` `onerror` handler falls back to the gradient if the service is down or the account has no avatar. Off by default because it's a third-party request.
 
 Priority: wallet-provided avatar → Stellar Expert (if enabled) → generated gradient.
 
@@ -694,11 +694,11 @@ The documentation site at [stellar-appkit.saganta.com](https://stellar-appkit.sa
 - `https://stellar-appkit.saganta.com/llms-full.txt` — the full docs content concatenated into a single file (~160 lines), so an agent can read the entire docs in one fetch
 - `https://stellar-appkit.saganta.com/reference/ai-integration/` — a human-readable docs page explaining both files and the recommended agent workflow
 
-These are maintained in the [docs repo](https://github.com/SagantaHQ/stellar-appkit-docs), separately from the library's own `SKILL.md` and `llms.txt`.
+These are maintained in the [docs repo](https://github.com/sagantaHQ/stellar-appkit-docs), separately from the library's own `SKILL.md` and `llms.txt`.
 
 ### Live demos site
 
-The demos site at [demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com) hosts 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route in the [demos repo](https://github.com/SagantaHQ/stellar-appkit-demos), built with Next.js 15 + OpenNext for Cloudflare Workers.
+The demos site at [demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com) hosts 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route in the [demos repo](https://github.com/sagantaHQ/stellar-appkit-demos), built with Next.js 15 + OpenNext for Cloudflare Workers.
 
 ---
 

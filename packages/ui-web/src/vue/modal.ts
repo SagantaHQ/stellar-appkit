@@ -1,5 +1,5 @@
 /**
- * Vue 3 component wrapper for the `<saganta-appkit-modal>` Web Component.
+ * Vue 3 component wrapper for the `<stellar-appkit-modal>` Web Component.
  *
  * Why this exists: the underlying modal is a Web Component, which Vue can
  * render via the `v-is` syntax or as a custom element (configured in the
@@ -31,7 +31,7 @@
  * The modal reads its `client` from the same `APPKIT_INJECTION_KEY` as the
  * composables — so it stays in sync with `provideStellarAppKit()` or
  * `app.use(StellarAppKitPlugin, ...)`. If you want to use it without a
- * provider, use the raw `<saganta-appkit-modal>` element and set
+ * provider, use the raw `<stellar-appkit-modal>` element and set
  * `element.client = appkit` directly.
  *
  * The underlying Web Component is imported as a side-effect of importing
@@ -63,14 +63,14 @@ import type { ConnectSession, ConnectError } from '@saganta/stellar-appkit';
 // crash server-side rendering.
 //
 // Consumers must import `@saganta/stellar-appkit/ui-web` once at their
-// app entry point to register the `<saganta-appkit-modal>` custom element:
+// app entry point to register the `<stellar-appkit-modal>` custom element:
 //
 //   import '@saganta/stellar-appkit/ui-web';
 
 export type { StellarAppKitModalProps, StellarAppKitModalHandle, StellarAppKitModalEvents };
 
 /**
- * Vue component wrapping `<saganta-appkit-modal>`.
+ * Vue component wrapping `<stellar-appkit-modal>`.
  *
  * All props are reactive — changes propagate to the underlying Web Component
  * via attribute updates. Events (`sc-connect`, `sc-disconnect`, `sc-error`)
@@ -99,7 +99,7 @@ export const StellarAppKitModal = defineComponent({
       throw new Error(
         'StellarAppKitModal must be used inside a component tree where provideStellarAppKit() ' +
         'was called, or after app.use(StellarAppKitPlugin, ...). ' +
-        'If you want to use the modal without a provider, use the raw <saganta-appkit-modal> ' +
+        'If you want to use the modal without a provider, use the raw <stellar-appkit-modal> ' +
         'element and set element.client = appkit directly.'
       );
     }
@@ -170,9 +170,9 @@ export const StellarAppKitModal = defineComponent({
     } satisfies StellarAppKitModalHandle);
 
     // Render the underlying Web Component. Vue renders unknown tags as-is
-    // when they contain a hyphen, which `saganta-appkit-modal` does.
+    // when they contain a hyphen, which `stellar-appkit-modal` does.
     return () =>
-      h('saganta-appkit-modal', {
+      h('stellar-appkit-modal', {
         ref: hostRef,
         ...attrs,
       });

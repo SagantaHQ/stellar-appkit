@@ -181,7 +181,7 @@
       <a href="./demo.html">Demo</a>
     </nav>
     <div class="site-header-actions">
-      <a class="btn btn-sm" href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-sm" href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
       <a class="btn btn-sm btn-primary" href="./docs.html#quick-start">Get started</a>
     </div>
   </div>
@@ -315,7 +315,7 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
   createFreighterConnector,
   createAlbedoConnector,
 } <span class="kw">from</span> <span class="str">'@saganta/stellar-appkit'</span>;
-<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;saganta-appkit-modal&gt;</span>
+<span class="kw">import</span> <span class="str">'@saganta/stellar-appkit/ui-web'</span>; <span class="cm">// registers &lt;stellar-appkit-modal&gt;</span>
 
 <span class="kw">const</span> appkit = <span class="kw">new</span> StellarAppKit({
   network: <span class="str">'PUBLIC'</span>,
@@ -323,7 +323,7 @@ NvKh6TmLq2Yc9Wf4Ru8Ez1AoGb7Ds3Xp0Iv</pre>
   appMetadata: { name: <span class="str">'My App'</span>, domain: <span class="str">'app.example.com'</span>, uri: <span class="str">'https://app.example.com'</span> },
 });
 
-<span class="kw">const</span> modal = document.querySelector(<span class="str">'saganta-appkit-modal'</span>);
+<span class="kw">const</span> modal = document.querySelector(<span class="str">'stellar-appkit-modal'</span>);
 modal.client = appkit;
 connectButton.addEventListener(<span class="str">'click'</span>, () =&gt; modal.open());</pre>
       </div>
@@ -343,7 +343,7 @@ connectButton.addEventListener(<span class="str">'click'</span>, () =&gt; modal.
   </section>
 </main>
 
-<saganta-appkit-modal id="modal" mode="auto" theme="dark" title="Connect a wallet"></saganta-appkit-modal>
+<stellar-appkit-modal id="modal" mode="auto" theme="dark" title="Connect a wallet"></stellar-appkit-modal>
 
 <footer class="site-footer">
   <div class="container">
@@ -351,7 +351,7 @@ connectButton.addEventListener(<span class="str">'click'</span>, () =&gt; modal.
     <nav>
       <a href="./docs.html">Docs</a>
       <a href="./demo.html">Demo</a>
-      <a href="https://github.com/SagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener">GitHub</a>
       <a href="https://www.npmjs.com/package/@saganta/stellar-appkit" target="_blank" rel="noopener">npm</a>
     </nav>
     <span class="fine">GPL-3.0-or-later licensed (see LICENSE)</span>

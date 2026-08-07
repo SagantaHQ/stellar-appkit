@@ -14,7 +14,7 @@
  *    and re-renders on the relevant slice of state change.
  *
  * 3. `<StellarAppKitModal>` — a JSX component wrapping the underlying
- *    `<saganta-appkit-modal>` Web Component with typed props, event
+ *    `<stellar-appkit-modal>` Web Component with typed props, event
  *    handlers, and an imperative `ref` handle. Re-exported from
  *    `./modal.tsx` so consumers can do `import { StellarAppKitModal }`
  *    from the same subpath.
@@ -98,7 +98,7 @@ export interface StellarAppKitProviderConfig {
   /** Restore any persisted session on mount. Default: true. */
   restoreOnMount?: boolean;
   /**
-   * Modal UI configuration. Passed through to the `<saganta-appkit-modal>`
+   * Modal UI configuration. Passed through to the `<stellar-appkit-modal>`
    * element when it's attached. Currently only `animation` is supported —
    * set it to override the default open/close transitions.
    */
@@ -547,7 +547,7 @@ export function useSoroban(opts: { rpcUrl: string; networkPassphrase: string }) 
 // ---------------------------------------------------------------------------
 // Preview hooks — surface the onPreviewTransaction / onPreviewAuthEntry
 // payloads reactively, for apps that want to render their own preview UI
-// instead of using the <saganta-appkit-modal> Web Component.
+// instead of using the <stellar-appkit-modal> Web Component.
 // ---------------------------------------------------------------------------
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK (no UI).",
   "type": "module",
   "sideEffects": false,
@@ -35,5 +35,14 @@
     "@ledgerhq/hw-transport-webusb": "^6.35.0",
     "@walletconnect/sign-client": "^2.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://stellar-appkit.saganta.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sagantaHQ/stellar-appkit.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/sagantaHQ/stellar-appkit/issues"
+  }
 }

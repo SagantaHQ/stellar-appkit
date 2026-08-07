@@ -54,7 +54,7 @@ const appkit = new StellarAppKit({
   appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
 });
 
-const modal = document.querySelector('saganta-appkit-modal');
+const modal = document.querySelector('stellar-appkit-modal');
 modal.client = appkit;
 
 connectButton.addEventListener('click', () => modal.open());
@@ -158,7 +158,7 @@ function WalletPanel() {
 
 ### Framework modal components
 
-Each framework wrapper ships a typed component wrapping the `<saganta-appkit-modal>` Web Component. Use it in place of the raw custom element when you want typed props, automatic client wiring, and event forwarding. **Always import `@saganta/stellar-appkit/ui-web` once at your app entry** to register the custom element — the framework wrappers don't import it themselves (keeps them SSR-safe).
+Each framework wrapper ships a typed component wrapping the `<stellar-appkit-modal>` Web Component. Use it in place of the raw custom element when you want typed props, automatic client wiring, and event forwarding. **Always import `@saganta/stellar-appkit/ui-web` once at your app entry** to register the custom element — the framework wrappers don't import it themselves (keeps them SSR-safe).
 
 **React:**
 
@@ -166,7 +166,7 @@ Each framework wrapper ships a typed component wrapping the `<saganta-appkit-mod
 import { useRef } from 'react';
 import { StellarAppKitProvider, StellarAppKitModal, useAppKit } from '@saganta/stellar-appkit-ui-web/react';
 import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit-ui-web/react';
-import '@saganta/stellar-appkit-ui-web'; // registers <saganta-appkit-modal>
+import '@saganta/stellar-appkit-ui-web'; // registers <stellar-appkit-modal>
 
 function App() {
   return (
@@ -223,7 +223,7 @@ function ModalHost() {
 }
 ```
 
-**Svelte** (uses a `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element — most idiomatic for Svelte):
+**Svelte** (uses a `use:stellarmodal` action on the raw `<stellar-appkit-modal>` element — most idiomatic for Svelte):
 
 ```svelte
 <script lang="ts">
@@ -233,7 +233,7 @@ function ModalHost() {
   let modalEl: HTMLElement;
 </script>
 
-<saganta-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
+<stellar-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
                       on:sc-connect={(e) => console.log('connected', e.detail)} />
 <button on:click={() => openModal(modalEl)}>Connect</button>
 ```
@@ -319,8 +319,8 @@ try {
 - Multi-candidate verification (8+ byte sequences tried)
 
 ### Framework modal components
-- `StellarAppKitModal` (React/Solid/Vue) — typed component wrapping `<saganta-appkit-modal>`
-- `stellarmodal` (Svelte) — `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element
+- `StellarAppKitModal` (React/Solid/Vue) — typed component wrapping `<stellar-appkit-modal>`
+- `stellarmodal` (Svelte) — `use:stellarmodal` action on the raw `<stellar-appkit-modal>` element
 - `openModal(node)` / `closeModal(node)` (Svelte) — imperative helpers
 - Props: `mode`, `theme`, `branding`, `logoSrc`, `title`, `autoRetryNetwork`, `stellarExpertAvatars`, `animation`, `animationOpen`, `animationClose`
 - Events: `onConnect` / `onDisconnect` / `onError` (React/Solid), `@connect` / `@disconnect` / `@error` (Vue), `on:sc-connect` / `on:sc-disconnect` / `on:sc-error` (Svelte on raw element)
@@ -343,6 +343,36 @@ All wallet SDKs are bundled as regular dependencies — no manual install needed
 
 `defaultConnectors()` returns `[Freighter, Albedo, xBull, Ledger]` — used automatically when `connectors` is omitted from the `StellarAppKit` config.
 
+### WalletConnect-based wallets (Hana, Lobstr, Hot Wallet)
+
+WalletConnect covers every Stellar wallet that isn't a browser extension — Hana, Lobstr, Hot Wallet, and any mobile wallet. It requires a `projectId` from [WalletConnect Cloud](https://cloud.walletconnect.com/):
+
+```ts
+import {
+  StellarAppKit,
+  createWalletConnectConnector,
+  defaultConnectors,
+} from '@saganta/stellar-appkit';
+import { Networks } from '@stellar/stellar-sdk';
+
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  connectors: [
+    ...defaultConnectors(),
+    createWalletConnectConnector({
+      projectId: 'your-wc-cloud-project-id',
+      metadata: { name: 'My App', description: '...', url: '...', icons: [] },
+      onUri: (uri) => showQRCode(uri),  // render QR for desktop, deep link for mobile
+      networkPassphrase: Networks.TESTNET,
+    }),
+  ],
+});
+```
+
+The `onUri` callback fires when WalletConnect generates a pairing URI. Render it as a QR code (use `qrcode.react` or similar) so the user can scan it with their wallet app. The modal does NOT render the QR code for you.
+
+**Hana Wallet** (SDF's wallet) connects exclusively via WalletConnect — it doesn't expose a SEP-43 browser-extension API.
+
 ## SIWS signing per wallet
 
 | Wallet | What gets signed | `signedData` |
@@ -355,7 +385,7 @@ All wallet SDKs are bundled as regular dependencies — no manual install needed
 ## Theming
 
 ```css
-saganta-appkit-modal {
+stellar-appkit-modal {
   --sak-color-bg: #0B0D0E;
   --sak-color-surface: #14171A;
   --sak-color-accent: #6EE7B7;
@@ -368,7 +398,7 @@ saganta-appkit-modal {
 
 ## Links
 
-- [GitHub](https://github.com/SagantaHQ/stellar-appkit)
+- [GitHub](https://github.com/sagantaHQ/stellar-appkit)
 - [Documentation](https://stellar-appkit.saganta.com)
 - [Live Demos](https://demos.stellar-appkit.saganta.com)
 - [npm](https://www.npmjs.com/package/@saganta/stellar-appkit)

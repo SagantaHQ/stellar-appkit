@@ -18,7 +18,7 @@
  *    updates its ref on change.
  *
  * 3. `<StellarAppKitModal>` — a Vue SFC-style component wrapping the
- *    underlying `<saganta-appkit-modal>` Web Component with typed props,
+ *    underlying `<stellar-appkit-modal>` Web Component with typed props,
  *    emits (`connect`/`disconnect`/`error`), and an imperative `open()` /
  *    `close()` API via template refs. Re-exported from `./modal.ts`.
  *
@@ -447,7 +447,7 @@ export function useSoroban(opts: { rpcUrl: string; networkPassphrase: string }) 
 // ---------------------------------------------------------------------------
 // Preview composables — surface the onPreviewTransaction /
 // onPreviewAuthEntry payloads reactively, for apps that want to render
-// their own preview UI instead of using the <saganta-appkit-modal> Web Component.
+// their own preview UI instead of using the <stellar-appkit-modal> Web Component.
 // ---------------------------------------------------------------------------
 
 export function usePreviewTransaction(): {

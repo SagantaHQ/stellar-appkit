@@ -1,5 +1,5 @@
 /**
- * React JSX wrapper for the `<saganta-appkit-modal>` Web Component.
+ * React JSX wrapper for the `<stellar-appkit-modal>` Web Component.
  *
  * Why this exists: the underlying modal is a Web Component, which works in
  * any framework but feels unidiomatic in React — you have to manage refs,
@@ -29,7 +29,7 @@
  *
  * The modal reads its `client` from the same context as the hooks — so it
  * stays in sync with `<StellarAppKitProvider>`. If you want to use it without
- * a provider, use the raw `<saganta-appkit-modal>` element and set
+ * a provider, use the raw `<stellar-appkit-modal>` element and set
  * `element.client = appkit` directly.
  *
  * The underlying Web Component is imported as a side-effect of importing
@@ -58,7 +58,7 @@ import {
 // crash server-side rendering.
 //
 // Instead, consumers must import `@saganta/stellar-appkit/ui-web` once
-// at their app entry point to register the `<saganta-appkit-modal>`
+// at their app entry point to register the `<stellar-appkit-modal>`
 // custom element:
 //
 //   import '@saganta/stellar-appkit/ui-web';
@@ -81,7 +81,7 @@ export interface StellarAppKitModalComponentProps
 
 /**
  * `<StellarAppKitModal>` — a React component wrapping the underlying
- * `<saganta-appkit-modal>` Web Component.
+ * `<stellar-appkit-modal>` Web Component.
  *
  * The component:
  * 1. Reads the `StellarAppKit` client from context (via `useAppKit()`).
@@ -188,7 +188,7 @@ export const StellarAppKitModal = forwardRef<
   // JSX doesn't natively know how to render Web Components with TypeScript.
   // We use a lowercase tag name (which React treats as a custom element) and
   // cast the props. The `ref` lets us access the underlying DOM node.
-  const HostTag = 'saganta-appkit-modal' as unknown as 'div';
+  const HostTag = 'stellar-appkit-modal' as unknown as 'div';
   return (
     <HostTag
       ref={hostRef as never}

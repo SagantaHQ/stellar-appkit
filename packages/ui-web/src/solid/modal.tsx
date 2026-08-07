@@ -1,5 +1,5 @@
 /**
- * SolidJS component wrapper for the `<saganta-appkit-modal>` Web Component.
+ * SolidJS component wrapper for the `<stellar-appkit-modal>` Web Component.
  *
  * Why this exists: the underlying modal is a Web Component, which Solid can
  * render as a custom element, but a typed Solid component feels more
@@ -30,7 +30,7 @@
  *
  * The modal reads its `client` from the same context as the hooks — so it
  * stays in sync with `<StellarAppKitProvider>`. If you want to use it
- * without a provider, use the raw `<saganta-appkit-modal>` element and
+ * without a provider, use the raw `<stellar-appkit-modal>` element and
  * set `element.client = appkit` directly.
  *
  * The underlying Web Component is imported as a side-effect of importing
@@ -60,7 +60,7 @@ import type { ConnectSession, ConnectError } from '@saganta/stellar-appkit';
 // crash server-side rendering.
 //
 // Consumers must import `@saganta/stellar-appkit/ui-web` once at their
-// app entry point to register the `<saganta-appkit-modal>` custom element:
+// app entry point to register the `<stellar-appkit-modal>` custom element:
 //
 //   import '@saganta/stellar-appkit/ui-web';
 
@@ -81,7 +81,7 @@ export interface StellarAppKitModalComponentProps
 
 /**
  * `<StellarAppKitModal>` — a Solid component wrapping the underlying
- * `<saganta-appkit-modal>` Web Component.
+ * `<stellar-appkit-modal>` Web Component.
  *
  * The component:
  * 1. Reads the `StellarAppKit` client from context (via `useAppKit()`).
@@ -147,7 +147,7 @@ export const StellarAppKitModal: Component<StellarAppKitModalComponentProps> = (
   // Solid renders unknown lowercase tags as custom elements by default —
   // no special compiler config needed.
   return createComponent(
-    ((('saganta-appkit-modal') as unknown) as Component<Record<string, unknown>>),
+    ((('stellar-appkit-modal') as unknown) as Component<Record<string, unknown>>),
     {
       ref: (el: HTMLElement & { client: typeof client | null }) => {
         hostEl = el;

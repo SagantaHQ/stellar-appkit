@@ -59,7 +59,7 @@ export interface StellarAppKitConfig {
   previewOptions?: PreviewOptions;
   /**
    * Modal UI configuration. Passed through to the `@saganta/stellar-appkit-ui-web`
-   * package when its `<saganta-appkit-modal>` element is attached. Currently
+   * package when its `<stellar-appkit-modal>` element is attached. Currently
    * only `animation` is supported — set it to override the default open/close
    * transitions (`scale-blur` for modal, `slide-up` for bottom-sheet).
    *

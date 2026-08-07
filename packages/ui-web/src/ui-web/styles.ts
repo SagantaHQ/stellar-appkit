@@ -9,7 +9,7 @@ function v(token: keyof ConnectTheme, theme: ConnectTheme): string {
  * Builds the full stylesheet for the shadow root. Every value routes
  * through `var(--sak-*, <theme-default>)` rather than setting the vars on
  * `:host` — that's what lets a host page override any token with a plain
- * `saganta-appkit-modal { --sak-color-accent: ...; }` rule without fighting
+ * `stellar-appkit-modal { --sak-color-accent: ...; }` rule without fighting
  * shadow-boundary cascade specificity.
  */
 export function buildStyles(theme: ConnectTheme): string {
