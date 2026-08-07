@@ -133,11 +133,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   async function ensureClient(): Promise<WCClient> {
     if (client) return client;
     try {
-      // @walletconnect/sign-client exports a SignClient class (default export).
-      // We lazy-import it so apps that don't use WalletConnect don't need
-      // the package installed.
-      const mod = await import('@walletconnect/sign-client');
-      const SignClient = (mod as unknown as { default: { init: (opts: unknown) => Promise<WCClient> } }).default;
+      // @walletconnect/sign-client v2 exports SignClient as a named export
+      // (mod.SignClient), NOT as the default export. The default export is
+      // just a plain object, not a class — using it throws "init is not a
+      // function". We check both shapes for maximum compatibility.
+      const mod = await import('@walletconnect/sign-client') as unknown as {
+        SignClient?: { init: (opts: unknown) => Promise<WCClient> };
+        default?: { init: (opts: unknown) => Promise<WCClient> };
+      };
+      const SignClient = mod.SignClient ?? mod.default;
+      if (!SignClient || typeof SignClient.init !== 'function') {
+        throw new Error('SignClient.init is not a function — unexpected @walletconnect/sign-client export shape.');
+      }
       client = await SignClient.init({
         projectId: opts.projectId,
         metadata: opts.metadata,
