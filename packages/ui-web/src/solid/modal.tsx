@@ -52,7 +52,7 @@ import {
   type StellarAppKitModalEvents,
   propsToAttributes,
 } from '../ui-web/modal-props.js';
-import type { ConnectSession, ConnectError } from '../index.js';
+import type { ConnectSession, ConnectError } from '@saganta/stellar-appkit';
 
 // NOTE: We deliberately do NOT import '../ui-web/connect-modal.js' here.
 // The Web Component class extends `HTMLElement`, which is undefined in

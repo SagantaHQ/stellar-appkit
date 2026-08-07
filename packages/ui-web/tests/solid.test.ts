@@ -33,7 +33,7 @@ mock.module('@stellar/freighter-api', () => ({
 beforeEach(() => { fakeApi = {}; });
 
 async function importWrapper() {
-  return await import('../../src/solid/index.js');
+  return await import('../src/solid/index.js');
 }
 
 describe('Solid wrapper — module structure', () => {
@@ -59,7 +59,7 @@ describe('Solid wrapper — module structure', () => {
 
 describe('Solid wrapper — tree-shakability contract', () => {
   test('the solid subpath is a separate module (not bundled into the main entry)', async () => {
-    const mainEntry = await import('../../src/index.js');
+    const mainEntry = await import('@saganta/stellar-appkit');
     expect(mainEntry.StellarAppKit).toBeDefined();
     expect((mainEntry as unknown as { solid?: unknown }).solid).toBeUndefined();
 

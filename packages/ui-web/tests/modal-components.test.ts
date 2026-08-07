@@ -55,7 +55,7 @@ beforeEach(() => {});
 
 describe('Modal props — shared helper', () => {
   test('propsToAttributes translates camelCase to kebab-case', async () => {
-    const { propsToAttributes } = await import('../../src/ui-web/modal-props.js');
+    const { propsToAttributes } = await import('../src/ui-web/modal-props.js');
     const attrs = propsToAttributes({
       mode: 'auto',
       theme: 'dark',
@@ -75,7 +75,7 @@ describe('Modal props — shared helper', () => {
   });
 
   test('propsToAttributes omits undefined props', async () => {
-    const { propsToAttributes } = await import('../../src/ui-web/modal-props.js');
+    const { propsToAttributes } = await import('../src/ui-web/modal-props.js');
     const attrs = propsToAttributes({
       mode: 'modal',
       // theme, branding, etc. all undefined
@@ -85,7 +85,7 @@ describe('Modal props — shared helper', () => {
 
   test('StellarAppKitModalProps and StellarAppKitModalHandle are exported as types', async () => {
     // Type-only re-export — verify the module loads without throwing.
-    const mod = await import('../../src/ui-web/modal-props.js');
+    const mod = await import('../src/ui-web/modal-props.js');
     expect(mod.propsToAttributes).toBeDefined();
     expect(typeof mod.propsToAttributes).toBe('function');
   });
@@ -97,7 +97,7 @@ describe('Modal props — shared helper', () => {
 
 describe('React wrapper — <StellarAppKitModal>', () => {
   test('exports StellarAppKitModal as a forwardRef component', async () => {
-    const w = await import('../../src/react/index.js');
+    const w = await import('../src/react/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
     // forwardRef components are objects with $$typeof = Symbol(react.forward_ref)
     expect(typeof w.StellarAppKitModal).toBe('object');
@@ -108,12 +108,12 @@ describe('React wrapper — <StellarAppKitModal>', () => {
     // If it imported connect-modal.ts, importing the wrapper in a Node-only
     // environment (no HTMLElement) would throw. We're running in bun:test
     // without DOM, so a successful import here is the test.
-    const w = await import('../../src/react/index.js');
+    const w = await import('../src/react/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
   });
 
   test('default export is the same component', async () => {
-    const modalMod = await import('../../src/react/modal.js');
+    const modalMod = await import('../src/react/modal.js');
     expect(modalMod.default).toBe(modalMod.StellarAppKitModal);
   });
 });
@@ -124,7 +124,7 @@ describe('React wrapper — <StellarAppKitModal>', () => {
 
 describe('Vue wrapper — <StellarAppKitModal>', () => {
   test('exports StellarAppKitModal as a defineComponent result', async () => {
-    const w = await import('../../src/vue/index.js');
+    const w = await import('../src/vue/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
     // defineComponent returns an object with a setup function and props.
     const comp = w.StellarAppKitModal as unknown as {
@@ -137,12 +137,12 @@ describe('Vue wrapper — <StellarAppKitModal>', () => {
   });
 
   test('the wrapper does NOT import connect-modal.ts (SSR safety)', async () => {
-    const w = await import('../../src/vue/index.js');
+    const w = await import('../src/vue/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
   });
 
   test('default export is the same component', async () => {
-    const modalMod = await import('../../src/vue/modal.js');
+    const modalMod = await import('../src/vue/modal.js');
     expect(modalMod.default).toBe(modalMod.StellarAppKitModal);
   });
 });
@@ -153,18 +153,18 @@ describe('Vue wrapper — <StellarAppKitModal>', () => {
 
 describe('Solid wrapper — <StellarAppKitModal>', () => {
   test('exports StellarAppKitModal as a Component function', async () => {
-    const w = await import('../../src/solid/index.js');
+    const w = await import('../src/solid/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
     expect(typeof w.StellarAppKitModal).toBe('function');
   });
 
   test('the wrapper does NOT import connect-modal.ts (SSR safety)', async () => {
-    const w = await import('../../src/solid/index.js');
+    const w = await import('../src/solid/index.js');
     expect(w.StellarAppKitModal).toBeDefined();
   });
 
   test('default export is the same component', async () => {
-    const modalMod = await import('../../src/solid/modal.js');
+    const modalMod = await import('../src/solid/modal.js');
     expect(modalMod.default).toBe(modalMod.StellarAppKitModal);
   });
 });
@@ -175,30 +175,30 @@ describe('Solid wrapper — <StellarAppKitModal>', () => {
 
 describe('Svelte wrapper — use:stellarmodal action', () => {
   test('exports the stellarmodal action as a function', async () => {
-    const w = await import('../../src/svelte/index.js');
+    const w = await import('../src/svelte/index.js');
     expect(w.stellarmodal).toBeDefined();
     expect(typeof w.stellarmodal).toBe('function');
   });
 
   test('exports openModal and closeModal imperative helpers', async () => {
-    const w = await import('../../src/svelte/index.js');
+    const w = await import('../src/svelte/index.js');
     expect(typeof w.openModal).toBe('function');
     expect(typeof w.closeModal).toBe('function');
   });
 
   test('exports isStellarAppKitModal type guard', async () => {
-    const w = await import('../../src/svelte/index.js');
+    const w = await import('../src/svelte/index.js');
     expect(typeof w.isStellarAppKitModal).toBe('function');
   });
 
   test('the wrapper does NOT import connect-modal.ts (SSR safety)', async () => {
-    const w = await import('../../src/svelte/index.js');
+    const w = await import('../src/svelte/index.js');
     expect(w.stellarmodal).toBeDefined();
   });
 
   test('stellarmodal returns an object with a destroy function when given a fake node', async () => {
-    const { setStellarAppKitContext, stellarmodal } = await import('../../src/svelte/index.js');
-    const { createFreighterConnector } = await import('../../src/index.js');
+    const { setStellarAppKitContext, stellarmodal } = await import('../src/svelte/index.js');
+    const { createFreighterConnector } = await import('@saganta/stellar-appkit');
 
     setStellarAppKitContext({
       network: 'TESTNET',
@@ -217,7 +217,7 @@ describe('Svelte wrapper — use:stellarmodal action', () => {
   });
 
   test('isStellarAppKitModal returns true for a saganta-appkit-modal tag', async () => {
-    const { isStellarAppKitModal } = await import('../../src/svelte/index.js');
+    const { isStellarAppKitModal } = await import('../src/svelte/index.js');
     const fakeModal = {
       tagName: 'SAGANTA-APPKIT-MODAL',
     } as unknown as HTMLElement;

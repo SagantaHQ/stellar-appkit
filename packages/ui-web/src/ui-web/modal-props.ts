@@ -16,7 +16,7 @@
  * Web Component directly with `modal.client = appkit`.
  */
 
-import type { StellarAppKit } from '../index.js';
+import type { StellarAppKit } from '@saganta/stellar-appkit';
 
 /**
  * Presentation mode for the modal — mirrors the Web Component's `mode` attribute.
@@ -107,11 +107,11 @@ export interface StellarAppKitModalHandle {
  */
 export interface StellarAppKitModalEvents {
   /** Fired when a wallet connects (mirrors the client's `connect` event). */
-  onConnect?: (session: import('../index.js').ConnectSession) => void;
+  onConnect?: (session: import('@saganta/stellar-appkit').ConnectSession) => void;
   /** Fired when a wallet disconnects (mirrors the client's `disconnect` event). */
   onDisconnect?: (payload: { walletId: string }) => void;
   /** Fired when the client emits an error (e.g. user rejected, network mismatch). */
-  onError?: (error: import('../index.js').ConnectError) => void;
+  onError?: (error: import('@saganta/stellar-appkit').ConnectError) => void;
 }
 
 /**

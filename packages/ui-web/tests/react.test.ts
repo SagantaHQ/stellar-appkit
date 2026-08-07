@@ -49,7 +49,7 @@ beforeEach(() => { fakeApi = {}; });
 
 // Lazy-import the React wrapper so the mock above applies.
 async function importWrapper() {
-  return await import('../../src/react/index.js');
+  return await import('../src/react/index.js');
 }
 
 describe('React wrapper — module structure', () => {
@@ -75,7 +75,7 @@ describe('React wrapper — module structure', () => {
 describe('React wrapper — StellarAppKitProvider', () => {
   test('constructs a StellarAppKit client from its config', async () => {
     const { StellarAppKitProvider } = await importWrapper();
-    const { createFreighterConnector } = await import('../../src/index.js');
+    const { createFreighterConnector } = await import('@saganta/stellar-appkit');
 
     // We can't easily render the provider without a DOM, but we can
     // verify it's a valid React component by checking it has a
@@ -110,12 +110,12 @@ describe('React wrapper — tree-shakability contract', () => {
     //
     // We verify this by checking that the main entry doesn't
     // transitively import the react subpath:
-    const mainEntry = await import('../../src/index.js');
+    const mainEntry = await import('@saganta/stellar-appkit');
     expect(mainEntry.StellarAppKit).toBeDefined();
     expect((mainEntry as unknown as { react?: unknown }).react).toBeUndefined();
 
     // And the react subpath is a separate module:
-    const reactEntry = await import('../../src/react/index.js');
+    const reactEntry = await import('../src/react/index.js');
     expect(reactEntry.StellarAppKitProvider).toBeDefined();
     expect((reactEntry as unknown as { StellarAppKit?: unknown }).StellarAppKit).toBeUndefined();
   });

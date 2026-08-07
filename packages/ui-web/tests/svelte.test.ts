@@ -33,7 +33,7 @@ mock.module('@stellar/freighter-api', () => ({
 beforeEach(() => { fakeApi = {}; });
 
 async function importWrapper() {
-  return await import('../../src/svelte/index.js');
+  return await import('../src/svelte/index.js');
 }
 
 describe('Svelte wrapper — module structure', () => {
@@ -72,7 +72,7 @@ describe('Svelte wrapper — module structure', () => {
 describe('Svelte wrapper — setStellarAppKitContext', () => {
   test('constructs a client and stashes it as a module-level singleton', async () => {
     const { setStellarAppKitContext, getAppKit, getAppKitOptional } = await importWrapper();
-    const { createFreighterConnector } = await import('../../src/index.js');
+    const { createFreighterConnector } = await import('@saganta/stellar-appkit');
 
     // Before init, getAppKitOptional returns null
     // (NOTE: this depends on test isolation — if a previous test already
@@ -106,7 +106,7 @@ describe('Svelte wrapper — setStellarAppKitContext', () => {
 
 describe('Svelte wrapper — tree-shakability contract', () => {
   test('the svelte subpath is a separate module (not bundled into the main entry)', async () => {
-    const mainEntry = await import('../../src/index.js');
+    const mainEntry = await import('@saganta/stellar-appkit');
     expect(mainEntry.StellarAppKit).toBeDefined();
     expect((mainEntry as unknown as { svelte?: unknown }).svelte).toBeUndefined();
 

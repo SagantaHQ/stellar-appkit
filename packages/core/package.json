@@ -1,12 +1,9 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "0.3.1",
-  "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK.",
+  "version": "1.0.0",
+  "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK (no UI).",
   "type": "module",
-  "sideEffects": [
-    "./dist/ui-web/connect-modal.js",
-    "./dist/ui-web/index.js"
-  ],
+  "sideEffects": false,
   "files": [
     "dist",
     "src",
@@ -19,26 +16,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./ui-web": {
-      "types": "./dist/ui-web/index.d.ts",
-      "import": "./dist/ui-web/index.js"
-    },
-    "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
-    },
-    "./vue": {
-      "types": "./dist/vue/index.d.ts",
-      "import": "./dist/vue/index.js"
-    },
-    "./solid": {
-      "types": "./dist/solid/index.d.ts",
-      "import": "./dist/solid/index.js"
-    },
-    "./svelte": {
-      "types": "./dist/svelte/index.d.ts",
-      "import": "./dist/svelte/index.js"
     }
   },
   "scripts": {
@@ -56,29 +33,7 @@
     "@ledgerhq/hw-app-str": "^7.7.7",
     "@ledgerhq/hw-transport-webhid": "^6.36.0",
     "@ledgerhq/hw-transport-webusb": "^6.35.0",
-    "@walletconnect/sign-client": "^2.0.0",
-    "@use-gesture/vanilla": "^10.3.1",
-    "motion": "^13.0.0"
-  },
-  "peerDependencies": {
-    "react": "^18.0.0 || ^19.0.0",
-    "vue": "^3.3.0",
-    "solid-js": "^1.7.0",
-    "svelte": "^4.0.0 || ^5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "vue": {
-      "optional": true
-    },
-    "solid-js": {
-      "optional": true
-    },
-    "svelte": {
-      "optional": true
-    }
+    "@walletconnect/sign-client": "^2.0.0"
   },
   "license": "MIT"
 }

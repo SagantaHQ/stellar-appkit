@@ -58,12 +58,12 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
-} from '../index.js';
+} from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
   type InvokeOptions,
   type InvokeResult,
-} from '../soroban.js';
+} from '@saganta/stellar-appkit';
 
 // ---------------------------------------------------------------------------
 // Injection key + provide/install

@@ -44,7 +44,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useAppKit } from './index.js';
-import type { StellarAppKit } from '../index.js';
+import type { StellarAppKit } from '@saganta/stellar-appkit';
 import {
   type StellarAppKitModalProps,
   type StellarAppKitModalHandle,

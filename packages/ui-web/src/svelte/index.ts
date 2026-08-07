@@ -52,12 +52,12 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
-} from '../index.js';
+} from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
   type InvokeOptions,
   type InvokeResult,
-} from '../soroban.js';
+} from '@saganta/stellar-appkit';
 
 // Svelte's reactivity primitives — we import lazily so consumers who
 // don't use this subpath don't need svelte installed.

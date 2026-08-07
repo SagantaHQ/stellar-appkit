@@ -37,7 +37,7 @@ mock.module('@stellar/freighter-api', () => ({
 beforeEach(() => { fakeApi = {}; });
 
 async function importWrapper() {
-  return await import('../../src/vue/index.js');
+  return await import('../src/vue/index.js');
 }
 
 describe('Vue wrapper — module structure', () => {
@@ -71,7 +71,7 @@ describe('Vue wrapper — module structure', () => {
 describe('Vue wrapper — StellarAppKitPlugin.install', () => {
   test('constructs a client and provides it via app.provide()', async () => {
     const { StellarAppKitPlugin } = await importWrapper();
-    const { createFreighterConnector } = await import('../../src/index.js');
+    const { createFreighterConnector } = await import('@saganta/stellar-appkit');
 
     let providedKey: unknown = null;
     let providedValue: unknown = null;
@@ -95,7 +95,7 @@ describe('Vue wrapper — StellarAppKitPlugin.install', () => {
 
 describe('Vue wrapper — tree-shakability contract', () => {
   test('the vue subpath is a separate module (not bundled into the main entry)', async () => {
-    const mainEntry = await import('../../src/index.js');
+    const mainEntry = await import('@saganta/stellar-appkit');
     expect(mainEntry.StellarAppKit).toBeDefined();
     expect((mainEntry as unknown as { vue?: unknown }).vue).toBeUndefined();
 

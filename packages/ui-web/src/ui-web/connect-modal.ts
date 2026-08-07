@@ -1,5 +1,5 @@
-import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '../index.js';
-import { ConnectError, NetworkMismatchError, type WalletConnector } from '../index.js';
+import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
+import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';

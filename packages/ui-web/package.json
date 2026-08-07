@@ -1,0 +1,64 @@
+{
+  "name": "@saganta/stellar-appkit-ui-web",
+  "version": "1.0.0",
+  "description": "Web UI for @saganta/stellar-appkit — Shadow DOM modal, framework wrappers for React, Vue, Solid, and Svelte.",
+  "type": "module",
+  "sideEffects": [
+    "./dist/ui-web/connect-modal.js",
+    "./dist/ui-web/index.js"
+  ],
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/ui-web/index.js",
+  "types": "./dist/ui-web/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/ui-web/index.d.ts",
+      "import": "./dist/ui-web/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "import": "./dist/vue/index.js"
+    },
+    "./solid": {
+      "types": "./dist/solid/index.d.ts",
+      "import": "./dist/solid/index.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'no tests in ui-web package'",
+    "prepublishOnly": "node ../../scripts/sync-ai-files.mjs"
+  },
+  "dependencies": {
+    "@saganta/stellar-appkit": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@use-gesture/vanilla": "^10.3.0",
+    "motion": "^10.0.0 || ^11.0.0 || ^12.0.0 || ^13.0.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "vue": "^3.3.0",
+    "solid-js": "^1.7.0",
+    "svelte": "^4.0.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@use-gesture/vanilla": { "optional": true },
+    "motion": { "optional": true },
+    "react": { "optional": true },
+    "vue": { "optional": true },
+    "solid-js": { "optional": true },
+    "svelte": { "optional": true }
+  },
+  "license": "MIT"
+}
