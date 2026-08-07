@@ -355,8 +355,8 @@ import {
   StellarAppKit,
   createWalletConnectConnector,
   defaultConnectors,
+  Networks,
 } from '@saganta/stellar-appkit';
-import { Networks } from '@stellar/stellar-sdk';
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -365,16 +365,21 @@ const appkit = new StellarAppKit({
     createWalletConnectConnector({
       projectId: 'your-wc-cloud-project-id',
       metadata: { name: 'My App', description: '...', url: '...', icons: [] },
-      onUri: (uri) => showQRCode(uri),  // render QR for desktop, deep link for mobile
       networkPassphrase: Networks.TESTNET,
+      // onUri is OPTIONAL — the modal renders the QR code automatically
+      // using better-qr. Only set it if building your own UI.
     }),
   ],
 });
 ```
 
-The `onUri` callback fires when WalletConnect generates a pairing URI. Render it as a QR code (use `qrcode.react` or similar) so the user can scan it with their wallet app. The modal does NOT render the QR code for you.
+**When using `<stellar-appkit-modal>` (recommended):** the QR code is rendered automatically — the modal intercepts the pairing URI via `setOnUri()` and renders it as an inline SVG using `better-qr`. You can omit `onUri` entirely.
+
+**When building your own UI (no modal):** set `onUri` to render the QR code yourself (use `qrcode.react`, `qrcode`, or `better-qr`).
 
 **Hana Wallet** (SDF's wallet) connects exclusively via WalletConnect — it doesn't expose a SEP-43 browser-extension API.
+
+**`Networks` export:** `import { Networks } from '@saganta/stellar-appkit'` — no need to import `@stellar/stellar-sdk` just for `Networks.TESTNET`. Includes `PUBLIC`, `TESTNET`, `FUTURENET`, `STANDALONE`.
 
 ## SIWS signing per wallet
 

@@ -64,8 +64,8 @@ import {
   StellarAppKit,
   createWalletConnectConnector,
   defaultConnectors,
+  Networks,
 } from '@saganta/stellar-appkit';
-import { Networks } from '@stellar/stellar-sdk';
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -74,14 +74,19 @@ const appkit = new StellarAppKit({
     createWalletConnectConnector({
       projectId: 'your-wc-cloud-project-id',
       metadata: { name: 'My App', description: '...', url: '...', icons: [] },
-      onUri: (uri) => showQRCode(uri),  // render QR for desktop, deep link for mobile
       networkPassphrase: Networks.TESTNET,
+      // onUri is OPTIONAL — the modal renders the QR code automatically
     }),
   ],
 });
 ```
 
-WalletConnect covers every non-extension Stellar wallet — Hana (SDF's wallet), Lobstr, Hot Wallet, and any mobile wallet. The `onUri` callback fires with a pairing URI; render it as a QR code so the user can scan it with their wallet app. The modal does NOT render the QR code for you. `@walletconnect/sign-client` is bundled (lazy-imported, tree-shaken if unused).
+WalletConnect covers every non-extension Stellar wallet — Hana (SDF's wallet), Lobstr, Hot Wallet, and any mobile wallet.
+
+- **With `<stellar-appkit-modal>` (recommended):** the QR code is rendered automatically as an inline SVG using `better-qr` (zero network dependency). Omit `onUri` entirely.
+- **Without the modal (custom UI):** set `onUri` to render the QR yourself (use `qrcode.react`, `qrcode`, or `better-qr`).
+- **`Networks` export:** `import { Networks } from '@saganta/stellar-appkit'` — no need for `@stellar/stellar-sdk`.
+- `@walletconnect/sign-client` + `better-qr` are bundled (lazy-imported, tree-shaken if unused).
 
 ## Wallet Connection
 

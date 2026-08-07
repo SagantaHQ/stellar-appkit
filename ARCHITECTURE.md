@@ -689,7 +689,88 @@ const meta = normalizeAppMetadata({
 
 ---
 
-## 8.14 AI-readable files — `SKILL.md` and `llms.txt`
+## 8.14 `Networks` object — no `@stellar/stellar-sdk` needed for passphrases
+
+The `StellarAppKit` config requires a `network` field (`'PUBLIC' | 'TESTNET' | 'FUTURENET' | 'STANDALONE'`) and an optional `networkPassphrase`. For the three well-known networks, the passphrase is auto-resolved from `network` — but the WalletConnect connector requires `networkPassphrase` explicitly (it's sent to the wallet during session proposal).
+
+Previously, apps had to `import { Networks } from '@stellar/stellar-sdk'` just to get the passphrase string — pulling in the entire Stellar SDK (~1.4 MB) at the import site, even though only a 50-byte string was needed.
+
+### Fix
+
+`@saganta/stellar-appkit` now exports a `Networks` object with the four well-known passphrases, verified byte-for-byte against `@stellar/stellar-sdk`'s own export:
+
+```ts
+import { Networks } from '@saganta/stellar-appkit';
+
+Networks.PUBLIC    // 'Public Global Stellar Network ; September 2015'
+Networks.TESTNET   // 'Test SDF Network ; September 2015'
+Networks.FUTURENET // 'Test SDF Future Network ; October 2022'
+Networks.STANDALONE // 'Standalone Network ; February 2017'
+```
+
+Also exports `resolveNetworkPassphrase(network)` — returns the passphrase for well-known networks, `undefined` for `STANDALONE` (which has no built-in passphrase).
+
+The `client.ts` `resolveNetworkPassphrase()` private method now calls this helper instead of the old inline `WELL_KNOWN_PASSPHRASES` constant (which has been removed).
+
+---
+
+## 8.15 WalletConnect QR rendering — `better-qr` + late-bound `onUri`
+
+The WalletConnect connector generates a pairing URI that the user must scan as a QR code with their wallet app. Previously, the app had to render this QR code itself — the modal showed a generic "Continue in WalletConnect" spinner with no QR code, which was confusing.
+
+### Fix — three-part solution
+
+**1. `setOnUri(fn)` on the WC connector**
+
+The connector now exposes a `setOnUri(handler)` method that overwrites the `onUri` callback at runtime. The modal calls this before `connect()` to intercept the URI:
+
+```ts
+const wcConnector = connector as WalletConnector & { setOnUri?: (fn) => void };
+if (typeof wcConnector.setOnUri === 'function') {
+  wcConnector.setOnUri((uri) => {
+    this.wcPairingUri = uri;
+    this.render();
+  });
+}
+```
+
+The `onUri` option on `createWalletConnectConnector()` is now **optional** — when omitted, it defaults to a no-op. The modal overrides it via `setOnUri()`.
+
+**2. `better-qr` for QR rendering**
+
+The modal uses [`better-qr`](https://www.npmjs.com/package/better-qr) to render the pairing URI as an inline SVG:
+
+```ts
+import { toSvg } from 'better-qr';
+
+const qrSvg = toSvg(uri, {
+  moduleSize: 6,
+  margin: 2,
+  foreground: '#000000',
+  background: '#ffffff',
+  errorCorrectionLevel: 'M',
+});
+```
+
+The SVG is embedded directly in the shadow DOM — zero network dependency (no external API calls like `api.qrserver.com`), works offline, no privacy leak. The SVG scales crisply at any size.
+
+`better-qr` is a bundled dependency of `@saganta/stellar-appkit-ui-web` — installed automatically, lazy-imported only when the WC connector is actually used, tree-shaken out otherwise.
+
+**3. Connecting view replacement**
+
+When `wcPairingUri` is set, the connecting view replaces the generic spinner with:
+- The QR code SVG (in a white rounded frame)
+- The wallet logo centered on the QR code
+- "Scan with WalletConnect" title
+- "Open Hana, Lobstr, or Hot Wallet and scan this QR code to connect." subtitle
+- "Open in wallet app" deep link button (for mobile)
+- "Copy URI" button (with "Copied!" feedback)
+
+Before the URI arrives, the subtitle shows "Generating pairing code…" instead of the misleading "Accept connection request in the wallet".
+
+---
+
+## 8.16 AI-readable files — `SKILL.md` and `llms.txt`
 
 The repo ships two AI-readable files at the root so AI coding assistants (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can produce correct Stellar AppKit code on the first try without the user pasting docs into chat. Both are included in the published npm tarball alongside `dist/` and `src/`, so once a consumer app has `@saganta/stellar-appkit` in its `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
 

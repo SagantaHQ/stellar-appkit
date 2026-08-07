@@ -25,6 +25,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Unified adapter interface aligned with SEP-43, so new wallets are one file, not a redesign
 - Freighter, Albedo, xBull, and Ledger (WebHID/WebUSB) adapters, ready to use
 - **Zero-config defaults** — omit `connectors` from the `StellarAppKit` config and all four browser-side wallets (Freighter, Albedo, xBull, Ledger) are auto-registered. WalletConnect is excluded from defaults because it requires a `projectId`.
+- **`Networks` object exported from core** — `import { Networks } from '@saganta/stellar-appkit'` gives you `Networks.PUBLIC`, `Networks.TESTNET`, `Networks.FUTURENET`, `Networks.STANDALONE` without needing `@stellar/stellar-sdk`
 - Hardware wallets with real multi-account support (derivation-path based) via `listAccounts()`/`selectAccount()`
 - Richer-than-boolean reachability (`'available' | 'locked' | 'not-installed' | 'unavailable'`)
 - Typed `NetworkMismatchError` with an optional auto-retry mode that polls until the user switches networks
@@ -52,9 +53,10 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Low-level escape hatches (`simulate`, `prepare`, `submit`, `pollStatus`) for anything `invoke()` doesn't cover
 
 **UI**
-- `<stellar-appkit-modal>` — a Shadow DOM Web Component, framework-agnostic, zero runtime dependency
+- `<stellar-appkit-modal>` — a Shadow DOM Web Component, framework-agnostic
 - Modal (desktop), bottom-sheet (mobile web), and inline (embedded, no overlay) presentation, auto-selected by viewport or forced via attribute
 - **WAAPI open/close animations** — zero-dependency transitions with sensible defaults (`scale-blur` for modal, `slide-up` for bottom-sheet), 7 presets (`none`, `fade`, `scale`, `scale-blur`, `slide-up`, `slide-left`, `implode`), `prefers-reduced-motion` support, and per-modal or per-app configurability
+- **WalletConnect QR code rendered automatically** — when a WC connector is registered, the modal intercepts the pairing URI via `setOnUri()` and renders it as an inline SVG QR code using `better-qr` (zero network dependency, works offline). Includes a deep link button for mobile and a copy URI button. `onUri` is now optional — the modal handles everything.
 - **Bottom-sheet drag-to-dismiss** — native Pointer Events + custom spring physics (no `@use-gesture`/`motion`), fades overlay in sync with the sheet, releases pointer on interactive elements so the close button always works
 - **"Installed" badge** — wallet list clearly marks which wallets are ready to use vs. which need installation (with one-click install buttons for the latter)
 - Every color/radius/font is a themeable CSS custom property that crosses the shadow boundary — restyle from your own stylesheet, no JS API needed
@@ -254,8 +256,8 @@ import {
   StellarAppKit,
   createWalletConnectConnector,
   defaultConnectors,
+  Networks,
 } from '@saganta/stellar-appkit';
-import { Networks } from '@stellar/stellar-sdk';
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -269,21 +271,28 @@ const appkit = new StellarAppKit({
         url: 'https://app.example.com',
         icons: ['https://app.example.com/icon.png'],
       },
-      onUri: (uri) => {
-        // Render the URI as a QR code (desktop) or trigger a deep link (mobile).
-        // The modal does NOT render the QR code for you — use a library
-        // like `qrcode.react` or `qrcode`.
-        showQRCode(uri);
-      },
       networkPassphrase: Networks.TESTNET,
+      // onUri is OPTIONAL — the modal renders the QR code automatically
+      // using better-qr. Only set it if you're building your own UI
+      // (no modal) and need to render the QR code yourself.
     }),
   ],
 });
 ```
 
+When using `<stellar-appkit-modal>`, the WC pairing URI is intercepted automatically via `setOnUri()` and rendered as an inline SVG QR code using [`better-qr`](https://www.npmjs.com/package/better-qr) — zero network dependency, works offline. The connecting view shows "Generating pairing code…" briefly, then replaces the spinner with the QR code + a deep link button + a copy URI button.
+
+If you're **not** using the modal (building your own UI), set `onUri` to render the QR code yourself:
+```ts
+onUri: (uri) => {
+  // Use any QR library: qrcode.react, qrcode, better-qr, etc.
+  setQrUri(uri);
+}
+```
+
 [Hana Wallet](https://hanawallet.io/) (SDF's wallet, formerly Stellar Term) connects via WalletConnect — it doesn't expose a SEP-43 browser-extension API. The user scans the QR code with the Hana mobile app, or the deep link opens the Hana browser extension. See the [WalletConnect docs](https://stellar-appkit.saganta.com/wallets/walletconnect/) and [Hana Wallet docs](https://stellar-appkit.saganta.com/wallets/hana/) for the full flow.
 
-`@walletconnect/sign-client` is a bundled dependency — no manual install needed. It's lazy-imported inside the connector's methods, so it's tree-shaken out of your bundle if you don't use the WalletConnect connector.
+`@walletconnect/sign-client` and `better-qr` are bundled dependencies — no manual install needed. They're lazy-imported inside the connector's methods, so they're tree-shaken out of your bundle if you don't use the WalletConnect connector.
 
 ---
 
