@@ -451,10 +451,22 @@ export class StellarAppKit {
       () => undefined
     );
 
-    return result.finally(() => {
-      this._pendingSignCount--;
-      this.emitter.emit('signQueueChange', this._pendingSignCount);
-    });
+    // Chain: result → emit error (if failed) → finally (decrement queue)
+    // The error event fires BEFORE signQueueChange so the modal's error
+    // handler can set connectingError before the queue handler checks it.
+    return result
+      .catch((err) => {
+        // Emit an error event so the modal (and any other listeners) can
+        // react to sign failures — e.g. show "Signing rejected" with a
+        // retry button.
+        const connectError = err instanceof ConnectError ? err : ConnectError.internal(String(err));
+        this.emitter.emit('error', connectError);
+        throw err;
+      })
+      .finally(() => {
+        this._pendingSignCount--;
+        this.emitter.emit('signQueueChange', this._pendingSignCount);
+      });
   }
 
   // ---- Unified signing API — proxies to whichever wallet is active, so app code never branches on wallet identity ----

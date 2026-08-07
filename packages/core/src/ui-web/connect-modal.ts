@@ -121,23 +121,20 @@ export class SagantaAppKitModal extends ModalBase {
         this.refreshAccountData();
       }),
       client.on('signQueueChange', () => {
-        // When the sign queue empties, check if we're in the signing view.
-        // Don't transition away immediately if there's an error — the error
-        // event handler will set connectingError and re-render. We use a
-        // small delay to let the error event fire first.
+        // When the sign queue empties during signing, check if there was
+        // an error. The error event fires BEFORE signQueueChange (thanks
+        // to the .catch() → .finally() chain in enqueueSign), so
+        // connectingError is already set if the wallet rejected.
         if (this.view === 'signing' && client.pendingSignCount === 0) {
-          // Wait a tick to see if an error event follows (wallet rejection).
-          // If connectingError is set by the error handler within this window,
-          // we stay on the signing view showing the error + retry button.
-          setTimeout(() => {
-            // Only transition to connected if we're STILL on the signing view
-            // AND there's no error (meaning the sign succeeded, not rejected).
-            if (this.view === 'signing' && !this.connectingError) {
-              this.lastApprovedPreview = null;
-              this.view = client.session ? 'connected' : 'wallet-list';
-              this.render();
-            }
-          }, 50);
+          if (!this.connectingError) {
+            // Success — transition to connected view
+            this.lastApprovedPreview = null;
+            this.view = client.session ? 'connected' : 'wallet-list';
+            this.render();
+          }
+          // If connectingError IS set, the error handler already re-rendered
+          // the signing view with the error + retry/cancel buttons. We do
+          // nothing here — the user decides what to do next.
         } else if (this.view === 'connected') {
           this.render();
         }
