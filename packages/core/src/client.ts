@@ -514,21 +514,62 @@ export class StellarAppKit {
   }
 
   /** Queued alongside signTransaction()/signAuthEntry() — see enqueueSign. */
-  signMessage(message: string, opts?: SignOptions): Promise<SignMessageResult> {
-    return this.enqueueSign(() => this.requireActiveConnector().signMessage(message, opts));
+  signMessage(message: string, opts?: SignOptions & { skipPreview?: boolean }): Promise<SignMessageResult> {
+    return this.enqueueSign(async () => {
+      const connector = this.requireActiveConnector();
+
+      if (this.onPreviewTransaction && !opts?.skipPreview) {
+        const session = this.session;
+        const preview: TransactionPreview = {
+          sourceAccount: session?.address ?? 'unknown',
+          fee: '0',
+          operations: [{
+            type: 'signMessage',
+            summary: `Sign message: "${message.length > 100 ? message.slice(0, 100) + '…' : message}"`,
+            details: { message },
+            riskFlags: [],
+          }],
+          riskFlags: [],
+          raw: { xdr: '', networkPassphrase: this.resolveNetworkPassphrase() },
+        };
+        const approved = await this.onPreviewTransaction(preview);
+        if (!approved) throw ConnectError.rejected(connector.id);
+      }
+
+      return connector.signMessage(message, opts);
+    });
   }
 
   /** Sign-In With Stellar — see siws.ts for the message format. Also queued, since it's a signMessage() call under the hood. */
-  signIn(opts: Omit<SignInOptions, 'connector' | 'network' | 'appMetadata'>): Promise<SignInResult> {
+  signIn(opts: Omit<SignInOptions, 'connector' | 'network' | 'appMetadata'> & { skipPreview?: boolean }): Promise<SignInResult> {
     const connector = this.requireActiveConnector();
     if (!this.appMetadata) {
       throw ConnectError.invalidRequest(
         'signIn() requires appMetadata (name, domain, uri) to be set in the StellarAppKit config.'
       );
     }
-    return this.enqueueSign(() =>
-      signInWithStellar({ ...opts, connector, network: this.network, appMetadata: this.appMetadata! })
-    );
+    return this.enqueueSign(async () => {
+      // Show the preview UI before signing (unless skipPreview is set)
+      if (this.onPreviewTransaction && !opts.skipPreview) {
+        const session = this.session;
+        const preview: TransactionPreview = {
+          sourceAccount: session?.address ?? 'unknown',
+          fee: '0',
+          operations: [{
+            type: 'signMessage',
+            summary: `Sign in to ${this.appMetadata!.name}`,
+            details: { statement: opts.statement, nonce: opts.nonce },
+            riskFlags: [],
+          }],
+          riskFlags: [],
+          raw: { xdr: '', networkPassphrase: this.resolveNetworkPassphrase() },
+        };
+        const approved = await this.onPreviewTransaction(preview);
+        if (!approved) throw ConnectError.rejected(connector.id);
+      }
+
+      return signInWithStellar({ ...opts, connector, network: this.network, appMetadata: this.appMetadata! });
+    });
   }
 }
 
