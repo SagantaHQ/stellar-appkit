@@ -463,27 +463,23 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
-    /* "Installed" badge — accent-colored pill that makes it instantly clear
-       which wallets are ready to connect vs. which need installation. */
+    /* "Installed" badge — a soft green pill (green-200 background, green-700
+       text) that makes it instantly clear which wallets are ready to connect
+       vs. which need installation. Uses a fixed green palette (not the
+       theme's accent color) so the "ready to use" signal is consistent
+       across light and dark themes — green = go, regardless of branding. */
     .wallet-sub--installed {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
+      padding: 2px 10px;
       border-radius: 999px;
-      background: ${v('colorAccent', theme)}22;
-      color: ${v('colorAccent', theme)};
+      background: #d1fae5;
+      color: #047857;
       font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.01em;
       flex-shrink: 0;
-    }
-    .wallet-sub--installed::before {
-      content: "";
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: currentColor;
+      border: 1px solid #a7f3d0;
     }
 
     /* "Install" button for not-installed wallets — appears on the right
