@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit-siws-verify",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Server-side SIWS signature/envelope verification.",
   "type": "module",
   "sideEffects": false,
