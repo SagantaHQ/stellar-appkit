@@ -24,6 +24,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 **Wallet connectivity**
 - Unified adapter interface aligned with SEP-43, so new wallets are one file, not a redesign
 - Freighter, Albedo, xBull, and Ledger (WebHID/WebUSB) adapters, ready to use
+- **Zero-config defaults** — omit `connectors` from the `StellarAppKit` config and all four browser-side wallets (Freighter, Albedo, xBull, Ledger) are auto-registered. WalletConnect is excluded from defaults because it requires a `projectId`.
 - Hardware wallets with real multi-account support (derivation-path based) via `listAccounts()`/`selectAccount()`
 - Richer-than-boolean reachability (`'available' | 'locked' | 'not-installed' | 'unavailable'`)
 - Typed `NetworkMismatchError` with an optional auto-retry mode that polls until the user switches networks
@@ -53,6 +54,9 @@ Every connector is its own independently tree-shakeable module — pick one wall
 **UI**
 - `<saganta-appkit-modal>` — a Shadow DOM Web Component, framework-agnostic, zero runtime dependency
 - Modal (desktop), bottom-sheet (mobile web), and inline (embedded, no overlay) presentation, auto-selected by viewport or forced via attribute
+- **WAAPI open/close animations** — zero-dependency transitions with sensible defaults (`scale-blur` for modal, `slide-up` for bottom-sheet), 7 presets (`none`, `fade`, `scale`, `scale-blur`, `slide-up`, `slide-left`, `implode`), `prefers-reduced-motion` support, and per-modal or per-app configurability
+- **Bottom-sheet drag-to-dismiss** — native Pointer Events + custom spring physics (no `@use-gesture`/`motion`), fades overlay in sync with the sheet, releases pointer on interactive elements so the close button always works
+- **"Installed" badge** — wallet list clearly marks which wallets are ready to use vs. which need installation (with one-click install buttons for the latter)
 - Every color/radius/font is a themeable CSS custom property that crosses the shadow boundary — restyle from your own stylesheet, no JS API needed
 - Account switcher, account picker (multi-account wallets), network-mismatch view, and transaction-preview view all built in
 - **Wallet-provided avatars** — connectors can implement `getAvatar()` to surface profile pictures; falls back to a deterministic gradient generated from the address. Opt-in Stellar Expert avatars via the `stellar-expert-avatars` attribute.
@@ -196,17 +200,12 @@ The siws-verify package depends on `@saganta/stellar-appkit` — when both are l
 ## Quick start
 
 ```ts
-import {
-  StellarAppKit,
-  createFreighterConnector,
-  createAlbedoConnector,
-  createXBullConnector,
-} from '@saganta/stellar-appkit';
-import '@saganta/stellar-appkit/ui-web'; // registers <saganta-appkit-modal>
+import { StellarAppKit } from '@saganta/stellar-appkit';
+import '@saganta/stellar-appkit-ui-web'; // registers <saganta-appkit-modal>
 
+// connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
 const appkit = new StellarAppKit({
   network: 'PUBLIC',
-  connectors: [createFreighterConnector(), createAlbedoConnector(), createXBullConnector()],
   appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
 });
 
@@ -223,6 +222,8 @@ await appkit.restore(); // resume a persisted session on page load, if any
 ```
 
 That's a working wallet connect flow. Everything past here is what you reach for as you need it.
+
+The modal ships with default open/close animations (`scale-blur` for desktop modal, `slide-up` for mobile bottom-sheet) — no configuration needed. Override per-modal via the `animation` attribute, or globally via `StellarAppKit`'s `modal.animation` config. See [The `<saganta-appkit-modal>` element](#the-saganta-appkit-modal-element) for the full list of animation presets.
 
 ---
 
@@ -692,21 +693,77 @@ function ModalHost() {
 
 | Attribute | Values | Default |
 |---|---|---|
-| `mode` | `auto` \| `modal` \| `bottom-sheet` \| `inline` | `auto` (viewport-based) |
+| `mode` | `auto` \| `modal` \| `bottom-sheet` \| `bottomsheet` \| `inline` | `auto` (viewport-based) |
 | `theme` | `dark` \| `light` \| `auto` | `dark` |
 | `branding` | `show` \| `hide` | `show` |
 | `logo-src` | image URL | — (falls back to `<slot name="logo">`) |
 | `title` | string | contextual per view |
 | `auto-retry-network` | `true` \| `false` | `false` |
 | `stellar-expert-avatars` | `true` \| `false` | `false` — when `true`, fetches generated avatars from `api.stellar.expert` for accounts that don't have a wallet-provided avatar. Falls back to a deterministic gradient on error. |
+| `explorer-url` | base URL | `https://stellarchain.io` (mainnet) / `https://testnet.stellarchain.io` (testnet) |
+| `animation` | `none` \| `fade` \| `scale` \| `scale-blur` \| `slide-up` \| `slide-left` \| `implode` | mode-based (see below) |
+| `animation-open` | same as `animation` | inherits `animation`, else mode-based default |
+| `animation-close` | same as `animation` | inherits `animation`, else mode-based default |
+
+**Animation defaults** — when no `animation` / `animation-open` / `animation-close` attribute is set, the modal picks a sensible default based on `mode`:
+
+- `mode="modal"` (or `auto` on desktop) → `scale-blur` (opacity 0→1, scale .92→1, blur 12px→0)
+- `mode="bottomsheet"` (or `auto` on mobile) → `slide-up` (translateY 100%→0)
+- `mode="inline"` → no animation (the panel is always rendered in place)
+
+The close animation mirrors the open animation by default — closing a bottom-sheet slides it down rather than fading. The animation can also be configured programmatically via `StellarAppKit`'s config (`modal.animation`) — HTML attributes take priority, then the config, then the mode-based default.
+
+Animation presets are zero-dependency WAAPI (Web Animations API) — no `motion`, no `gsap`, no extra bundle weight. `prefers-reduced-motion: reduce` is respected automatically (animations become no-ops). The bottom-sheet drag-to-dismiss gesture uses a separate custom spring engine (~30 lines, also zero-dependency) so dragging and WAAPI transitions don't conflict.
 
 | Method | |
 |---|---|
 | `.client = appkit` | Required — attaches a `StellarAppKit` instance and wires up preview/events |
 | `.open()` | Opens the modal/bottom-sheet (no-op in `inline` mode) |
-| `.close()` | Closes it |
+| `.close(skipAnimation = false)` | Closes it. Pass `true` to skip the WAAPI exit animation (used internally by drag-to-dismiss). |
 
 Fires standard `CustomEvent`s (`sc-connect`, `sc-disconnect`, `sc-error`) mirroring the client's own events, so code with only a DOM reference to the element doesn't need the client instance to react to state changes.
+
+### Default connectors (zero-config)
+
+`StellarAppKitConfig.connectors` is now **optional**. If you omit it (or pass an empty array), the SDK auto-registers every bundled browser-side wallet that doesn't require constructor-time configuration:
+
+```ts
+import { StellarAppKit } from '@saganta/stellar-appkit';
+import '@saganta/stellar-appkit-ui-web';
+
+// Zero-config — Freighter, Albedo, xBull, and Ledger are all registered automatically.
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
+});
+```
+
+The default set excludes **WalletConnect** because it requires a `projectId` from your WalletConnect Cloud dashboard — pass an explicit `connectors` list to include it:
+
+```ts
+import {
+  StellarAppKit,
+  createWalletConnectConnector,
+  defaultConnectors,
+} from '@saganta/stellar-appkit';
+
+const appkit = new StellarAppKit({
+  network: 'PUBLIC',
+  connectors: [
+    ...defaultConnectors(),
+    createWalletConnectConnector({
+      projectId: 'your-wc-project-id',
+      networkPassphrase: Networks.PUBLIC,
+    }),
+  ],
+});
+```
+
+`defaultConnectors()` is exported so you can extend rather than replace the default set.
+
+### Wallet list — "Installed" badge
+
+The wallet list now shows an **"Installed"** badge next to every wallet that's ready to use (reachability `available`). Wallets that aren't installed show an **"Install"** button instead. Locked or unavailable wallets still show their status text ("Locked", "Unavailable", "Connecting…"). This makes it instantly clear which wallets are usable vs. which need installation, without forcing the user to click each row.
 
 ---
 

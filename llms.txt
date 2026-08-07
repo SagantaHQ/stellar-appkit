@@ -15,7 +15,7 @@ Stellar AppKit is a Web3Modal / Reown AppKit equivalent for Stellar. It provides
 npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web
 ```
 
-That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+That's it. All wallet SDKs and the Stellar SDK are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector. The UI package has zero runtime dependencies (drag-to-dismiss uses a custom 30-line spring; open/close transitions use native WAAPI).
 
 Bundled dependencies (no manual install needed):
 - `@stellar/stellar-sdk` — core (transaction building, Soroban RPC, contract spec)
@@ -31,17 +31,17 @@ Framework wrappers are optional peer dependencies (install the one for your fram
 - `solid-js` — `@saganta/stellar-appkit/solid`
 - `svelte` — `@saganta/stellar-appkit/svelte`
 
-Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs and gesture libs don't have this singleton constraint, so they're safe to bundle.
+Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs don't have this singleton constraint, so they're safe to bundle.
 
 ## Quick Start
 
 ```ts
-import { StellarAppKit, createFreighterConnector } from '@saganta/stellar-appkit';
+import { StellarAppKit } from '@saganta/stellar-appkit';
 import '@saganta/stellar-appkit-ui-web';
 
+// connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
 const appkit = new StellarAppKit({
   network: 'TESTNET',
-  connectors: [createFreighterConnector()],
   appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
 });
 
@@ -51,6 +51,8 @@ modal.open();
 
 await appkit.restore();
 ```
+
+Zero-config: omit `connectors` to auto-register Freighter + Albedo + xBull + Ledger. Use `defaultConnectors()` to extend the default set with WalletConnect (which requires a `projectId`).
 
 ## Wallet Connection
 
@@ -252,6 +254,11 @@ let handle: StellarAppKitModalHandle | undefined;
 - `title`: string
 - `autoRetryNetwork`: boolean
 - `stellarExpertAvatars`: boolean
+- `animation`: 'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode' — preset for both open and close (default: 'scale-blur' for modal, 'slide-up' for bottomsheet)
+- `animationOpen`: same preset names — overrides `animation` for the open transition only
+- `animationClose`: same preset names — overrides `animation` for the close transition only
+
+Animation config priority: HTML attributes (`animation-open` / `animation-close`) > `animation` attribute > `StellarAppKit` config (`modal.animation`) > mode-based default. All animations are zero-dependency WAAPI and respect `prefers-reduced-motion`.
 
 ### Modal events (all frameworks)
 - `connect` — fired when a wallet connects (mirrors client `connect` event)
@@ -260,7 +267,7 @@ let handle: StellarAppKitModalHandle | undefined;
 
 ### Modal imperative handle (React/Solid/Vue via ref)
 - `open()` — opens the modal (no-op in inline mode)
-- `close()` — closes the modal
+- `close(skipAnimation?: boolean)` — closes the modal; pass `true` to skip the WAAPI exit animation
 - `element` — the underlying `<saganta-appkit-modal>` DOM node (escape hatch)
 
 ### Svelte helpers

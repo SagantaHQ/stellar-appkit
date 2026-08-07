@@ -26,7 +26,9 @@ Use this skill when the user wants to:
 npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web
 ```
 
-That's it — all wallet SDKs (`@stellar/stellar-sdk`, `@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/*`, `@walletconnect/sign-client`) and gesture libraries (`@use-gesture/vanilla`, `motion`) are bundled as regular dependencies. They're installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+That's it — all wallet SDKs (`@stellar/stellar-sdk`, `@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/*`, `@walletconnect/sign-client`) are bundled as regular dependencies. They're installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+
+The UI package has **zero runtime dependencies** — the bottom-sheet drag-to-dismiss uses a custom 30-line spring engine built on native Pointer Events + `requestAnimationFrame` (no `@use-gesture/vanilla` or `motion` needed), and the open/close transitions use native WAAPI (Web Animations API).
 
 For framework wrappers (install the one for your framework — they're optional peer deps):
 ```bash
@@ -36,19 +38,19 @@ npm install solid-js           # @saganta/stellar-appkit/solid
 npm install svelte             # @saganta/stellar-appkit/svelte
 ```
 
-Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs and gesture libs don't have this singleton constraint, so they're safe to bundle.
+Frameworks must remain as peer deps because your app already has its own framework instance — two copies of React would break hooks. The wallet SDKs don't have this singleton constraint, so they're safe to bundle.
 
 ## Core patterns
 
 ### Basic wallet connection
 
 ```ts
-import { StellarAppKit, createFreighterConnector } from '@saganta/stellar-appkit';
+import { StellarAppKit } from '@saganta/stellar-appkit';
 import '@saganta/stellar-appkit-ui-web';
 
+// connectors is optional — defaults to Freighter, Albedo, xBull, Ledger
 const appkit = new StellarAppKit({
   network: 'TESTNET', // or 'PUBLIC'
-  connectors: [createFreighterConnector()],
   appMetadata: { name: 'My App', domain: 'app.example.com', uri: 'https://app.example.com' },
 });
 
@@ -58,6 +60,8 @@ modal.client = appkit;
 connectButton.addEventListener('click', () => modal.open());
 await appkit.restore(); // resume persisted session
 ```
+
+**Zero-config defaults:** if you omit `connectors`, the SDK auto-registers Freighter, Albedo, xBull, and Ledger. WalletConnect is excluded from defaults (requires a `projectId`). Use `defaultConnectors()` to extend rather than replace the default set.
 
 ### Signing transactions
 
@@ -318,22 +322,26 @@ try {
 - `StellarAppKitModal` (React/Solid/Vue) — typed component wrapping `<saganta-appkit-modal>`
 - `stellarmodal` (Svelte) — `use:stellarmodal` action on the raw `<saganta-appkit-modal>` element
 - `openModal(node)` / `closeModal(node)` (Svelte) — imperative helpers
-- Props: `mode`, `theme`, `branding`, `logoSrc`, `title`, `autoRetryNetwork`, `stellarExpertAvatars`
+- Props: `mode`, `theme`, `branding`, `logoSrc`, `title`, `autoRetryNetwork`, `stellarExpertAvatars`, `animation`, `animationOpen`, `animationClose`
 - Events: `onConnect` / `onDisconnect` / `onError` (React/Solid), `@connect` / `@disconnect` / `@error` (Vue), `on:sc-connect` / `on:sc-disconnect` / `on:sc-error` (Svelte on raw element)
-- Imperative handle: `open()`, `close()`, `element` (via `ref` in React/Solid/Vue)
-- **Requires** `import '@saganta/stellar-appkit/ui-web'` once at app entry to register the custom element
+- Imperative handle: `open()`, `close(skipAnimation?)`, `element` (via `ref` in React/Solid/Vue)
+- **Requires** `import '@saganta/stellar-appkit-ui-web'` once at app entry to register the custom element
+- **Animation presets**: `none`, `fade`, `scale`, `scale-blur` (default modal), `slide-up` (default bottom-sheet), `slide-left`, `implode` — zero-dependency WAAPI, respects `prefers-reduced-motion`
+- **Animation config priority**: HTML attributes (`animation-open` / `animation-close`) > `animation` attribute > `StellarAppKit` config (`modal.animation`) > mode-based default
 
 ## Available connectors
 
 All wallet SDKs are bundled as regular dependencies — no manual install needed. Tree-shaken out of your bundle if the connector isn't imported.
 
-| Connector | Function | Bundled SDK |
-|---|---|---|
-| Freighter | `createFreighterConnector()` | `@stellar/freighter-api` |
-| Albedo | `createAlbedoConnector()` | `@albedo-link/intent` |
-| xBull | `createXBullConnector()` | `@creit.tech/xbull-wallet-connect` |
-| Ledger | `createLedgerConnector()` | `@ledgerhq/hw-app-str` + `hw-transport-webhid` + `hw-transport-webusb` |
-| WalletConnect | `createWalletConnectConnector(opts)` | `@walletconnect/sign-client` |
+| Connector | Function | Bundled SDK | Default? |
+|---|---|---|---|
+| Freighter | `createFreighterConnector()` | `@stellar/freighter-api` | Yes |
+| Albedo | `createAlbedoConnector()` | `@albedo-link/intent` | Yes |
+| xBull | `createXBullConnector()` | `@creit.tech/xbull-wallet-connect` | Yes |
+| Ledger | `createLedgerConnector()` | `@ledgerhq/hw-app-str` + `hw-transport-webhid` + `hw-transport-webusb` | Yes |
+| WalletConnect | `createWalletConnectConnector(opts)` | `@walletconnect/sign-client` | No (requires `projectId`) |
+
+`defaultConnectors()` returns `[Freighter, Albedo, xBull, Ledger]` — used automatically when `connectors` is omitted from the `StellarAppKit` config.
 
 ## SIWS signing per wallet
 

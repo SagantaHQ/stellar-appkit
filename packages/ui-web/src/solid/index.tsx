@@ -71,12 +71,15 @@ const AppKitContext = createContext<Accessor<StellarAppKit | null>>();
 
 export interface StellarAppKitProviderConfig {
   network: StellarNetwork;
-  connectors: WalletConnector[];
+  /** Wallet connectors to register. Optional — defaults to all bundled browser-side wallets. */
+  connectors?: WalletConnector[];
   appMetadata?: { name: string; domain: string; uri: string };
   networkPassphrase?: string;
   syncAcrossTabs?: boolean;
   previewOptions?: PreviewOptions;
   restoreOnMount?: boolean;
+  /** Modal UI configuration (animation preset). */
+  modal?: { animation?: import('@saganta/stellar-appkit').StellarAppKitModalConfig['animation'] };
 }
 
 export function StellarAppKitProvider(props: {

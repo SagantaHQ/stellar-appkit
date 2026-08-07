@@ -118,6 +118,10 @@ export class SagantaAppKitModal extends ModalBase {
     this.clientUnsubscribers = [];
     this._client = client;
 
+    // The animation config may come from the client (config.modal.animation),
+    // so clear the cached resolution whenever a new client is attached.
+    this.resolvedAnimations = null;
+
     if (client.onPreviewTransaction) {
       console.warn('[saganta-appkit] Overwriting an existing onPreviewTransaction handler with this modal\u2019s own preview UI.');
     }
@@ -277,21 +281,38 @@ export class SagantaAppKitModal extends ModalBase {
     // Render IMMEDIATELY with whatever walletList data we have.
     this.render();
 
-    // Resolve and play the enter animation via WAAPI
+    // Resolve and play the enter animation via WAAPI.
+    // The default open animation is `scale-blur` for modal, `slide-up` for bottom-sheet.
+    // (Configurable via the `animation`, `animation-open`, `animation-close` attributes
+    // or via the StellarAppKit config's `modal.animation` field — see modal-props.ts.)
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
     if (panel) {
+      // Set the initial state explicitly so the panel doesn't flash at its
+      // final position before the WAAPI animation kicks in (the animation's
+      // first keyframe sets it to opacity:0/scale(.92), but there's a
+      // one-frame gap between render() and the animation start).
+      panel.style.opacity = '0';
       const { open } = this.getResolvedAnimations();
       const anim = open.enter(panel);
       if (anim) {
         this.activeAnimation = anim;
-        anim.onfinish = () => { this.activeAnimation = null; };
-        anim.oncancel = () => { this.activeAnimation = null; };
+        anim.onfinish = () => {
+          this.activeAnimation = null;
+          // Clear the initial-state inline styles so subsequent renders don't inherit them
+          panel.style.opacity = '';
+        };
+        anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
+      } else {
+        // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
+        panel.style.opacity = '';
       }
     }
     // Animate overlay opacity separately
     if (overlay) {
-      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' });
+      overlay.style.opacity = '0';
+      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' })
+        .onfinish = () => { overlay.style.opacity = ''; };
     }
 
     this.hasEnteredOpenState = true;
@@ -303,7 +324,16 @@ export class SagantaAppKitModal extends ModalBase {
     }
   }
 
-  close() {
+  /**
+   * Close the modal/bottom-sheet.
+   *
+   * @param skipAnimation When `true`, skip the WAAPI exit animation and
+   *   immediately tear down the modal. Used by the bottom-sheet drag-to-dismiss
+   *   flow, where the spring has already animated the panel off-screen —
+   *   playing the WAAPI exit on top would cause a visible jump back to
+   *   translateY(0) before sliding down.
+   */
+  close(skipAnimation = false) {
     if (this.getAttribute('mode') === 'inline') return;
     // Don't close during signing — the user should see the result (success
     // or error) before the modal closes. If they want to cancel, they can
@@ -318,7 +348,10 @@ export class SagantaAppKitModal extends ModalBase {
     // Cancel any ongoing enter animation
     this.cancelActiveAnimation();
 
-    // Play the exit animation via WAAPI, then clean up
+    // Play the exit animation via WAAPI, then clean up.
+    // The default close animation mirrors the open: `scale-blur` for modal,
+    // `slide-up` for bottom-sheet (so closing a bottom-sheet slides it down
+    // rather than just fading out).
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
     const { close } = this.getResolvedAnimations();
@@ -329,8 +362,16 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
+      // Clear any inline styles left over from drag/spring so the next open() starts clean
+      if (panel) panel.style.transform = '';
+      if (overlay) overlay.style.opacity = '';
       this.render();
     };
+
+    if (skipAnimation) {
+      finishClose();
+      return;
+    }
 
     if (panel) {
       const anim = close.exit(panel);
@@ -347,7 +388,8 @@ export class SagantaAppKitModal extends ModalBase {
       finishClose();
     }
 
-    // Animate overlay opacity separately
+    // Animate overlay opacity separately (only when not skipping — drag-dismiss
+    // fades the overlay via the spring itself)
     if (overlay) {
       overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease', fill: 'forwards' });
     }
@@ -366,10 +408,17 @@ export class SagantaAppKitModal extends ModalBase {
     if (this.resolvedAnimations) return this.resolvedAnimations;
 
     const effectiveMode = this.computeEffectiveMode();
+    // Defaults: scale-blur for desktop modal, slide-up for mobile bottom-sheet.
+    // These play on every open/close even if the consumer never sets any
+    // animation attribute or config — the modal feels alive out of the box.
     const defaultOpen: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
     const defaultClose: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
 
-    // Check attributes: animation, animation-open, animation-close
+    // Priority (highest → lowest):
+    //   1. HTML attributes: animation-open / animation-close (most specific)
+    //   2. HTML attribute: animation (single preset for both)
+    //   3. StellarAppKit config: client.modalConfig.animation
+    //   4. Mode-based defaults above
     const animAttr = this.getAttribute('animation');
     const openAttr = this.getAttribute('animation-open');
     const closeAttr = this.getAttribute('animation-close');
@@ -382,6 +431,9 @@ export class SagantaAppKitModal extends ModalBase {
       };
     } else if (animAttr) {
       option = animAttr as AnimationPresetName;
+    } else if (this._client?.modalConfig?.animation) {
+      // Fall back to the programmatic config passed to StellarAppKit
+      option = this._client.modalConfig.animation as ModalAnimationOption;
     }
 
     this.resolvedAnimations = resolveAnimation(option, defaultOpen, defaultClose);
@@ -962,12 +1014,19 @@ export class SagantaAppKitModal extends ModalBase {
           `;
         }
 
-        // For installed wallets, show status subLabel (Connecting… / Locked / etc.)
+        // For installed wallets, show status subLabel (Connecting… / Locked / Installed / etc.)
+        // The "Installed" label makes it visually obvious which wallets are
+        // ready to use vs. which need to be installed first (those show an
+        // "Install" button instead of a subLabel — see the not-installed branch above).
         const subLabel =
           isConnecting ? 'Connecting…'
           : reachability === 'locked' ? 'Locked'
           : reachability === 'unavailable' ? 'Unavailable'
-          : '';
+          : 'Installed';
+        const subLabelClass =
+          isConnecting || reachability === 'locked' || reachability === 'unavailable'
+            ? 'wallet-sub'
+            : 'wallet-sub wallet-sub--installed';
         const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
 
         return `
@@ -977,7 +1036,7 @@ export class SagantaAppKitModal extends ModalBase {
               ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
             </span>
             <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
-            <span class="wallet-sub">${subLabel}</span>
+            <span class="${subLabelClass}">${subLabel}</span>
           </button>
         `;
       })
@@ -1320,6 +1379,13 @@ export class SagantaAppKitModal extends ModalBase {
     const onPointerDown = (e: PointerEvent) => {
       // Only respond to primary button (touch or left-click)
       if (e.button !== 0 && e.pointerType === 'mouse') return;
+      // Don't start drag when the user is interacting with a button, link,
+      // or any element marked with [data-action]. Without this check,
+      // panel.setPointerCapture() below steals the pointerup event from
+      // the close button — so the click event never fires on it and the
+      // X icon doesn't close the modal.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return;
       dragging = true;
       startY = e.clientY;
       lastY = e.clientY;
@@ -1364,9 +1430,12 @@ export class SagantaAppKitModal extends ModalBase {
       const shouldClose = Math.abs(velocity) > 0.5 || currentY > sheetHeight * 0.4;
 
       if (shouldClose) {
-        // Animate to closed position
+        // Animate to closed position. The spring carries the panel all the
+        // way off-screen, so when close() runs we pass skipAnimation=true
+        // — otherwise the WAAPI exit animation would jump the panel back to
+        // translateY(0) and slide it down again (visible flash).
         this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
-          this.close();
+          this.close(true);
           panel.style.transform = '';
           currentY = 0;
         });

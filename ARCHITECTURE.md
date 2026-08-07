@@ -535,7 +535,112 @@ The fee estimate from §8.8 is also surfaced in the preview — `Fee 0.00501 XLM
 
 ---
 
-## 8.10 AI-readable files — `SKILL.md` and `llms.txt`
+## 8.10 WAAPI animation engine — zero-dependency open/close transitions
+
+The modal ships with a native Web Animations API (WAAPI) transition system — no `motion`, `gsap`, or any other animation library. WAAPI is supported in every modern browser (Chrome 84+, Firefox 75+, Safari 13.1+) and runs off the main thread for transform/opacity, so transitions stay smooth even when JS is busy.
+
+### File structure
+
+```
+packages/ui-web/src/ui-web/animations/
+  index.ts              # public exports
+  types.ts              # AnimationPresetName, ModalAnimationOption, AnimationPreset
+  resolver.ts           # resolveAnimation(option, defaultOpen, defaultClose)
+  reduced-motion.ts     # SSR-safe prefers-reduced-motion check
+  presets/
+    index.ts            # none, fade, scale, slide-left, implode
+    scale-blur.ts       # default modal preset
+    slide-up.ts         # default bottom-sheet preset
+```
+
+### Presets
+
+| Name | Open | Close | Used by default |
+|---|---|---|---|
+| `none` | instant | instant | — |
+| `fade` | opacity 0→1 | opacity 1→0 | — |
+| `scale` | opacity 0→1, scale .92→1 | opacity 1→0, scale 1→.94 | — |
+| `scale-blur` | opacity 0→1, scale .92→1, blur 12px→0 | opacity 1→0, scale 1→.94, blur 0→12px | modal (desktop) |
+| `slide-up` | translateY 100%→0, opacity 0→1 | translateY 0→100%, opacity 1→0 | bottom-sheet (mobile) |
+| `slide-left` | translateX 80px→0, opacity 0→1 | translateX 0→80px, opacity 1→0 | — |
+| `implode` | scale 1.25 + rotate 8deg + blur 20px → scale 1 | reverse, with -4deg rotation on exit | — |
+
+### Resolution priority
+
+The `getResolvedAnimations()` method picks the animation config in this order:
+
+1. HTML attributes `animation-open` / `animation-close` (most specific — per-direction override)
+2. HTML attribute `animation` (single preset for both directions)
+3. `StellarAppKit` config: `modal.animation` (programmatic, set once at construction time)
+4. Mode-based defaults: `scale-blur` for `modal` / desktop `auto`, `slide-up` for `bottomsheet` / mobile `auto`
+
+This means a consumer can set a global default via config, then override per-modal via HTML attributes — useful for special cases (e.g. a hero "implode" animation on a marketing page, but `scale-blur` everywhere else).
+
+### Interruption handling
+
+A single `activeAnimation: Animation | null` field tracks the in-flight WAAPI animation. `cancelActiveAnimation()` is called at the start of both `open()` and `close()` — so if the user opens while a close is in flight (or vice versa), the previous animation is cancelled cleanly rather than fighting the new one.
+
+A 500ms safety timeout on `close()` ensures the modal tears down even if `onfinish` doesn't fire (which can happen if the element is removed mid-animation).
+
+### Accessibility — `prefers-reduced-motion`
+
+Every preset's `enter`/`exit` calls `prefersReducedMotion()` first. If the user has `prefers-reduced-motion: reduce` enabled, the preset returns `null` — the modal opens/closes instantly with no transition. The check is SSR-safe (returns `false` in Node.js, since `window.matchMedia` doesn't exist there).
+
+### Coexistence with the drag-to-dismiss spring
+
+The bottom-sheet's drag gesture uses a **separate** custom spring engine (`springTo()`, ~30 lines, native `requestAnimationFrame`). The two systems don't conflict because:
+
+- **WAAPI** handles *programmatic* open/close (user clicks a button, presses Escape, or `.close()` is called from code)
+- **Spring** handles *user-initiated* drag-to-dismiss (user grabs the sheet and pulls it down)
+
+When a drag-dismiss completes, the spring has already animated the panel off-screen — so `close(true)` is called with `skipAnimation=true` to bypass the WAAPI exit (otherwise the WAAPI animation would jump the panel back to translateY(0) and slide it down again, causing a visible flash).
+
+### Drag-to-dismiss pointer-capture fix
+
+The bottom-sheet gesture handler uses `panel.setPointerCapture(pointerId)` so it keeps receiving `pointermove` events even when the pointer leaves the panel's bounds (e.g. dragged past the top of the viewport). However, this capture also redirects `pointerup` to the panel — which means a `click` event on a child button (like the close X) might not fire correctly.
+
+**Fix:** `onPointerDown` checks `e.target.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')`. If the pointerdown originated on an interactive element, drag setup is skipped entirely — the click event fires normally on the button, and the gesture system stays out of the way. This also handles overflow menu items, copy buttons, and any future interactive elements added to the panel.
+
+---
+
+## 8.11 Zero-config default connectors
+
+`StellarAppKitConfig.connectors` is now optional. If omitted (or empty), the constructor calls `defaultConnectors()` — exported from `@saganta/stellar-appkit` — which returns instances of every bundled browser-side connector that doesn't require constructor-time configuration:
+
+- `createFreighterConnector()`
+- `createAlbedoConnector()`
+- `createXBullConnector()`
+- `createLedgerConnector()`
+
+**WalletConnect is excluded** because `createWalletConnectConnector()` requires a `projectId` from your WalletConnect Cloud dashboard. Apps that need WalletConnect pass an explicit `connectors` list:
+
+```ts
+new StellarAppKit({
+  network: 'PUBLIC',
+  connectors: [
+    ...defaultConnectors(),
+    createWalletConnectConnector({ projectId: '...', networkPassphrase: Networks.PUBLIC }),
+  ],
+});
+```
+
+The connector factories themselves are lightweight — each connector lazy-imports its underlying SDK (e.g. `@stellar/freighter-api`) inside its methods, so importing the factory at the top of `client.ts` doesn't pull the heavy SDK code into the bundle for apps that explicitly pass their own connector list and never call `defaultConnectors()`.
+
+---
+
+## 8.12 Wallet list "Installed" badge
+
+The wallet list previously showed an empty sub-label for installed, available wallets — making it visually ambiguous whether a wallet was actually ready to use or just present in the registry. The fix:
+
+- `available` wallets → green accent-colored pill labeled **"Installed"** (with a small dot)
+- `not-installed` wallets → "Install" button (unchanged)
+- `locked` / `unavailable` / `connecting` → status text (unchanged)
+
+The badge uses CSS custom properties (`--sak-color-accent`) so it automatically picks up the active theme's accent color — no theme-specific styling needed.
+
+---
+
+## 8.13 AI-readable files — `SKILL.md` and `llms.txt`
 
 The repo ships two AI-readable files at the root so AI coding assistants (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can produce correct Stellar AppKit code on the first try without the user pasting docs into chat. Both are included in the published npm tarball alongside `dist/` and `src/`, so once a consumer app has `@saganta/stellar-appkit` in its `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
 

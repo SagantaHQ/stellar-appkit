@@ -72,13 +72,16 @@ let _client: StellarAppKit | null = null;
 
 export interface StellarAppKitConfig {
   network: StellarNetwork;
-  connectors: WalletConnector[];
+  /** Wallet connectors to register. Optional — defaults to all bundled browser-side wallets. */
+  connectors?: WalletConnector[];
   appMetadata?: { name: string; domain: string; uri: string };
   networkPassphrase?: string;
   syncAcrossTabs?: boolean;
   previewOptions?: PreviewOptions;
   /** Restore any persisted session on init. Default: true. */
   restoreOnMount?: boolean;
+  /** Modal UI configuration (animation preset). */
+  modal?: { animation?: import('@saganta/stellar-appkit').StellarAppKitModalConfig['animation'] };
 }
 
 /**

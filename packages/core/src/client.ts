@@ -1,4 +1,5 @@
 import { ConnectorRegistry } from './connectors/registry.js';
+import { createFreighterConnector, createAlbedoConnector, createXBullConnector, createLedgerConnector } from './connectors/index.js';
 import { TypedEmitter } from './events.js';
 import { createWebStorage, SESSION_STORAGE_KEY } from './storage.js';
 import { TabSync } from './tab-sync.js';
@@ -30,7 +31,16 @@ import {
 } from './decode.js';
 
 export interface StellarAppKitConfig {
-  connectors: WalletConnector[];
+  /**
+   * Wallet connectors to register. Optional — if omitted (or empty),
+   * defaults to all bundled browser-side connectors: Freighter, Albedo,
+   * xBull, and Ledger. WalletConnect is NOT included by default because
+   * it requires a `projectId` from your WalletConnect Cloud dashboard.
+   *
+   * Pass an explicit list to override the default, e.g. to add WalletConnect
+   * or to restrict the wallet list to a subset.
+   */
+  connectors?: WalletConnector[];
   /** Network the app expects to operate on — used to validate the connected wallet's network. */
   network: StellarNetwork;
   /** Required for STANDALONE networks (no built-in passphrase to fall back on); optional override otherwise. Needed for transaction previews to decode against the right network. */
@@ -47,6 +57,64 @@ export interface StellarAppKitConfig {
   onPreviewAuthEntry?: AuthEntryPreviewHandler;
   /** Passed through to buildTransactionPreview() / buildAuthEntryPreview() — verifiedContracts, largeTransferThreshold. */
   previewOptions?: PreviewOptions;
+  /**
+   * Modal UI configuration. Passed through to the `@saganta/stellar-appkit-ui-web`
+   * package when its `<saganta-appkit-modal>` element is attached. Currently
+   * only `animation` is supported — set it to override the default open/close
+   * transitions (`scale-blur` for modal, `slide-up` for bottom-sheet).
+   *
+   * The `animation` field accepts either a single preset name (applied to
+   * both open and close) or `{ open, close }` for separate presets.
+   * Presets: `'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode'`.
+   */
+  modal?: StellarAppKitModalConfig;
+}
+
+/**
+ * Modal UI config shape. Defined in core (not ui-web) so the core SDK
+ * doesn't depend on ui-web types — the ui-web package accepts the same
+ * shape via its own ModalAnimationOption type (which is structurally
+ * compatible).
+ */
+export interface StellarAppKitModalConfig {
+  /**
+   * Animation preset for the modal open/close transitions.
+   * - String: same preset for both open and close.
+   * - Object: separate `open` and `close` presets.
+   * - Undefined: defaults to `scale-blur` for modal mode, `slide-up` for bottom-sheet.
+   */
+  animation?:
+    | 'none'
+    | 'fade'
+    | 'scale'
+    | 'scale-blur'
+    | 'slide-up'
+    | 'slide-left'
+    | 'implode'
+    | { open?: 'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode';
+        close?: 'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode' };
+}
+
+/**
+ * Returns the default connector set: every bundled browser-side wallet that
+ * doesn't require constructor-time configuration. WalletConnect is excluded
+ * because it requires a `projectId`.
+ *
+ * Used when `StellarAppKitConfig.connectors` is omitted or empty.
+ *
+ * The connector factory functions themselves are lightweight — each
+ * connector lazy-imports its underlying SDK (e.g. `@stellar/freighter-api`)
+ * only when its methods are actually called, so importing the factories
+ * at the top of this file does not pull heavy SDK code into the bundle
+ * for apps that don't use the default set.
+ */
+export function defaultConnectors(): WalletConnector[] {
+  return [
+    createFreighterConnector(),
+    createAlbedoConnector(),
+    createXBullConnector(),
+    createLedgerConnector(),
+  ];
 }
 
 export interface AppKitConnectOptions {
@@ -102,7 +170,13 @@ export class StellarAppKit {
 
   constructor(config: StellarAppKitConfig) {
     this.registry = new ConnectorRegistry();
-    this.registry.registerMany(config.connectors);
+    // Default to all bundled browser-side connectors when none are provided.
+    // Lets apps skip the boilerplate of `connectors: [createFreighterConnector(), …]`
+    // and still get a full wallet picker in the modal.
+    const connectors = config.connectors && config.connectors.length > 0
+      ? config.connectors
+      : defaultConnectors();
+    this.registry.registerMany(connectors);
     this.network = config.network;
     this.appMetadata = config.appMetadata;
     this.storage = config.storage ?? createWebStorage();
@@ -110,6 +184,7 @@ export class StellarAppKit {
     this.onPreviewTransaction = config.onPreviewTransaction ?? null;
     this.onPreviewAuthEntry = config.onPreviewAuthEntry ?? null;
     this.previewOptions = config.previewOptions ?? {};
+    this.modalConfig = config.modal;
 
     if (config.syncAcrossTabs !== false) {
       this.tabSync = new TabSync(SESSION_STORAGE_KEY, () => {
@@ -117,6 +192,9 @@ export class StellarAppKit {
       });
     }
   }
+
+  /** Modal UI config from StellarAppKitConfig.modal — read by ui-web when attached. */
+  readonly modalConfig?: StellarAppKitModalConfig;
 
   /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
   get pendingSignCount(): number {

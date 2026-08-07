@@ -80,8 +80,13 @@ import {
 export interface StellarAppKitProviderConfig {
   /** Stellar network the app expects to operate on. */
   network: StellarNetwork;
-  /** Wallet connectors to register. */
-  connectors: WalletConnector[];
+  /**
+   * Wallet connectors to register. Optional — if omitted (or empty),
+   * defaults to all bundled browser-side wallets (Freighter, Albedo, xBull,
+   * Ledger) via `defaultConnectors()`. WalletConnect is excluded from
+   * defaults because it requires a `projectId`.
+   */
+  connectors?: WalletConnector[];
   /** App identity surfaced in SIWS messages. Required if you use useSignIn(). */
   appMetadata?: { name: string; domain: string; uri: string };
   /** Required for STANDALONE networks; optional override otherwise. */
@@ -92,6 +97,12 @@ export interface StellarAppKitProviderConfig {
   previewOptions?: PreviewOptions;
   /** Restore any persisted session on mount. Default: true. */
   restoreOnMount?: boolean;
+  /**
+   * Modal UI configuration. Passed through to the `<saganta-appkit-modal>`
+   * element when it's attached. Currently only `animation` is supported —
+   * set it to override the default open/close transitions.
+   */
+  modal?: { animation?: import('@saganta/stellar-appkit').StellarAppKitModalConfig['animation'] };
 }
 
 interface AppKitContextValue {

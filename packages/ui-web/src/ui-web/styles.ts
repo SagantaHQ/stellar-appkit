@@ -463,6 +463,28 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
+    /* "Installed" badge — accent-colored pill that makes it instantly clear
+       which wallets are ready to connect vs. which need installation. */
+    .wallet-sub--installed {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: ${v('colorAccent', theme)}22;
+      color: ${v('colorAccent', theme)};
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      flex-shrink: 0;
+    }
+    .wallet-sub--installed::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
 
     /* "Install" button for not-installed wallets — appears on the right
        side of the wallet row instead of the subLabel. The row itself is
