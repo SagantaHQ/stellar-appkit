@@ -551,21 +551,37 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
-    /* "Installed" badge — a soft green pill with alpha-transparent background
-       (rgba 0.85) so it blends naturally with the row's surface color in both
-       light and dark themes. Green = go, regardless of branding. */
+    /* "Installed" badge — outline style using the theme's accent color.
+       Transparent background, accent-tinted border, accent-mixed text.
+       Uses color-mix for contrast: text = accent 60% + theme text 40%,
+       so it reads legibly on both light and dark surfaces without a
+       separate light-mode override. The dot is a small accent-colored
+       circle — static (no pulse) for a quiet, precise look. */
     .wallet-sub--installed {
       display: inline-flex;
       align-items: center;
-      padding: 2px 10px;
-      border-radius: 999px;
-      background: rgba(209, 250, 229, 0.85);
-      color: #047857;
-      font-size: 11px;
+      gap: 6px;
+      padding: 3px 10px 3px 8px;
+      border-radius: ${v('radiusSm', theme)};
+      font-family: ${v('fontMono', theme)};
+      font-size: 10.5px;
       font-weight: 600;
-      letter-spacing: 0.01em;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      white-space: nowrap;
       flex-shrink: 0;
-      border: 1px solid rgba(167, 243, 208, 0.85);
+      background: transparent;
+      border: 1px solid color-mix(in srgb, ${v('colorAccent', theme)} 32%, transparent);
+      color: color-mix(in srgb, ${v('colorAccent', theme)} 60%, ${v('colorText', theme)} 40%);
+      transition: border-color 0.2s ease, color 0.2s ease;
+    }
+    .wallet-sub--installed::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: ${v('colorAccent', theme)};
+      flex-shrink: 0;
     }
 
     /* "Install" button for not-installed wallets — appears on the right

@@ -27,7 +27,7 @@
     },
     "packages/core": {
       "name": "@saganta/stellar-appkit",
-      "version": "1.0.8",
+      "version": "1.1.2",
       "dependencies": {
         "@albedo-link/intent": "^0.13.0",
         "@creit.tech/xbull-wallet-connect": "^0.4.0",
@@ -42,7 +42,7 @@
     },
     "packages/siws-verify": {
       "name": "@saganta/stellar-appkit-siws-verify",
-      "version": "1.0.8",
+      "version": "1.1.2",
       "dependencies": {
         "@saganta/stellar-appkit": "^1.0.3",
         "@stellar/stellar-sdk": "^13.0.0",
@@ -50,9 +50,10 @@
     },
     "packages/ui-web": {
       "name": "@saganta/stellar-appkit-ui-web",
-      "version": "1.0.8",
+      "version": "1.1.2",
       "dependencies": {
         "@saganta/stellar-appkit": "^1.0.3",
+        "better-qr": "^0.1.2",
       },
       "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",

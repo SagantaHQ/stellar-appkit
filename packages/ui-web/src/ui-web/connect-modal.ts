@@ -135,6 +135,10 @@ export class SagantaAppKitModal extends ModalBase {
     this.clientUnsubscribers.push(
       client.on('connect', (session) => {
         this.dispatchEvent(new CustomEvent('sc-connect', { detail: session, bubbles: true, composed: true }));
+        // Haptic feedback on successful connection (Android — no-op on iOS)
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(15);
+        }
         // Doesn't jump straight to 'connected' here — see selectWallet(), which
         // routes through the account picker first for multi-account wallets.
       }),
@@ -185,6 +189,11 @@ export class SagantaAppKitModal extends ModalBase {
           this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
         }
         this.dispatchEvent(new CustomEvent('sc-error', { detail: err, bubbles: true, composed: true }));
+        // Haptic feedback on error (Android — no-op on iOS). Double-buzz
+        // pattern (50ms pause + 50ms buzz) signals failure.
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate([30, 50, 30]);
+        }
         this.render();
       })
     );
@@ -307,14 +316,15 @@ export class SagantaAppKitModal extends ModalBase {
           panel.style.opacity = '';
         };
         anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
-        // Safety fallback: if the animation doesn't complete within 600ms,
-        // force-clear the opacity. This fixes a mobile issue where WAAPI
-        // animations sometimes don't fire onfinish on some Android browsers.
+        // Safety fallback: if the animation doesn't complete within 400ms,
+        // force-clear the opacity. The animations are 300ms, so 400ms gives
+        // 100ms of grace. This fixes a mobile issue where WAAPI animations
+        // sometimes don't fire onfinish on some Android browsers.
         setTimeout(() => {
           if (panel.style.opacity === '0') {
             panel.style.opacity = '';
           }
-        }, 600);
+        }, 400);
       } else {
         // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
         panel.style.opacity = '';
@@ -421,10 +431,33 @@ export class SagantaAppKitModal extends ModalBase {
 
     const effectiveMode = this.computeEffectiveMode();
     // Defaults: scale-blur for desktop modal, slide-up for mobile bottom-sheet.
-    // These play on every open/close even if the consumer never sets any
-    // animation attribute or config — the modal feels alive out of the box.
-    const defaultOpen: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
-    const defaultClose: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
+    // On mobile (bottomsheet mode), we use slide-up (transform-only, no blur)
+    // because filter:blur() is a known source of skipped/dropped animations on
+    // weaker mobile GPUs — the animation's onfinish may not fire reliably,
+    // leaving the panel stuck at opacity:0 (invisible). slide-up is pure
+    // transform, which is GPU-composited and reliable everywhere.
+    //
+    // Even in modal mode on mobile (e.g. tablet in landscape), we fall back
+    // to `scale` (no blur) if the viewport is mobile-sized, to avoid the same
+    // blur-related issues.
+    const isMobileViewport = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
+
+    let defaultOpen: AnimationPresetName;
+    let defaultClose: AnimationPresetName;
+    if (effectiveMode === 'bottomsheet') {
+      defaultOpen = 'slide-up';
+      defaultClose = 'slide-up';
+    } else if (isMobileViewport) {
+      // Mobile but forced to modal mode — use scale (no blur) for GPU safety
+      defaultOpen = 'scale';
+      defaultClose = 'scale';
+    } else {
+      // Desktop modal — blur is safe, GPU has headroom
+      defaultOpen = 'scale-blur';
+      defaultClose = 'scale-blur';
+    }
 
     // Priority (highest → lowest):
     //   1. HTML attributes: animation-open / animation-close (most specific)
@@ -1601,7 +1634,17 @@ export class SagantaAppKitModal extends ModalBase {
       panel.releasePointerCapture(e.pointerId);
       panel.style.willChange = 'auto';
 
-      const shouldClose = Math.abs(velocity) > 0.5 || currentY > sheetHeight * 0.4;
+      // Velocity-aware dismiss: a quick flick (velocity > 0.4 px/ms) dismisses
+      // even from a short drag. Distance threshold (40% of sheet height) is
+      // the fallback for slow drags. This feels dramatically more native than
+      // distance-only — a flick always closes, a slow drag needs to pass
+      // the halfway mark.
+      const shouldClose = Math.abs(velocity) > 0.4 || currentY > sheetHeight * 0.4;
+
+      // Haptic feedback on dismiss (Android only — no-op on iOS Safari)
+      if (shouldClose && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(10);
+      }
 
       if (shouldClose) {
         // Animate to closed position. The spring carries the panel all the
