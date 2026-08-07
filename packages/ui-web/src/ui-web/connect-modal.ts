@@ -135,6 +135,10 @@ export class SagantaAppKitModal extends ModalBase {
     this.clientUnsubscribers.push(
       client.on('connect', (session) => {
         this.dispatchEvent(new CustomEvent('sc-connect', { detail: session, bubbles: true, composed: true }));
+        // Haptic feedback on successful connection (Android — no-op on iOS)
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(15);
+        }
         // Doesn't jump straight to 'connected' here — see selectWallet(), which
         // routes through the account picker first for multi-account wallets.
       }),
@@ -185,6 +189,11 @@ export class SagantaAppKitModal extends ModalBase {
           this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
         }
         this.dispatchEvent(new CustomEvent('sc-error', { detail: err, bubbles: true, composed: true }));
+        // Haptic feedback on error (Android — no-op on iOS). Double-buzz
+        // pattern (50ms pause + 50ms buzz) signals failure.
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate([30, 50, 30]);
+        }
         this.render();
       })
     );
@@ -304,10 +313,18 @@ export class SagantaAppKitModal extends ModalBase {
         this.activeAnimation = anim;
         anim.onfinish = () => {
           this.activeAnimation = null;
-          // Clear the initial-state inline styles so subsequent renders don't inherit them
           panel.style.opacity = '';
         };
         anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
+        // Safety fallback: if the animation doesn't complete within 400ms,
+        // force-clear the opacity. The animations are 300ms, so 400ms gives
+        // 100ms of grace. This fixes a mobile issue where WAAPI animations
+        // sometimes don't fire onfinish on some Android browsers.
+        setTimeout(() => {
+          if (panel.style.opacity === '0') {
+            panel.style.opacity = '';
+          }
+        }, 400);
       } else {
         // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
         panel.style.opacity = '';
@@ -414,10 +431,33 @@ export class SagantaAppKitModal extends ModalBase {
 
     const effectiveMode = this.computeEffectiveMode();
     // Defaults: scale-blur for desktop modal, slide-up for mobile bottom-sheet.
-    // These play on every open/close even if the consumer never sets any
-    // animation attribute or config — the modal feels alive out of the box.
-    const defaultOpen: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
-    const defaultClose: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
+    // On mobile (bottomsheet mode), we use slide-up (transform-only, no blur)
+    // because filter:blur() is a known source of skipped/dropped animations on
+    // weaker mobile GPUs — the animation's onfinish may not fire reliably,
+    // leaving the panel stuck at opacity:0 (invisible). slide-up is pure
+    // transform, which is GPU-composited and reliable everywhere.
+    //
+    // Even in modal mode on mobile (e.g. tablet in landscape), we fall back
+    // to `scale` (no blur) if the viewport is mobile-sized, to avoid the same
+    // blur-related issues.
+    const isMobileViewport = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
+
+    let defaultOpen: AnimationPresetName;
+    let defaultClose: AnimationPresetName;
+    if (effectiveMode === 'bottomsheet') {
+      defaultOpen = 'slide-up';
+      defaultClose = 'slide-up';
+    } else if (isMobileViewport) {
+      // Mobile but forced to modal mode — use scale (no blur) for GPU safety
+      defaultOpen = 'scale';
+      defaultClose = 'scale';
+    } else {
+      // Desktop modal — blur is safe, GPU has headroom
+      defaultOpen = 'scale-blur';
+      defaultClose = 'scale-blur';
+    }
 
     // Priority (highest → lowest):
     //   1. HTML attributes: animation-open / animation-close (most specific)
@@ -749,7 +789,20 @@ export class SagantaAppKitModal extends ModalBase {
     if (attr === 'modal' || attr === 'bottomsheet' || attr === 'bottom-sheet' || attr === 'inline') {
       return attr === 'bottom-sheet' ? 'bottomsheet' : (attr as EffectiveMode);
     }
-    return this.mediaQuery?.matches ? 'bottomsheet' : 'modal';
+    // For 'auto' mode, check the viewport width directly. Using matchMedia
+    // is more reliable than checking window.innerWidth because it accounts
+    // for scrollbar width and responds to orientation changes. But on some
+    // mobile browsers, the cached mediaQuery can be stale (especially after
+    // orientation changes or address bar show/hide). We re-evaluate on every
+    // call to ensure we get the current viewport state.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches ? 'bottomsheet' : 'modal';
+    }
+    // Fallback to innerWidth if matchMedia is not available
+    if (typeof window !== 'undefined' && typeof window.innerWidth === 'number') {
+      return window.innerWidth <= MOBILE_BREAKPOINT_PX ? 'bottomsheet' : 'modal';
+    }
+    return 'modal';
   }
 
   private resolveTheme(): ConnectTheme {
@@ -775,17 +828,95 @@ export class SagantaAppKitModal extends ModalBase {
     }
 
     const styleTag = `<style>${themeHostDeclarations(theme)}\n${this.cachedStyles}</style>`;
-    const panelHtml = this.renderPanel(effectiveMode);
+
+    // Check if we can do a targeted update (just the body content) instead
+    // of a full innerHTML replacement. This prevents image flash on re-renders
+    // (e.g. when walletList loads, when connect fires) — the <img> elements
+    // in the header and wallet list stay in the DOM and don't re-decode.
+    const existingOverlay = this.root.querySelector('.overlay');
+    const existingInline = this.root.querySelector('.inline-root');
+    const existingPanel = existingOverlay?.querySelector('.panel') ?? existingInline?.querySelector('.panel');
 
     if (effectiveMode === 'inline') {
-      this.root.innerHTML = `${styleTag}<div class="inline-root">${panelHtml}</div>`;
+      if (existingInline && existingPanel) {
+        // Targeted update: only replace the body content, preserving the panel shell
+        this.updatePanelContent(existingPanel, effectiveMode);
+      } else {
+        // Full render: create the entire structure
+        this.root.innerHTML = `${styleTag}<div class="inline-root">${this.renderPanel(effectiveMode)}</div>`;
+        this.wireEvents(effectiveMode);
+      }
     } else if (this.isOpen) {
       const openAttr = this.hasEnteredOpenState ? 'true' : 'false';
-      this.root.innerHTML = `${styleTag}<div class="overlay" data-mode="${effectiveMode}" data-open="${openAttr}" role="presentation">${panelHtml}</div>`;
+      if (existingOverlay && existingPanel) {
+        // Targeted update: update data attributes + body content only
+        existingOverlay.setAttribute('data-mode', effectiveMode);
+        existingOverlay.setAttribute('data-open', openAttr);
+        this.updatePanelContent(existingPanel, effectiveMode);
+      } else {
+        // Full render: create the entire structure
+        this.root.innerHTML = `${styleTag}<div class="overlay" data-mode="${effectiveMode}" data-open="${openAttr}" role="presentation">${this.renderPanel(effectiveMode)}</div>`;
+        this.wireEvents(effectiveMode);
+      }
     } else {
+      // Modal is closed — clear everything except the stylesheet
       this.root.innerHTML = styleTag;
     }
+  }
 
+  /**
+   * Updates only the body content and header of an existing panel, without
+   * replacing the entire innerHTML. This prevents <img> elements from being
+   * destroyed and recreated on every state change (which causes a visible
+   * flash as the browser re-decodes the base64 data URIs).
+   *
+   * Only re-renders the body if the view or wallet list actually changed —
+   * determined by comparing a lightweight render key.
+   */
+  private updatePanelContent(panel: Element, effectiveMode: EffectiveMode) {
+    // Update the drag handle (add/remove based on mode)
+    const existingHandle = panel.querySelector('.drag-handle');
+    if (effectiveMode === 'bottomsheet' && !existingHandle) {
+      const handle = document.createElement('div');
+      handle.className = 'drag-handle';
+      panel.insertBefore(handle, panel.firstChild);
+    } else if (effectiveMode !== 'bottomsheet' && existingHandle) {
+      existingHandle.remove();
+    }
+
+    // Update header
+    const existingHeader = panel.querySelector('.header, .header--connecting');
+    const headerHtml = this.renderPanelHeader(effectiveMode);
+    if (existingHeader) {
+      // Only replace the header if its content changed (avoid unnecessary DOM mutations)
+      const newHeaderEl = document.createElement('div');
+      newHeaderEl.innerHTML = headerHtml;
+      const newHeader = newHeaderEl.firstElementChild;
+      if (newHeader && existingHeader.outerHTML !== newHeader.outerHTML) {
+        existingHeader.replaceWith(newHeader);
+      }
+    } else {
+      // No header yet — insert before body
+      const body = panel.querySelector('.body');
+      if (body) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = headerHtml;
+        const newHeader = wrapper.firstElementChild;
+        if (newHeader) panel.insertBefore(newHeader, body);
+      }
+    }
+
+    // Update body content
+    const existingBody = panel.querySelector('.body');
+    if (existingBody) {
+      const bodyHtml = this.renderBody();
+      // Only update if content actually changed
+      if (existingBody.innerHTML !== bodyHtml) {
+        existingBody.innerHTML = bodyHtml;
+      }
+    }
+
+    // Re-wire events for the updated content
     this.wireEvents(effectiveMode);
   }
 
@@ -1503,7 +1634,17 @@ export class SagantaAppKitModal extends ModalBase {
       panel.releasePointerCapture(e.pointerId);
       panel.style.willChange = 'auto';
 
-      const shouldClose = Math.abs(velocity) > 0.5 || currentY > sheetHeight * 0.4;
+      // Velocity-aware dismiss: a quick flick (velocity > 0.4 px/ms) dismisses
+      // even from a short drag. Distance threshold (40% of sheet height) is
+      // the fallback for slow drags. This feels dramatically more native than
+      // distance-only — a flick always closes, a slow drag needs to pass
+      // the halfway mark.
+      const shouldClose = Math.abs(velocity) > 0.4 || currentY > sheetHeight * 0.4;
+
+      // Haptic feedback on dismiss (Android only — no-op on iOS Safari)
+      if (shouldClose && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(10);
+      }
 
       if (shouldClose) {
         // Animate to closed position. The spring carries the panel all the

@@ -30,6 +30,11 @@ export const genericWalletIcon = icons.wallet;
  * The `meta.icon` field on each connector points to the wallet's official
  * icon URL — the modal tries that first (higher fidelity) and falls back
  * to these bundled data URIs via the `<img onerror>` handler.
+ *
+ * WalletConnect and Ledger icons are pre-encoded base64 (official brand
+ * SVGs) so they load instantly with no network request. The Buffer.from
+ * approach is avoided for these to keep them browser-safe (Buffer is a
+ * Node.js global not available in all browser environments).
  */
 export const walletIcons: Record<string, string> = {
   // Actual brand artwork (provided by the user)
@@ -37,12 +42,13 @@ export const walletIcons: Record<string, string> = {
   xbull: xbullIconDataUri,
   hana: hanaIconDataUri,
 
-  // Stylized SVG fallbacks (for wallets where we don't have brand artwork)
+  // Official brand SVGs (pre-encoded base64 for browser safety)
+  walletconnect: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAyNCIgaGVpZ2h0PSIxMDI0IiB2aWV3Qm94PSIwIDAgMTAyNCAxMDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTAyNCIgaGVpZ2h0PSIxMDI0IiBmaWxsPSIjMzM5NkZGIi8+CjxwYXRoIGQ9Ik0yODIuMjk4IDM2Ny4zOTRDNDA5Ljk4NiAyNDIuODY5IDYxNy4wMTUgMjQyLjg2OSA3NDQuNzAzIDM2Ny4zOTRMNzYwLjA3MSAzODIuMzhDNzY2LjQ1NiAzODguNjA1IDc2Ni40NTYgMzk4LjcwMSA3NjAuMDcxIDQwNC45MjZMNzA3LjUwMiA0NTYuMTkzQzcwNC4zMDkgNDU5LjMwNiA2OTkuMTM0IDQ1OS4zMDYgNjk1Ljk0MiA0NTYuMTkzTDY3NC43OTQgNDM1LjU3QzU4NS43MTMgMzQ4LjY5OCA0NDEuMjg4IDM0OC42OTggMzUyLjIwNyA0MzUuNTdMMzI5LjU1OCA0NTcuNjU1QzMyNi4zNjUgNDYwLjc2OCAzMjEuMTkxIDQ2MC43NjggMzE3Ljk5OCA0NTcuNjU1TDI2NS40MjkgNDA2LjM4OEMyNTkuMDQzIDQwMC4xNjMgMjU5LjA0MyAzOTAuMDY4IDI2NS40MjkgMzgzLjg0M0wyODIuMjk4IDM2Ny4zOTRaTTg1My40MjUgNDczLjQxOEw5MDAuMjExIDUxOS4wNDVDOTA2LjU5NiA1MjUuMjcgOTA2LjU5NiA1MzUuMzY1IDkwMC4yMTEgNTQxLjU5TDY4OS4yNDIgNzQ3LjMyOUM2ODIuODYgNzUzLjU1NyA2NzIuNTA4IDc1My41NTcgNjY2LjEyMyA3NDcuMzI5TDUxNi4zOTIgNjAxLjMxMkM1MTQuNzk1IDU5OS43NTQgNTEyLjIwOCA1OTkuNzU0IDUxMC42MTIgNjAxLjMxMkwzNjAuODgxIDc0Ny4zMjlDMzU0LjQ5OCA3NTMuNTU3IDM0NC4xNDcgNzUzLjU1NyAzMzcuNzYxIDc0Ny4zMjlMMTI2Ljc4OCA1NDEuNTg3QzEyMC40MDQgNTM1LjM2MiAxMjAuNDA0IDUyNS4yNjcgMTI2Ljc4OCA1MTkuMDQyTDE3My41NzYgNDczLjQxNUMxNzkuOTYgNDY3LjE5IDE5MC4zMTIgNDY3LjE5IDE5Ni42OTYgNDczLjQxNUwzNDYuNDMgNjE5LjQzNUMzNDguMDI2IDYyMC45OTIgMzUwLjYxMyA2MjAuOTkyIDM1Mi4yMSA2MTkuNDM1TDUwMS45MzcgNDczLjQxNUM1MDguMzIgNDY3LjE4NyA1MTguNjcyIDQ2Ny4xODcgNTI1LjA1NyA0NzMuNDE1TDY3NC43OTEgNjE5LjQzNUM2NzYuMzg3IDYyMC45OTIgNjc4Ljk3NSA2MjAuOTkyIDY4MC41NzEgNjE5LjQzNUw4MzAuMzA1IDQ3My40MThDODM2LjY4NyA0NjcuMTkgODQ3LjAzOSA0NjcuMTkgODUzLjQyNSA0NzMuNDE4WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==',
+
+  ledger: 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyB2ZXJzaW9uPSIxLjEiIGlkPSJMYXllcl8xIgogICAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgICB2aWV3Qm94PSIwIDAgNzY4LjkxIDY2OS4zNSIKICAgICB4bWw6c3BhY2U9InByZXNlcnZlIj4KCiAgPCEtLSBXaGl0ZSBiYWNrZ3JvdW5kIC0tPgogIDxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNmZmZmZmYiLz4KCiAgPCEtLSBCbGFjayBibG9jayBzaGFwZS90ZXh0IC0tPgogIDxwYXRoIGZpbGw9IiMwMDAwMDAiIGQ9Ik0wLDQ3OS4yOXYxOTAuMDZoMjg5LjIyVjYyNy4ySDQyLjE0VjQ3OS4yOUgwegogIE03MjYuNzcsNDc5LjI5VjYyNy4ySDQ3OS42OXY0Mi4xNGgyODkuMjJWNDc5LjI5SDcyNi43N3oKICBNMjg5LjY0LDE5MC4wNnYyODkuMjJoMTkwLjA1di0zOC4wMUgzMzEuNzhWMTkwLjA2SDI4OS42NHoKICBNMCwwdjE5MC4wNmg0Mi4xNFY0Mi4xNGgyNDcuMDhWMEgwegogIE00NzkuNjksMHY0Mi4xNGgyNDcuMDh2MTQ3LjkyaDQyLjE0VjBINDc5LjY5eiIvPgo8L3N2Zz4K',
+
+  // Stylized SVG fallback (for wallets where we don't have brand artwork)
   albedo: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="al" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF6B00"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#al)"/><path d="M64 28L78 56L106 64L78 72L64 100L50 72L22 64L50 56Z" fill="#fff" opacity="0.95"/><circle cx="64" cy="64" r="8" fill="#FF6B00"/></svg>`).toString('base64')}`,
-
-  ledger: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><rect width="128" height="128" rx="28" fill="#000"/><rect x="42" y="30" width="18" height="58" rx="3" fill="#fff"/><rect x="42" y="92" width="18" height="6" rx="2" fill="#fff" opacity="0.6"/><path d="M60 30h26c4 0 6 2 6 6v52c0 4-2 6-6 6H60V30z" fill="#fff" opacity="0.85"/><circle cx="72" cy="52" r="4" fill="#000"/><circle cx="72" cy="68" r="3" fill="#000" opacity="0.5"/></svg>`).toString('base64')}`,
-
-  walletconnect: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><rect width="128" height="128" rx="28" fill="#3B99FC"/><path d="M40 48c13-12.5 34-12.5 47 0l1.5 1.5c0.8 0.8 0.8 2 0 2.8L84 56.5c-0.8 0.8-2 0.8-2.8 0l-2-2c-9-8.5-23.5-8.5-32.5 0l-2 2c-0.8 0.8-2 0.8-2.8 0L38.5 52.3c-0.8-0.8-0.8-2 0-2.8L40 48z" fill="#fff"/><path d="M50 58c7.5-7 19.5-7 27 0l1.5 1.5c0.8 0.8 0.8 2 0 2.8L75.5 65c-0.8 0.8-2 0.8-2.8 0l-2-2c-4.5-4-11.5-4-16 0l-2 2c-0.8 0.8-2 0.8-2.8 0L48.5 62.3c-0.8-0.8-0.8-2 0-2.8L50 58z" fill="#fff" opacity="0.9"/><path d="M60 68c2-2 5-2 7 0l2 2c0.8 0.8 0.8 2 0 2.8l-4 4c-0.8 0.8-2 0.8-2.8 0l-4-4c-0.8-0.8-0.8-2 0-2.8L60 68z" fill="#fff"/></svg>`).toString('base64')}`,
 };
 
 /**

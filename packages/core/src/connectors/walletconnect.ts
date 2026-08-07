@@ -66,7 +66,69 @@ type WCClient = {
   };
   on: (event: string, handler: (...args: unknown[]) => void) => void;
   removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+  /** AbortController-style cleanup — kills the WebSocket relay. */
+  abort?: (reason?: unknown) => void;
+  /** Core relay transport — has its own disconnect method in newer WC versions. */
+  core?: {
+    relay?: {
+      disconnect?: () => void;
+      transporter?: {
+        close?: () => void;
+      };
+    };
+  };
 };
+
+/**
+ * Fatal WC relay error codes that should NOT be retried.
+ * When the relay closes the socket with one of these codes, retrying
+ * will just fail again — we should surface the error to the user instead.
+ *
+ * See: https://walletconnect.com/2.0/specs/protocol/error-codes
+ */
+const FATAL_RELAY_ERROR_CODES = new Set([
+  3000, // Project not found — invalid projectId
+  3001, // Project blocked
+  3002, // Project rate limited
+  3003, // Project quota exceeded
+]);
+
+/**
+ * Regex to detect fatal error messages that don't carry a code, e.g.
+ * "Project not found" or "Invalid project id".
+ */
+const FATAL_ERROR_PATTERNS = [
+  /project not found/i,
+  /invalid project id/i,
+  /project blocked/i,
+  /project rate limited/i,
+  /project quota exceeded/i,
+  /unauthorized/i,
+];
+
+function isFatalRelayError(error: unknown): boolean {
+  if (typeof error === 'string') {
+    if (FATAL_ERROR_PATTERNS.some((p) => p.test(error))) return true;
+    // Also check for "code: 3000" pattern in the string
+    if (/code:?\s*3000/i.test(error)) return true;
+    return false;
+  }
+  if (error && typeof error === 'object') {
+    const e = error as { code?: number; message?: string; reason?: string };
+    // Check numeric code
+    if (typeof e.code === 'number' && FATAL_RELAY_ERROR_CODES.has(e.code)) return true;
+    // Check message string for fatal patterns
+    const msg = e.message ?? e.reason ?? '';
+    if (typeof msg === 'string') {
+      if (FATAL_ERROR_PATTERNS.some((p) => p.test(msg))) return true;
+      // Also check for "code: 3000" in the message (WC SDK puts it there)
+      if (/code:?\s*3000/i.test(msg)) return true;
+      // Check for "code 3000" without colon
+      if (/code\s*3000/i.test(msg)) return true;
+    }
+  }
+  return false;
+}
 
 export interface WalletConnectConnectorOptions {
   /** WalletConnect Cloud project ID — get one at cloud.walletconnect.com. */
@@ -112,7 +174,8 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   const meta: WalletMeta = {
     id: 'walletconnect',
     name: 'WalletConnect',
-    icon: 'https://raw.githubusercontent.com/WalletConnect/walletconnect-assets/master/Icon/Blue%20(Default)/Icon.svg',
+    // Official WalletConnect brand SVG (pre-encoded base64 for instant load)
+    icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAyNCIgaGVpZ2h0PSIxMDI0IiB2aWV3Qm94PSIwIDAgMTAyNCAxMDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTAyNCIgaGVpZ2h0PSIxMDI0IiBmaWxsPSIjMzM5NkZGIi8+CjxwYXRoIGQ9Ik0yODIuMjk4IDM2Ny4zOTRDNDA5Ljk4NiAyNDIuODY5IDYxNy4wMTUgMjQyLjg2OSA3NDQuNzAzIDM2Ny4zOTRMNzYwLjA3MSAzODIuMzhDNzY2LjQ1NiAzODguNjA1IDc2Ni40NTYgMzk4LjcwMSA3NjAuMDcxIDQwNC45MjZMNzA3LjUwMiA0NTYuMTkzQzcwNC4zMDkgNDU5LjMwNiA2OTkuMTM0IDQ1OS4zMDYgNjk1Ljk0MiA0NTYuMTkzTDY3NC43OTQgNDM1LjU3QzU4NS43MTMgMzQ4LjY5OCA0NDEuMjg4IDM0OC42OTggMzUyLjIwNyA0MzUuNTdMMzI5LjU1OCA0NTcuNjU1QzMyNi4zNjUgNDYwLjc2OCAzMjEuMTkxIDQ2MC43NjggMzE3Ljk5OCA0NTcuNjU1TDI2NS40MjkgNDA2LjM4OEMyNTkuMDQzIDQwMC4xNjMgMjU5LjA0MyAzOTAuMDY4IDI2NS40MjkgMzgzLjg0M0wyODIuMjk4IDM2Ny4zOTRaTTg1My40MjUgNDczLjQxOEw5MDAuMjExIDUxOS4wNDVDOTA2LjU5NiA1MjUuMjcgOTA2LjU5NiA1MzUuMzY1IDkwMC4yMTEgNTQxLjU5TDY4OS4yNDIgNzQ3LjMyOUM2ODIuODYgNzUzLjU1NyA2NzIuNTA4IDc1My41NTcgNjY2LjEyMyA3NDcuMzI5TDUxNi4zOTIgNjAxLjMxMkM1MTQuNzk1IDU5OS43NTQgNTEyLjIwOCA1OTkuNzU0IDUxMC42MTIgNjAxLjMxMkwzNjAuODgxIDc0Ny4zMjlDMzU0LjQ5OCA3NTMuNTU3IDM0NC4xNDcgNzUzLjU1NyAzMzcuNzYxIDc0Ny4zMjlMMTI2Ljc4OCA1NDEuNTg3QzEyMC40MDQgNTM1LjM2MiAxMjAuNDA0IDUyNS4yNjcgMTI2Ljc4OCA1MTkuMDQyTDE3My41NzYgNDczLjQxNUMxNzkuOTYgNDY3LjE5IDE5MC4zMTIgNDY3LjE5IDE5Ni42OTYgNDczLjQxNUwzNDYuNDMgNjE5LjQzNUMzNDguMDI2IDYyMC45OTIgMzUwLjYxMyA2MjAuOTkyIDM1Mi4yMSA2MTkuNDM1TDUwMS45MzcgNDczLjQxNUM1MDguMzIgNDY3LjE4NyA1MTguNjcyIDQ2Ny4xODcgNTI1LjA1NyA0NzMuNDE1TDY3NC43OTEgNjE5LjQzNUM2NzYuMzg3IDYyMC45OTIgNjc4Ljk3NSA2MjAuOTkyIDY4MC41NzEgNjE5LjQzNUw4MzAuMzA1IDQ3My40MThDODM2LjY4NyA0NjcuMTkgODQ3LjAzOSA0NjcuMTkgODUzLjQyNSA0NzMuNDE4WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==',
     supportsSep7: true,
     platforms: ['web', 'react-native', 'walletconnect'],
   };
@@ -142,12 +205,70 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let onUriHandler: ((uri: string) => void) | null = opts.onUri ?? (() => {});
 
   /**
+   * Aborts an in-flight connect() attempt. Set when the user cancels, when
+   * the 60s timeout fires, or when a fatal relay error is detected.
+   * connect() checks this after every await and bails out if set.
+   */
+  let connectAborted: boolean = false;
+  let connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When a fatal relay error fires, we store the message here so connect()
+   *  can include it in the thrown ConnectError. */
+  let fatalErrorMessage: string | null = null;
+
+  /** Timeout for waiting for the wallet to approve the pairing — 60s. */
+  const CONNECT_TIMEOUT_MS = 60_000;
+
+  /**
+   * Tears down the WC client's WebSocket relay and clears the singleton.
+   * Called on disconnect, on fatal error, and on connect timeout — without
+   * this, the WC SDK keeps an open WebSocket that retries forever even after
+   * the user has navigated away or the project ID is invalid.
+   */
+  function teardownClient(): void {
+    if (!client) return;
+    try {
+      // 1. Call transportClose() on the relayer — this sets
+      //    transportExplicitlyClosed=true and clears the reconnect timeout,
+      //    stopping the WC SDK's auto-reconnect heartbeat from reopening
+      //    the socket. This is the ONLY reliable way to stop the retry loop.
+      const relayer = (client as {
+        core?: { relayer?: {
+          transportClose?: () => Promise<void>;
+          transporter?: { close?: () => void };
+          connected?: boolean;
+        } };
+      }).core?.relayer;
+
+      if (typeof relayer?.transportClose === 'function') {
+        // Fire and forget — we don't need to wait for this
+        void relayer.transportClose();
+      }
+      // Also try transporter.close() as a fallback
+      if (typeof relayer?.transporter?.close === 'function') {
+        relayer.transporter.close();
+      }
+
+      // 2. Call client.abort() if available — fully tears down the SignClient
+      if (typeof client.abort === 'function') {
+        client.abort({ message: 'Connector teardown', code: 7000 });
+      }
+    } catch {
+      // Ignore — best-effort cleanup
+    }
+    client = null;
+    sessionTopic = null;
+  }
+
+  /**
    * Lazy-imports @walletconnect/sign-client and initializes the SignClient
    * (if not already done). The client is a singleton — we only init once
    * per connector instance.
    */
   async function ensureClient(): Promise<WCClient> {
     if (client) return client;
+    if (connectAborted) {
+      throw ConnectError.rejected(meta.id);
+    }
     try {
       // @walletconnect/sign-client v2 exports SignClient as a named export
       // (mod.SignClient), NOT as the default export. The default export is
@@ -177,8 +298,115 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         }
       });
 
+      // CRITICAL: Listen for relay transport errors that are FATAL — e.g.
+      // "Project not found" (code 3000) when the projectId is invalid.
+      // Without this, the WC SDK keeps retrying the WebSocket connection
+      // forever, flooding the console with "Fatal socket error" logs.
+      // We detect fatal errors and abort the connect() attempt immediately,
+      // tearing down the client so the relay socket is closed.
+      //
+      // The WC SDK v2 emits these events on the core relayer:
+      //   - 'relayer_error' — fires with the error object
+      //   - 'relayer_transport_closed' — fires when the WebSocket closes
+      //
+      // The "Fatal socket error" message is logged internally by the WC SDK
+      // (not emitted as an event), so we can't intercept it directly — but
+      // we CAN intercept the 'relayer_error' event that fires alongside it.
+      const onRelayError = (...args: unknown[]) => {
+        const error = args[0];
+        // If we've already detected a fatal error, ignore subsequent events
+        // (the WC SDK may fire multiple before the transport fully closes)
+        if (connectAborted) return;
+
+        if (isFatalRelayError(error)) {
+          const msg = typeof error === 'string'
+            ? error
+            : (error as { message?: string })?.message ?? String(error);
+          fatalErrorMessage = msg;
+          // Mark the connect attempt as aborted so connect() bails out
+          connectAborted = true;
+
+          // Remove our event listeners before teardown — prevents re-entry
+          // while the async transportClose() is in flight.
+          try {
+            client?.removeListener?.('relayer_error', onRelayError);
+            client?.removeListener?.('relayer_transport_closed', onRelayError);
+            client?.removeListener?.('error', onRelayError);
+            const core = (client as { core?: { relayer?: { removeListener?: (e: string, h: (...a: unknown[]) => void) => void; events?: { removeListener?: (e: string, h: (...a: unknown[]) => void) => void } } } }).core;
+            core?.relayer?.removeListener?.('relayer_error', onRelayError);
+            core?.relayer?.removeListener?.('relayer_transport_closed', onRelayError);
+            core?.relayer?.removeListener?.('error', onRelayError);
+            core?.relayer?.events?.removeListener?.('relayer_error', onRelayError);
+            core?.relayer?.events?.removeListener?.('relayer_transport_closed', onRelayError);
+            core?.relayer?.events?.removeListener?.('error', onRelayError);
+          } catch {
+            // Ignore — best-effort
+          }
+
+          // Tear down the client to stop the retry loop
+          teardownClient();
+          // Clear any pending timeout
+          if (connectTimeoutTimer) {
+            clearTimeout(connectTimeoutTimer);
+            connectTimeoutTimer = null;
+          }
+        }
+      };
+
+      // The 'relayer_error' event fires when the relay returns an error
+      // (e.g. "Project not found"). We also catch 'relayer_transport_closed'
+      // because some fatal errors close the transport before the error
+      // event fires.
+      client.on('relayer_error', onRelayError);
+      client.on('relayer_transport_closed', onRelayError);
+
+      // Also listen on the core relayer directly — the WC SDK emits the
+      // 'relayer_error' event on client.core.relayer.events, NOT on the
+      // SignClient itself. The SignClient only forwards session_* events.
+      // Without this, fatal errors like "Project not found" (code 3000)
+      // never reach our handler and the SDK keeps retrying forever.
+      //
+      // We try multiple access paths because the WC SDK version differences
+      // mean the EventEmitter might be at:
+      //   - client.core.relayer.on() (proxy to events.on)
+      //   - client.core.relayer.events.on() (direct EventEmitter access)
+      //   - client.core.relay.on() (older alias)
+      const core = (client as {
+        core?: {
+          relayer?: {
+            on?: (e: string, h: (...a: unknown[]) => void) => void;
+            events?: { on?: (e: string, h: (...a: unknown[]) => void) => void };
+          };
+          relay?: {
+            on?: (e: string, h: (...a: unknown[]) => void) => void;
+            events?: { on?: (e: string, h: (...a: unknown[]) => void) => void };
+          };
+        };
+      }).core;
+
+      const eventTargets = [
+        core?.relayer,
+        core?.relayer?.events,
+        core?.relay,
+        core?.relay?.events,
+      ].filter(Boolean) as { on?: (e: string, h: (...a: unknown[]) => void) => void }[];
+
+      for (const target of eventTargets) {
+        if (typeof target?.on === 'function') {
+          target.on('relayer_error', onRelayError);
+          target.on('relayer_transport_closed', onRelayError);
+          // Also try 'error' (the raw provider event name)
+          target.on('error', onRelayError);
+        }
+      }
+
       return client;
     } catch (err) {
+      // If the error is fatal (e.g. invalid projectId), don't leave the
+      // client around — tear it down so the relay socket is closed.
+      if (isFatalRelayError(err)) {
+        teardownClient();
+      }
       throw ConnectError.internal(
         `Failed to initialize WalletConnect: ${err instanceof Error ? err.message : String(err)}. ` +
         'Make sure @walletconnect/sign-client is installed: npm install @walletconnect/sign-client',
@@ -201,77 +429,197 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
     async connect(_connectOpts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
-        const wc = await ensureClient();
+        // Reset abort flag at the start of each connect attempt
+        connectAborted = false;
+        fatalErrorMessage = null;
 
-        // Propose a session with the Stellar namespace
-        const { uri, approval } = await wc.connect({
-          requiredNamespaces: {
-            stellar: {
-              chains: [`stellar:${opts.networkPassphrase}`],
-              methods: ['stellar_signXDR', 'stellar_signMessage', 'stellar_getAddress', 'stellar_getNetwork'],
-              events: [],
-            },
-          },
+        const wc = await ensureClient();
+        if (connectAborted) {
+          throw ConnectError.invalidRequest(
+            fatalErrorMessage
+              ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
+              : 'WalletConnect connection aborted — relay error (check your projectId).',
+            undefined,
+            meta.id
+          );
+        }
+
+        // Create the abort promise EARLY — before wc.connect() — because
+        // wc.connect() can hang if the relay is unreachable (e.g. invalid
+        // projectId). The fatal error fires asynchronously during wc.connect(),
+        // and without racing against the abort promise, we'd hang forever.
+        const abortPromise = new Promise<never>((_, reject) => {
+          const checkAbort = () => {
+            if (connectAborted) {
+              reject(new Error('__WC_ABORTED__'));
+              return;
+            }
+            setTimeout(checkAbort, 200);
+          };
+          checkAbort();
         });
+
+        // Helper: creates a ConnectError from the current fatalErrorMessage
+        const makeAbortError = () => ConnectError.invalidRequest(
+          fatalErrorMessage
+            ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
+            : 'WalletConnect connection aborted — relay error (check your projectId).',
+          undefined,
+          meta.id
+        );
+
+        // Propose a session with the Stellar namespace.
+        // Race against abortPromise — if the relay fires a fatal error
+        // during wc.connect() (e.g. "Project not found"), the abort promise
+        // rejects first and we surface the error instead of hanging forever.
+        let uri: string;
+        let approval: () => Promise<unknown>;
+        try {
+          const result = await Promise.race([
+            wc.connect({
+              requiredNamespaces: {
+                stellar: {
+                  chains: [`stellar:${opts.networkPassphrase}`],
+                  methods: ['stellar_signXDR', 'stellar_signMessage', 'stellar_getAddress', 'stellar_getNetwork'],
+                  events: [],
+                },
+              },
+            }),
+            abortPromise,
+          ]).catch((err) => {
+            if (err instanceof Error && err.message === '__WC_ABORTED__') {
+              throw makeAbortError();
+            }
+            throw err;
+          });
+          uri = (result as { uri: string }).uri;
+          approval = (result as { approval: () => Promise<unknown> }).approval;
+        } catch (err) {
+          // The connect() call itself can fail with a fatal relay error
+          // (e.g. "Project not found") — detect and surface it.
+          if (isFatalRelayError(err)) {
+            teardownClient();
+            throw ConnectError.invalidRequest(
+              `WalletConnect relay error: ${err instanceof Error ? err.message : String(err)}. ` +
+              'Check your projectId at cloud.walletconnect.com.',
+              undefined,
+              meta.id
+            );
+          }
+          if (err instanceof ConnectError) throw err;
+          throw err;
+        }
+
+        if (connectAborted) {
+          throw makeAbortError();
+        }
 
         // Surface the URI for the app to render as a QR code or deep link.
         // Uses the late-bound handler (may have been overwritten by the modal).
         if (uri && onUriHandler) onUriHandler(uri);
 
-        // Wait for the wallet to approve — resolves with the session object
-        const session = await approval() as {
-          topic: string;
-          namespaces: Record<string, {
-            accounts: string[];
-            methods?: string[];
-          }>;
-        };
+        // Wait for the wallet to approve with a 60-second timeout.
+        // If the relay is down (e.g. invalid projectId → "Project not found"),
+        // the approval() promise would hang forever without this timeout.
+        // We race approval() against:
+        //   1. A 60s timeout
+        //   2. An abort promise that rejects immediately when connectAborted
+        //      is set (by the fatal relay error handler)
+        // This ensures the user sees the error within seconds, not 60s.
+        let timeoutFired = false;
+        connectTimeoutTimer = setTimeout(() => {
+          timeoutFired = true;
+          connectAborted = true;
+          teardownClient();
+        }, CONNECT_TIMEOUT_MS);
 
-        sessionTopic = session.topic;
-
-        // Extract the address from the session's namespace accounts.
-        // WC account format: "stellar:<networkPassphrase>:<address>"
-        const stellarNamespace = session.namespaces?.stellar;
-        if (!stellarNamespace?.accounts?.length) {
-          throw ConnectError.internal(
-            'WalletConnect session established but no Stellar account was provided by the wallet.',
-            undefined,
-            meta.id
-          );
-        }
-        const accountStr = stellarNamespace.accounts[0] ?? '';
-        const parts = accountStr.split(':');
-        cachedAddress = parts[parts.length - 1] ?? null; // last segment is the address
-
-        // Try to get the network from the wallet
+        // Reuse the abortPromise created earlier (before wc.connect()).
+        // It rejects as soon as connectAborted becomes true (checked every 200ms).
         try {
-          const networkResult = await wc.request({
-            topic: sessionTopic,
-            request: { method: 'stellar_getNetwork', params: {} },
-          }) as { network?: string; networkPassphrase?: string };
-          if (networkResult?.networkPassphrase) {
+          const session = await Promise.race([
+            approval() as Promise<{
+              topic: string;
+              namespaces: Record<string, {
+                accounts: string[];
+                methods?: string[];
+              }>;
+            }>,
+            abortPromise,
+          ]).catch((err) => {
+            // If the abort promise rejected, convert to ConnectError
+            if (err instanceof Error && err.message === '__WC_ABORTED__') {
+              const reason = fatalErrorMessage
+                ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
+                : timeoutFired
+                  ? 'WalletConnect connection timed out after 60 seconds. The relay may be unreachable or your projectId may be invalid. Check your projectId at cloud.walletconnect.com and try again.'
+                  : 'WalletConnect connection aborted — relay error (check your projectId).';
+              throw ConnectError.invalidRequest(reason, undefined, meta.id);
+            }
+            throw err;
+          });
+
+          if (timeoutFired || connectAborted) {
+            // Distinguish between timeout and fatal relay error in the message
+            const reason = fatalErrorMessage
+              ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
+              : timeoutFired
+                ? 'WalletConnect connection timed out after 60 seconds. The relay may be unreachable or your projectId may be invalid. Check your projectId at cloud.walletconnect.com and try again.'
+                : 'WalletConnect connection aborted — relay error (check your projectId).';
+            throw ConnectError.invalidRequest(reason, undefined, meta.id);
+          }
+
+          sessionTopic = session.topic;
+
+          // Extract the address from the session's namespace accounts.
+          // WC account format: "stellar:<networkPassphrase>:<address>"
+          const stellarNamespace = session.namespaces?.stellar;
+          if (!stellarNamespace?.accounts?.length) {
+            throw ConnectError.internal(
+              'WalletConnect session established but no Stellar account was provided by the wallet.',
+              undefined,
+              meta.id
+            );
+          }
+          const accountStr = stellarNamespace.accounts[0] ?? '';
+          const parts = accountStr.split(':');
+          cachedAddress = parts[parts.length - 1] ?? null; // last segment is the address
+
+          // Try to get the network from the wallet
+          try {
+            const networkResult = await wc.request({
+              topic: sessionTopic,
+              request: { method: 'stellar_getNetwork', params: {} },
+            }) as { network?: string; networkPassphrase?: string };
+            if (networkResult?.networkPassphrase) {
+              cachedNetwork = {
+                network: networkResult.network ?? 'UNKNOWN',
+                networkPassphrase: networkResult.networkPassphrase,
+              };
+            }
+          } catch {
+            // Wallet doesn't support stellar_getNetwork — use the configured passphrase
             cachedNetwork = {
-              network: networkResult.network ?? 'UNKNOWN',
-              networkPassphrase: networkResult.networkPassphrase,
+              network: 'UNKNOWN',
+              networkPassphrase: opts.networkPassphrase,
             };
           }
-        } catch {
-          // Wallet doesn't support stellar_getNetwork — use the configured passphrase
-          cachedNetwork = {
-            network: 'UNKNOWN',
-            networkPassphrase: opts.networkPassphrase,
-          };
-        }
 
-        // Persist the session topic for restore on reload
-        if (opts.storage) {
-          await opts.storage.setItem(WC_STORAGE_KEY, JSON.stringify({
-            topic: sessionTopic,
-            address: cachedAddress,
-          }));
-        }
+          // Persist the session topic for restore on reload
+          if (opts.storage) {
+            await opts.storage.setItem(WC_STORAGE_KEY, JSON.stringify({
+              topic: sessionTopic,
+              address: cachedAddress,
+            }));
+          }
 
-        return { address: cachedAddress!, walletId: meta.id };
+          return { address: cachedAddress!, walletId: meta.id };
+        } finally {
+          // Clear the timeout regardless of success/failure
+          if (connectTimeoutTimer) {
+            clearTimeout(connectTimeoutTimer);
+            connectTimeoutTimer = null;
+          }
+        }
       });
     },
 
@@ -286,7 +634,10 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           // Session may already be deleted — ignore
         }
       }
-      sessionTopic = null;
+      // Tear down the relay socket so it stops retrying.
+      // Without this, the WC SDK keeps the WebSocket open and retries
+      // forever even after disconnect.
+      teardownClient();
       cachedAddress = null;
       cachedNetwork = null;
       if (opts.storage) {
