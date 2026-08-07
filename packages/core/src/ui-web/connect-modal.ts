@@ -69,6 +69,10 @@ export class SagantaAppKitModal extends ModalBase {
   private mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
   /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
   private avatarCache: Map<string, string | null> = new Map();
+  /** Pre-built CSS string — cached so we don't rebuild the 1000+ line stylesheet on every render(). */
+  private cachedStyles: string | null = null;
+  /** Cached theme hash — if the theme hasn't changed, we reuse cachedStyles. */
+  private cachedThemeKey: string = '';
 
   constructor() {
     super();
@@ -160,7 +164,11 @@ export class SagantaAppKitModal extends ModalBase {
     );
 
     this.view = client.session ? 'connected' : 'wallet-list';
-    this.refreshWalletList();
+    // Preload the wallet list immediately when the client is attached —
+    // this runs on page load, not on first open(). By the time the user
+    // clicks "Connect wallet", the reachability data is already cached
+    // and the modal opens instantly with the full wallet list.
+    void this.refreshWalletList();
   }
 
   get client(): StellarAppKit | null {
@@ -181,20 +189,29 @@ export class SagantaAppKitModal extends ModalBase {
       this.view = this._client.session ? 'connected' : 'wallet-list';
     }
     document.addEventListener('keydown', this.handleGlobalKeydown);
-    this.render();
-    if (!this.pendingPreview) {
-      // A preview already has its own decoded content ready to render — refreshing the wallet
-      // list here would be wasted work and, worse, races a second render() against the one
-      // showTransactionPreview() is about to trigger.
-      await this.refreshWalletList();
-    }
 
+    // Render IMMEDIATELY with whatever walletList data we have (may be empty
+    // or stale from a previous open). This shows the modal overlay + panel
+    // instantly — the user sees the modal appear without delay.
+    // If walletList is empty, the body shows a brief "Loading wallets…"
+    // placeholder. The actual reachability check runs in the background
+    // and re-renders when it completes.
+    this.render();
+
+    // Start the overlay enter animation immediately — don't wait for
+    // refreshWalletList() to complete.
     requestAnimationFrame(() => {
       const overlay = this.root.querySelector<HTMLElement>('.overlay');
       overlay?.setAttribute('data-open', 'true');
       this.hasEnteredOpenState = true;
       this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
     });
+
+    // Fetch wallet reachability in the background — re-renders when done.
+    // This is non-blocking: the modal is already open and visible.
+    if (!this.pendingPreview) {
+      void this.refreshWalletList();
+    }
   }
 
   close() {
@@ -520,7 +537,17 @@ export class SagantaAppKitModal extends ModalBase {
     const branding = this.getAttribute('branding') === 'hide' ? 'hide' : 'show';
     this.setAttribute('data-branding', branding);
 
-    const styleTag = `<style>${themeHostDeclarations(theme)}\n${buildStyles(theme)}</style>`;
+    // Cache the stylesheet — buildStyles() generates a ~1000-line CSS string
+    // by calling v() 126 times. Without caching, this runs on EVERY render()
+    // (every state change, every event, every animation frame). With caching,
+    // it only runs when the theme actually changes.
+    const themeKey = `${theme.colorBg}|${theme.colorAccent}|${theme.colorText}`;
+    if (this.cachedStyles === null || this.cachedThemeKey !== themeKey) {
+      this.cachedStyles = buildStyles(theme);
+      this.cachedThemeKey = themeKey;
+    }
+
+    const styleTag = `<style>${themeHostDeclarations(theme)}\n${this.cachedStyles}</style>`;
     const panelHtml = this.renderPanel(effectiveMode);
 
     if (effectiveMode === 'inline') {
@@ -744,6 +771,11 @@ export class SagantaAppKitModal extends ModalBase {
 
   private renderWalletList(): string {
     if (this.walletList.length === 0) {
+      // If we have a client, the list is loading (reachability checks in flight).
+      // Show a sleek loading placeholder instead of "No wallets registered".
+      if (this._client) {
+        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>Loading wallets…</div>`;
+      }
       return `<div style="padding: 24px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">No wallets registered. Pass connectors into the StellarAppKit config.</div>`;
     }
 

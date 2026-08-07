@@ -412,6 +412,16 @@ export function buildStyles(theme: ConnectTheme): string {
     }
 
     /* ---------- wallet list ---------- */
+    .wallet-list-loading {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid ${v('colorBorder', theme)};
+      border-top-color: ${v('colorAccent', theme)};
+      animation: sak-spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes sak-spin { to { transform: rotate(360deg); } }
     .wallet-row {
       all: unset;
       display: flex;
