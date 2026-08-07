@@ -24,7 +24,11 @@
     },
     "packages/core": {
       "name": "@saganta/stellar-appkit",
+<<<<<<< Updated upstream
       "version": "1.0.5",
+=======
+      "version": "1.0.4",
+>>>>>>> Stashed changes
       "dependencies": {
         "@albedo-link/intent": "^0.13.0",
         "@creit.tech/xbull-wallet-connect": "^0.4.0",
@@ -39,7 +43,11 @@
     },
     "packages/siws-verify": {
       "name": "@saganta/stellar-appkit-siws-verify",
+<<<<<<< Updated upstream
       "version": "1.0.5",
+=======
+      "version": "1.0.4",
+>>>>>>> Stashed changes
       "dependencies": {
         "@saganta/stellar-appkit": "^0.2.0",
         "@stellar/stellar-sdk": "^13.0.0",
@@ -47,7 +55,11 @@
     },
     "packages/ui-web": {
       "name": "@saganta/stellar-appkit-ui-web",
+<<<<<<< Updated upstream
       "version": "1.0.5",
+=======
+      "version": "1.0.4",
+>>>>>>> Stashed changes
       "dependencies": {
         "@saganta/stellar-appkit": "^1.0.1",
       },
