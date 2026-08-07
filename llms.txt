@@ -12,7 +12,7 @@ Stellar AppKit is a Web3Modal / Reown AppKit equivalent for Stellar. It provides
 ## Install
 
 ```bash
-npm install @saganta/stellar-appkit
+npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web
 ```
 
 That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
@@ -24,7 +24,6 @@ Bundled dependencies (no manual install needed):
 - `@creit.tech/xbull-wallet-connect` — xBull connector
 - `@ledgerhq/hw-app-str` + `@ledgerhq/hw-transport-webhid` + `@ledgerhq/hw-transport-webusb` — Ledger connector
 - `@walletconnect/sign-client` — WalletConnect connector
-- `@use-gesture/vanilla` + `motion` — draggable bottom-sheet (only loaded in bottom-sheet mode)
 
 Framework wrappers are optional peer dependencies (install the one for your framework):
 - `react` + `react-dom` — `@saganta/stellar-appkit/react`
@@ -38,7 +37,7 @@ Frameworks must remain as peer deps because your app already has its own framewo
 
 ```ts
 import { StellarAppKit, createFreighterConnector } from '@saganta/stellar-appkit';
-import '@saganta/stellar-appkit/ui-web';
+import '@saganta/stellar-appkit-ui-web';
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -147,7 +146,7 @@ if (result.ok) {
 
 ### React
 ```tsx
-import { StellarAppKitProvider, useConnect, useSession, useSoroban } from '@saganta/stellar-appkit/react';
+import { StellarAppKitProvider, useConnect, useSession, useSoroban } from '@saganta/stellar-appkit-ui-web/react';
 
 <StellarAppKitProvider config={{ network: 'TESTNET', connectors: [...] }}>
   <WalletPanel />
@@ -160,7 +159,7 @@ const { invoke, soroban } = useSoroban({ rpcUrl, networkPassphrase });
 
 ### Vue
 ```ts
-import { StellarAppKitPlugin, useConnect, useSession } from '@saganta/stellar-appkit/vue';
+import { StellarAppKitPlugin, useConnect, useSession } from '@saganta/stellar-appkit-ui-web/vue';
 app.use(StellarAppKitPlugin, { network: 'TESTNET', connectors: [...] });
 
 // In setup():
@@ -170,12 +169,12 @@ const session = useSession();
 
 ### Solid
 ```tsx
-import { StellarAppKitProvider, useConnect, useSession } from '@saganta/stellar-appkit/solid';
+import { StellarAppKitProvider, useConnect, useSession } from '@saganta/stellar-appkit-ui-web/solid';
 ```
 
 ### Svelte
 ```svelte
-import { setStellarAppKitContext, useConnect, useSession } from '@saganta/stellar-appkit/svelte';
+import { setStellarAppKitContext, useConnect, useSession } from '@saganta/stellar-appkit-ui-web/svelte';
 setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
 const { connect } = useConnect();
 const session = useSession();
@@ -189,9 +188,9 @@ Each wrapper ships a typed component wrapping the `<saganta-appkit-modal>` Web C
 ### React
 ```tsx
 import { useRef } from 'react';
-import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit/react';
-import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/react';
-import '@saganta/stellar-appkit/ui-web';
+import { StellarAppKitProvider, StellarAppKitModal } from '@saganta/stellar-appkit-ui-web/react';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit-ui-web/react';
+import '@saganta/stellar-appkit-ui-web';
 
 function ModalHost() {
   const ref = useRef<StellarAppKitModalHandle>(null);
@@ -209,8 +208,8 @@ function ModalHost() {
 ```vue
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { provideStellarAppKit, StellarAppKitModal } from '@saganta/stellar-appkit/vue';
-  import '@saganta/stellar-appkit/ui-web';
+  import { provideStellarAppKit, StellarAppKitModal } from '@saganta/stellar-appkit-ui-web/vue';
+  import '@saganta/stellar-appkit-ui-web';
   provideStellarAppKit({ network: 'TESTNET', connectors: [...] });
   const modal = ref<InstanceType<typeof StellarAppKitModal>>();
 </script>
@@ -223,9 +222,9 @@ function ModalHost() {
 
 ### Solid
 ```tsx
-import { StellarAppKitModal } from '@saganta/stellar-appkit/solid';
-import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit/solid';
-import '@saganta/stellar-appkit/ui-web';
+import { StellarAppKitModal } from '@saganta/stellar-appkit-ui-web/solid';
+import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit-ui-web/solid';
+import '@saganta/stellar-appkit-ui-web';
 
 let handle: StellarAppKitModalHandle | undefined;
 <StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="dark" />;
@@ -235,8 +234,8 @@ let handle: StellarAppKitModalHandle | undefined;
 ### Svelte (use:stellarmodal action)
 ```svelte
 <script lang="ts">
-  import { setStellarAppKitContext, stellarmodal, openModal } from '@saganta/stellar-appkit/svelte';
-  import '@saganta/stellar-appkit/ui-web';
+  import { setStellarAppKitContext, stellarmodal, openModal } from '@saganta/stellar-appkit-ui-web/svelte';
+  import '@saganta/stellar-appkit-ui-web';
   setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
   let modalEl: HTMLElement;
 </script>

@@ -73,7 +73,8 @@ Every connector is its own independently tree-shakeable module — pick one wall
 
 | Package | What it is |
 |---|---|
-| [`@saganta/stellar-appkit`](./packages/core) | Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK. Includes the themeable `<saganta-appkit-modal>` Web Component at the `/ui-web` subpath, plus framework wrappers at `/react`, `/vue`, `/solid`, `/svelte` — all separate entry points, so importing only the core client never pulls in UI or framework code. |
+| [`@saganta/stellar-appkit`](./packages/core) | Core SDK — wallet connections, Soroban, transaction preview, SIWS client. Pure TypeScript, zero UI dependencies. Shared between Web and React Native. |
+| [`@saganta/stellar-appkit-ui-web`](./packages/ui-web) | Web UI — `<saganta-appkit-modal>` Shadow DOM Web Component + framework wrappers (`/react`, `/vue`, `/solid`, `/svelte`). Zero-dependency spring physics for the draggable bottom-sheet. |
 | [`@saganta/stellar-appkit-siws-verify`](./packages/siws-verify) | Server-side SIWS signature/envelope verification. |
 
 See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, positioning against prior art, and the phased build roadmap. Full documentation is at **[stellar-appkit.saganta.com](https://stellar-appkit.saganta.com)**. Live demos are at **[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)**.
@@ -83,10 +84,14 @@ See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full design rationale, posi
 ## Installation
 
 ```bash
+# Core SDK (no UI)
 npm install @saganta/stellar-appkit
+
+# Web UI (modal + framework wrappers)
+npm install @saganta/stellar-appkit-ui-web
 ```
 
-That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries (for the draggable bottom-sheet) are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector.
+The core package bundles all wallet SDKs and the Stellar SDK as regular dependencies. The UI package has zero runtime dependencies — the bottom-sheet spring physics is a custom 30-line engine built on native Pointer Events + requestAnimationFrame (no `@use-gesture/vanilla` or `motion` needed).
 
 | What's bundled | Used by | Tree-shaken if |
 |---|---|---|
@@ -103,10 +108,10 @@ That's it. All wallet SDKs, the Stellar SDK, and the gesture libraries (for the 
 The only peer dependencies are the framework wrappers themselves — these are optional and only required if you use the corresponding subpath export (`/react`, `/vue`, `/solid`, `/svelte`). Install the one for your framework:
 
 ```bash
-npm install react react-dom      # for @saganta/stellar-appkit/react
-npm install vue                  # for @saganta/stellar-appkit/vue
-npm install solid-js             # for @saganta/stellar-appkit/solid
-npm install svelte               # for @saganta/stellar-appkit/svelte
+npm install react react-dom      # for @saganta/stellar-appkit-ui-web/react
+npm install vue                  # for @saganta/stellar-appkit-ui-web/vue
+npm install solid-js             # for @saganta/stellar-appkit-ui-web/solid
+npm install svelte               # for @saganta/stellar-appkit-ui-web/svelte
 ```
 
 Frameworks must remain as peer dependencies (not bundled) because your app already has its own framework instance — having two copies of React (for example) breaks hooks. The wallet SDKs and gesture libraries don't have this singleton constraint, so they're safe to bundle.
