@@ -293,51 +293,48 @@ export class SagantaAppKitModal extends ModalBase {
     document.addEventListener('keydown', this.handleGlobalKeydown);
 
     // Render IMMEDIATELY with whatever walletList data we have.
+    // render() sets data-open="false" because hasEnteredOpenState is false.
     this.render();
 
-    // Resolve and play the enter animation via WAAPI.
-    // The default open animation is `scale-blur` for modal, `slide-up` for bottom-sheet.
-    // (Configurable via the `animation`, `animation-open`, `animation-close` attributes
-    // or via the StellarAppKit config's `modal.animation` field — see modal-props.ts.)
+    // CRITICAL: Set data-open="true" IMMEDIATELY after render().
+    // This triggers the CSS transition:
+    //   .overlay[data-open="true"] .panel { transform: translateY(0); opacity: 1; }
+    // The CSS transition is the PRIMARY animation mechanism — it's reliable on
+    // all browsers including mobile. The WAAPI animation below is a progressive
+    // enhancement for custom presets (implode, slide-left, etc.).
+    //
+    // Previous bug: data-open stayed "false" because hasEnteredOpenState was
+    // set AFTER the WAAPI animation setup. On mobile where WAAPI doesn't fire
+    // reliably, the panel stayed at translateY(100%) (off-screen) forever.
+    this.hasEnteredOpenState = true;
+    const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
+    if (overlayEl) {
+      overlayEl.setAttribute('data-open', 'true');
+    }
+
+    // WAAPI animation — progressive enhancement for custom presets.
+    // Only runs when the user explicitly sets animation/animation-open attributes
+    // or modal.animation config. For the default animations (scale-blur, slide-up),
+    // the CSS transition handles everything — no WAAPI needed, no risk of
+    // onfinish not firing on mobile.
+    const animAttr = this.getAttribute('animation');
+    const openAnimAttr = this.getAttribute('animation-open');
+    const closeAnimAttr = this.getAttribute('animation-close');
+    const hasCustomAnimation = !!(animAttr || openAnimAttr || closeAnimAttr || this._client?.modalConfig?.animation);
+
     const panel = this.root.querySelector<HTMLElement>('.panel');
-    const overlay = this.root.querySelector<HTMLElement>('.overlay');
-    if (panel) {
-      // Set the initial state explicitly so the panel doesn't flash at its
-      // final position before the WAAPI animation kicks in (the animation's
-      // first keyframe sets it to opacity:0/scale(.92), but there's a
-      // one-frame gap between render() and the animation start).
-      panel.style.opacity = '0';
+    if (panel && hasCustomAnimation) {
       const { open } = this.getResolvedAnimations();
       const anim = open.enter(panel);
       if (anim) {
         this.activeAnimation = anim;
-        anim.onfinish = () => {
-          this.activeAnimation = null;
-          panel.style.opacity = '';
-        };
-        anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
-        // Safety fallback: if the animation doesn't complete within 400ms,
-        // force-clear the opacity. The animations are 300ms, so 400ms gives
-        // 100ms of grace. This fixes a mobile issue where WAAPI animations
-        // sometimes don't fire onfinish on some Android browsers.
-        setTimeout(() => {
-          if (panel.style.opacity === '0') {
-            panel.style.opacity = '';
-          }
-        }, 400);
-      } else {
-        // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
-        panel.style.opacity = '';
+        anim.onfinish = () => { this.activeAnimation = null; };
+        anim.oncancel = () => { this.activeAnimation = null; };
       }
     }
-    // Animate overlay opacity separately
-    if (overlay) {
-      overlay.style.opacity = '0';
-      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' })
-        .onfinish = () => { overlay.style.opacity = ''; };
-    }
 
-    this.hasEnteredOpenState = true;
+    // Overlay fade-in via CSS transition (data-open="true" triggers it).
+    // No WAAPI needed — the CSS transition on .overlay handles the opacity.
     this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
 
     // Fetch wallet reachability in the background — re-renders when done.
@@ -370,13 +367,8 @@ export class SagantaAppKitModal extends ModalBase {
     // Cancel any ongoing enter animation
     this.cancelActiveAnimation();
 
-    // Play the exit animation via WAAPI, then clean up.
-    // The default close animation mirrors the open: `scale-blur` for modal,
-    // `slide-up` for bottom-sheet (so closing a bottom-sheet slides it down
-    // rather than just fading out).
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
-    const { close } = this.getResolvedAnimations();
 
     const finishClose = () => {
       document.removeEventListener('keydown', this.handleGlobalKeydown);
@@ -386,6 +378,7 @@ export class SagantaAppKitModal extends ModalBase {
       this.hasEnteredOpenState = false;
       // Clear any inline styles left over from drag/spring so the next open() starts clean
       if (panel) panel.style.transform = '';
+      if (panel) panel.style.opacity = '';
       if (overlay) overlay.style.opacity = '';
       this.render();
     };
@@ -395,26 +388,37 @@ export class SagantaAppKitModal extends ModalBase {
       return;
     }
 
-    if (panel) {
+    // Set data-open="false" to trigger the CSS exit transition.
+    // The CSS transition animates:
+    //   .panel { transform: translateY(100%) / scale(0.94); opacity: 0; }
+    //   .overlay { opacity: 0; }
+    // This is the PRIMARY animation mechanism — reliable on all browsers.
+    if (overlay) {
+      overlay.setAttribute('data-open', 'false');
+    }
+
+    // Check if a custom WAAPI animation is set — if so, use it instead
+    const animAttr = this.getAttribute('animation');
+    const openAnimAttr = this.getAttribute('animation-open');
+    const closeAnimAttr = this.getAttribute('animation-close');
+    const hasCustomAnimation = !!(animAttr || openAnimAttr || closeAnimAttr || this._client?.modalConfig?.animation);
+
+    if (hasCustomAnimation && panel) {
+      const { close } = this.getResolvedAnimations();
       const anim = close.exit(panel);
       if (anim) {
         this.activeAnimation = anim;
         anim.onfinish = () => { this.activeAnimation = null; finishClose(); };
         anim.oncancel = () => { this.activeAnimation = null; };
-        // Safety timeout in case animation doesn't fire onfinish
         setTimeout(() => { if (this.activeAnimation === anim) finishClose(); }, 500);
-      } else {
-        finishClose();
+        return;
       }
-    } else {
-      finishClose();
     }
 
-    // Animate overlay opacity separately (only when not skipping — drag-dismiss
-    // fades the overlay via the spring itself)
-    if (overlay) {
-      overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease', fill: 'forwards' });
-    }
+    // Default: wait for CSS transition to finish, then clean up.
+    // Transitions are 320ms for the panel + 220ms for the overlay.
+    // 350ms gives enough time for both to complete.
+    setTimeout(finishClose, 350);
   }
 
   /** Cancel any active WAAPI animation (interruption handling). */
