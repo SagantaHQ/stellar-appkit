@@ -5,6 +5,12 @@ import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
 import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
+import {
+  resolveAnimation,
+  type AnimationPreset,
+  type AnimationPresetName,
+  type ModalAnimationOption,
+} from './animations/index.js';
 
 export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
@@ -38,7 +44,7 @@ const ModalBase = typeof HTMLElement !== 'undefined' ? HTMLElement : class {} as
 
 export class SagantaAppKitModal extends ModalBase {
   static get observedAttributes() {
-    return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars', 'explorer-url'];
+    return ['mode', 'theme', 'branding', 'logo-src', 'title', 'auto-retry-network', 'stellar-expert-avatars', 'explorer-url', 'animation', 'animation-open', 'animation-close'];
   }
 
   private root: ShadowRoot;
@@ -76,6 +82,10 @@ export class SagantaAppKitModal extends ModalBase {
   /** Set of image URLs that have been preloaded into the browser cache.
       Prevents flash-of-empty-image when the modal first renders. */
   private preloadedImages: Set<string> = new Set();
+  /** Active WAAPI animation instance — tracked for interruption handling. */
+  private activeAnimation: Animation | null = null;
+  /** Resolved animation presets (open + close). */
+  private resolvedAnimations: { open: AnimationPreset; close: AnimationPreset } | null = null;
 
   constructor() {
     super();
@@ -95,7 +105,11 @@ export class SagantaAppKitModal extends ModalBase {
     this.clientUnsubscribers.forEach((unsub) => unsub());
   }
 
-  attributeChangedCallback() {
+  attributeChangedCallback(name: string) {
+    // Clear animation cache when animation attributes change
+    if (name === 'animation' || name === 'animation-open' || name === 'animation-close' || name === 'mode') {
+      this.resolvedAnimations = null;
+    }
     this.render();
   }
 
@@ -250,31 +264,40 @@ export class SagantaAppKitModal extends ModalBase {
     if (!this._client) {
       throw new Error('[saganta-appkit] Set the `.client` property to a StellarAppKit instance before calling open().');
     }
+
+    // Cancel any ongoing exit animation
+    this.cancelActiveAnimation();
+
     this.isOpen = true;
     if (!this.pendingPreview && !this.pendingAccountPicker) {
       this.view = this._client.session ? 'connected' : 'wallet-list';
     }
     document.addEventListener('keydown', this.handleGlobalKeydown);
 
-    // Render IMMEDIATELY with whatever walletList data we have (may be empty
-    // or stale from a previous open). This shows the modal overlay + panel
-    // instantly — the user sees the modal appear without delay.
-    // If walletList is empty, the body shows a brief "Loading wallets…"
-    // placeholder. The actual reachability check runs in the background
-    // and re-renders when it completes.
+    // Render IMMEDIATELY with whatever walletList data we have.
     this.render();
 
-    // Start the overlay enter animation immediately — don't wait for
-    // refreshWalletList() to complete.
-    requestAnimationFrame(() => {
-      const overlay = this.root.querySelector<HTMLElement>('.overlay');
-      overlay?.setAttribute('data-open', 'true');
-      this.hasEnteredOpenState = true;
-      this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
-    });
+    // Resolve and play the enter animation via WAAPI
+    const panel = this.root.querySelector<HTMLElement>('.panel');
+    const overlay = this.root.querySelector<HTMLElement>('.overlay');
+    if (panel) {
+      const { open } = this.getResolvedAnimations();
+      const anim = open.enter(panel);
+      if (anim) {
+        this.activeAnimation = anim;
+        anim.onfinish = () => { this.activeAnimation = null; };
+        anim.oncancel = () => { this.activeAnimation = null; };
+      }
+    }
+    // Animate overlay opacity separately
+    if (overlay) {
+      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' });
+    }
+
+    this.hasEnteredOpenState = true;
+    this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
 
     // Fetch wallet reachability in the background — re-renders when done.
-    // This is non-blocking: the modal is already open and visible.
     if (!this.pendingPreview) {
       void this.refreshWalletList();
     }
@@ -291,16 +314,78 @@ export class SagantaAppKitModal extends ModalBase {
       this.pendingPreview = null;
       resolve(false);
     }
+
+    // Cancel any ongoing enter animation
+    this.cancelActiveAnimation();
+
+    // Play the exit animation via WAAPI, then clean up
+    const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
-    overlay?.setAttribute('data-open', 'false');
-    document.removeEventListener('keydown', this.handleGlobalKeydown);
-    this.releaseFocusTrap?.();
-    this.releaseFocusTrap = null;
-    window.setTimeout(() => {
+    const { close } = this.getResolvedAnimations();
+
+    const finishClose = () => {
+      document.removeEventListener('keydown', this.handleGlobalKeydown);
+      this.releaseFocusTrap?.();
+      this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
       this.render();
-    }, 200);
+    };
+
+    if (panel) {
+      const anim = close.exit(panel);
+      if (anim) {
+        this.activeAnimation = anim;
+        anim.onfinish = () => { this.activeAnimation = null; finishClose(); };
+        anim.oncancel = () => { this.activeAnimation = null; };
+        // Safety timeout in case animation doesn't fire onfinish
+        setTimeout(() => { if (this.activeAnimation === anim) finishClose(); }, 500);
+      } else {
+        finishClose();
+      }
+    } else {
+      finishClose();
+    }
+
+    // Animate overlay opacity separately
+    if (overlay) {
+      overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease', fill: 'forwards' });
+    }
+  }
+
+  /** Cancel any active WAAPI animation (interruption handling). */
+  private cancelActiveAnimation() {
+    if (this.activeAnimation) {
+      try { this.activeAnimation.cancel(); } catch { /* AbortError — expected */ }
+      this.activeAnimation = null;
+    }
+  }
+
+  /** Resolve animation presets from attributes or defaults based on mode. */
+  private getResolvedAnimations(): { open: AnimationPreset; close: AnimationPreset } {
+    if (this.resolvedAnimations) return this.resolvedAnimations;
+
+    const effectiveMode = this.computeEffectiveMode();
+    const defaultOpen: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
+    const defaultClose: AnimationPresetName = effectiveMode === 'bottomsheet' ? 'slide-up' : 'scale-blur';
+
+    // Check attributes: animation, animation-open, animation-close
+    const animAttr = this.getAttribute('animation');
+    const openAttr = this.getAttribute('animation-open');
+    const closeAttr = this.getAttribute('animation-close');
+
+    let option: ModalAnimationOption | undefined;
+    if (openAttr || closeAttr) {
+      option = {
+        open: (openAttr as AnimationPresetName) ?? undefined,
+        close: (closeAttr as AnimationPresetName) ?? undefined,
+      };
+    } else if (animAttr) {
+      option = animAttr as AnimationPresetName;
+    }
+
+    this.resolvedAnimations = resolveAnimation(option, defaultOpen, defaultClose);
+    return this.resolvedAnimations;
   }
 
   private handleGlobalKeydown = (e: KeyboardEvent) => {

@@ -81,6 +81,19 @@ export interface StellarAppKitModalProps {
    * accounts that don't provide their own avatar via `getAvatar()`.
    */
   stellarExpertAvatars?: boolean;
+
+  /**
+   * Animation preset for both open and close transitions.
+   * Options: 'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode'
+   * Default: 'scale-blur' for modal, 'slide-up' for bottom-sheet.
+   */
+  animation?: string;
+
+  /** Animation preset for the open transition only (overrides `animation`). */
+  animationOpen?: string;
+
+  /** Animation preset for the close transition only (overrides `animation`). */
+  animationClose?: string;
 }
 
 /**
@@ -127,5 +140,8 @@ export function propsToAttributes(props: StellarAppKitModalProps): Record<string
   if (props.title) attrs['title'] = props.title;
   if (props.autoRetryNetwork !== undefined) attrs['auto-retry-network'] = props.autoRetryNetwork ? 'true' : 'false';
   if (props.stellarExpertAvatars !== undefined) attrs['stellar-expert-avatars'] = props.stellarExpertAvatars ? 'true' : 'false';
+  if (props.animation) attrs['animation'] = props.animation;
+  if (props.animationOpen) attrs['animation-open'] = props.animationOpen;
+  if (props.animationClose) attrs['animation-close'] = props.animationClose;
   return attrs;
 }
