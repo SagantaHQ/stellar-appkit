@@ -705,17 +705,128 @@ export function buildStyles(theme: ConnectTheme): string {
     .error-title { font-size: 14px; font-weight: 600; }
     .error-message { font-size: 13px; color: ${v('colorTextMuted', theme)}; line-height: 1.5; }
 
-    /* ---------- transaction preview ---------- */
-    .preview { display: flex; flex-direction: column; gap: 12px; padding: 6px 10px 14px; }
+    /* ---------- transaction preview (Reown-inspired redesign) ---------- */
+    .preview {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding: 8px 18px 20px;
+      text-align: center;
+    }
+
+    /* Staggered entrance animation — each direct child fades in + slides up */
+    .preview > * {
+      opacity: 0;
+      animation: sak-preview-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .preview > *:nth-child(1) { animation-delay: 0ms; }
+    .preview > *:nth-child(2) { animation-delay: 60ms; }
+    .preview > *:nth-child(3) { animation-delay: 120ms; }
+    .preview > *:nth-child(4) { animation-delay: 180ms; }
+    .preview > *:nth-child(5) { animation-delay: 240ms; }
+    .preview > *:nth-child(6) { animation-delay: 300ms; }
+    .preview > *:nth-child(7) { animation-delay: 360ms; }
+    @keyframes sak-preview-enter {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .preview > * { animation: none; opacity: 1; }
+    }
+
+    /* Thumbnails — app logo + wallet logo side by side with a connector line */
+    .preview-thumbs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      padding: 20px 0 16px;
+    }
+    .preview-thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .preview-thumb--app {
+      background: ${v('colorSurface', theme)};
+      border: 1px solid ${v('colorBorder', theme)};
+    }
+    .preview-thumb--wallet {
+      background: ${v('colorSurface', theme)};
+      border: 1px solid ${v('colorBorder', theme)};
+    }
+    .preview-thumb__img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    .preview-thumb__letter {
+      font-size: 20px;
+      font-weight: 700;
+      color: ${v('colorAccent', theme)};
+    }
+    /* Connector line between the two thumbnails */
+    .preview-thumb__connector {
+      width: 24px;
+      height: 2px;
+      background: ${v('colorBorder', theme)};
+      flex-shrink: 0;
+    }
+
+    /* Title + subtitle */
+    .preview-title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: ${v('colorText', theme)};
+      margin: 0 0 6px;
+      line-height: 1.3;
+    }
+    .preview-subtitle {
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: ${v('colorTextMuted', theme)};
+      margin: 0 0 16px;
+      max-width: 300px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Operations list */
+    .preview-ops {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: left;
+      margin-bottom: 8px;
+    }
+    .preview-op {
+      padding: 10px 12px;
+      border-radius: ${v('radiusMd', theme)};
+      background: ${v('colorBg', theme)};
+      border: 1px solid ${v('colorBorder', theme)};
+    }
+    .preview-op-summary { font-size: 13px; line-height: 1.5; color: ${v('colorText', theme)}; }
+
+    /* Meta: source account + fee */
     .preview-meta {
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-family: ${v('fontMono', theme)};
-      font-size: 12px;
+      font-size: 11.5px;
       color: ${v('colorTextMuted', theme)};
-      padding: 0 2px;
+      padding: 8px 2px 0;
       gap: 8px;
+      border-top: 1px solid ${v('colorBorder', theme)};
+      margin-top: 8px;
     }
     .preview-meta-item {
       display: inline-flex;
@@ -729,17 +840,46 @@ export function buildStyles(theme: ConnectTheme): string {
     .preview-meta-item .icon-btn:hover {
       opacity: 1;
     }
-    .preview-ops { display: flex; flex-direction: column; gap: 8px; }
-    .preview-op {
-      padding: 10px 12px;
-      border-radius: ${v('radiusMd', theme)};
-      background: ${v('colorBg', theme)};
-      border: 1px solid ${v('colorBorder', theme)};
+    .preview-fee {
+      font-weight: 500;
+      color: ${v('colorText', theme)};
     }
-    .preview-op-summary { font-size: 13.5px; line-height: 1.5; }
-    .preview-op-index { color: ${v('colorTextMuted', theme)}; font-family: ${v('fontMono', theme)}; }
-    .preview-actions { display: flex; gap: 8px; margin-top: 4px; }
-    .preview-actions .btn { flex: 1; }
+
+    /* Actions: Cancel + Sign/Approve — full-width side by side */
+    .preview-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .preview-btn {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: ${v('radiusSm', theme)};
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid ${v('colorBorder', theme)};
+      transition: background-color 200ms ease, border-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .preview-btn:active {
+      transform: scale(0.97);
+    }
+    .preview-btn--cancel {
+      background: transparent;
+      color: ${v('colorText', theme)};
+    }
+    .preview-btn--cancel:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+    }
+    .preview-btn--approve {
+      background: ${v('colorAccent', theme)};
+      border-color: ${v('colorAccent', theme)};
+      color: ${v('colorBg', theme)};
+    }
+    .preview-btn--approve:hover {
+      opacity: 0.9;
+    }
 
     /* contract verification badges — positive trust signals (Verified,
      * Audited, Published by X) surfaced from previewOptions.contractMetadata */

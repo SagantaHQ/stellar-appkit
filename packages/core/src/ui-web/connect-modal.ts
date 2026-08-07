@@ -895,24 +895,44 @@ export class SagantaAppKitModal extends ModalBase {
 
     const txFlags = preview.riskFlags.map((flag) => riskFlagHtml(flag)).join('');
 
-    // Surface the fee estimate if available (populated by
-    // SorobanConnection.previewInvoke when includeFeeEstimate is on).
+    // Fee display — prefer the detailed estimate if available.
     const feeHtml = preview.feeEstimate
-      ? `<span>Fee ${preview.feeEstimate.totalFeeXlm}</span>`
-      : `<span>Fee ${preview.fee} stroops</span>`;
+      ? `<span class="preview-fee">${escapeHtml(preview.feeEstimate.totalFeeXlm)} XLM</span>`
+      : `<span class="preview-fee">${escapeHtml(preview.fee)} stroops</span>`;
 
     const isCopied = this.copiedAddress === preview.sourceAccount && this.copyState === 'copied';
 
+    // App + wallet thumbnails (Reown-style two-thumbnail layout)
+    const logoSrc = this.getAttribute('logo-src');
+    const appName = this._client?.appMetadata?.name ?? 'App';
+    const connector = this._client?.activeConnector;
+    const walletIcon = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
+    const walletName = connector?.meta.name ?? 'Wallet';
+    const appIconHtml = logoSrc
+      ? `<img src="${escapeAttr(logoSrc)}" alt="" class="preview-thumb__img" />`
+      : `<span class="preview-thumb__letter">${escapeHtml(appName.charAt(0).toUpperCase())}</span>`;
+    const walletIconHtml = walletIcon
+      ? `<img src="${escapeAttr(walletIcon)}" alt="" class="preview-thumb__img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><span style="display:none;" class="preview-thumb__letter">${escapeHtml(walletName.charAt(0).toUpperCase())}</span>`
+      : `<span class="preview-thumb__letter">${escapeHtml(walletName.charAt(0).toUpperCase())}</span>`;
+
+    // Determine the action label — "Sign" for messages/SIWS, "Approve" for transactions
+    const isMessageSign = preview.operations.length === 1 && preview.operations[0]?.type === 'signMessage';
+    const actionLabel = isMessageSign ? 'Sign' : 'Approve';
+    const titleText = isMessageSign ? 'Sign message' : 'Review transaction';
+    const subtitleText = isMessageSign
+      ? `Sign this message to prove you own ${walletName}. Canceling will dismiss the request.`
+      : `Review the transaction details below. Approve to continue signing in ${walletName}.`;
+
+    // Operations list
     const opsHtml = preview.operations
       .map((op, i) => {
         const opFlags = op.riskFlags.map((flag) => riskFlagHtml(flag)).join('');
-        // Surface contract badges if present (from previewOptions.contractMetadata)
         const badgesHtml = op.contractBadges && op.contractBadges.length > 0
           ? `<div class="contract-badges">${op.contractBadges.map((b) => `<span class="contract-badge badge-${b.severity}"${b.url ? ` data-url="${escapeAttr(b.url)}"` : ''}>${escapeHtml(b.label)}</span>`).join('')}</div>`
           : '';
         return `
           <div class="preview-op">
-            <div class="preview-op-summary"><span class="preview-op-index">${i + 1}.</span> ${escapeHtml(op.summary)}</div>
+            <div class="preview-op-summary">${escapeHtml(op.summary)}</div>
             ${badgesHtml}
             ${opFlags}
           </div>
@@ -922,6 +942,22 @@ export class SagantaAppKitModal extends ModalBase {
 
     return `
       <div class="preview">
+        <!-- Thumbnails: app logo + wallet logo side by side -->
+        <div class="preview-thumbs">
+          <div class="preview-thumb preview-thumb--app">${appIconHtml}</div>
+          <div class="preview-thumb__connector"></div>
+          <div class="preview-thumb preview-thumb--wallet">${walletIconHtml}</div>
+        </div>
+
+        <!-- Title + subtitle -->
+        <h2 class="preview-title">${escapeHtml(titleText)}</h2>
+        <p class="preview-subtitle">${escapeHtml(subtitleText)}</p>
+
+        <!-- Operations + risk flags -->
+        ${opsHtml ? `<div class="preview-ops">${opsHtml}</div>` : ''}
+        ${txFlags}
+
+        <!-- Meta: source account + fee -->
         <div class="preview-meta">
           <span class="preview-meta-item">
             From ${truncateAddress(preview.sourceAccount)}
@@ -929,11 +965,11 @@ export class SagantaAppKitModal extends ModalBase {
           </span>
           ${feeHtml}
         </div>
-        ${txFlags}
-        <div class="preview-ops">${opsHtml}</div>
+
+        <!-- Actions: Cancel + Sign/Approve -->
         <div class="preview-actions">
-          <button class="btn" data-action="reject-preview">Reject</button>
-          <button class="btn btn-primary" data-action="approve-preview">Approve</button>
+          <button class="preview-btn preview-btn--cancel" data-action="reject-preview">Cancel</button>
+          <button class="preview-btn preview-btn--approve" data-action="approve-preview">${escapeHtml(actionLabel)}</button>
         </div>
       </div>
     `;
