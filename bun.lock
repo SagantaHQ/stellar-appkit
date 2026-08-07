@@ -24,11 +24,7 @@
     },
     "packages/core": {
       "name": "@saganta/stellar-appkit",
-<<<<<<< Updated upstream
-      "version": "1.0.5",
-=======
-      "version": "1.0.4",
->>>>>>> Stashed changes
+      "version": "1.0.6",
       "dependencies": {
         "@albedo-link/intent": "^0.13.0",
         "@creit.tech/xbull-wallet-connect": "^0.4.0",
@@ -43,25 +39,17 @@
     },
     "packages/siws-verify": {
       "name": "@saganta/stellar-appkit-siws-verify",
-<<<<<<< Updated upstream
-      "version": "1.0.5",
-=======
-      "version": "1.0.4",
->>>>>>> Stashed changes
+      "version": "1.0.6",
       "dependencies": {
-        "@saganta/stellar-appkit": "^0.2.0",
+        "@saganta/stellar-appkit": "^1.0.3",
         "@stellar/stellar-sdk": "^13.0.0",
       },
     },
     "packages/ui-web": {
       "name": "@saganta/stellar-appkit-ui-web",
-<<<<<<< Updated upstream
-      "version": "1.0.5",
-=======
-      "version": "1.0.4",
->>>>>>> Stashed changes
+      "version": "1.0.6",
       "dependencies": {
-        "@saganta/stellar-appkit": "^1.0.1",
+        "@saganta/stellar-appkit": "^1.0.3",
       },
       "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",
@@ -438,7 +426,7 @@
 
     "possible-typed-array-names": ["possible-typed-array-names@1.1.0", "", {}, "sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg=="],
 
-    "postcss": ["postcss@8.5.25", "", { "dependencies": { "nanoid": "^3.3.16", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw=="],
+    "postcss": ["postcss@8.5.26", "", { "dependencies": { "nanoid": "^3.3.17", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ=="],
 
     "process-warning": ["process-warning@5.1.0", "", {}, "sha512-jQSaVHsPgtyw60e1rQ/A+/ArPEj/S8pS/vFnyGa/gYFXrKk/6RuDkoqVDQ5NI5MmS01698ltlAk0NoDBNLujRw=="],
 
@@ -452,7 +440,7 @@
 
     "react": ["react@18.3.1", "", { "dependencies": { "loose-envify": "^1.1.0" } }, "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ=="],
 
-    "readdirp": ["readdirp@5.0.0", "", {}, "sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ=="],
+    "readdirp": ["readdirp@5.1.1", "", {}, "sha512-Kko+Y5XQ6fM+Ce3dq3m9YGxnacYZYl9cA1wZjaF3Vbry2L3i1qVg8+CAgNPsXRArPMUMCaOR7oa9Nqntc43JKA=="],
 
     "real-require": ["real-require@0.2.0", "", {}, "sha512-57frrGM/OCTLqLOAh0mhVA9VBMHd+9U7Zb2THMGdBUoZVOtGbJzjxsYGDJ3A9AYYCP4hn6y1TVbaOfzWtm5GFg=="],
 
