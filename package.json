@@ -41,5 +41,8 @@
   },
   "bugs": {
     "url": "https://github.com/sagantaHQ/stellar-appkit/issues"
+  },
+  "dependencies": {
+    "better-qr": "^0.1.2"
   }
 }

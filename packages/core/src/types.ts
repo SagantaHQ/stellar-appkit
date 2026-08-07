@@ -11,6 +11,47 @@
 
 export type StellarNetwork = 'PUBLIC' | 'TESTNET' | 'FUTURENET' | 'STANDALONE';
 
+/**
+ * Well-known Stellar network passphrases, exported as a convenient object
+ * so apps don't need to import `@stellar/stellar-sdk` just for `Networks.TESTNET`.
+ *
+ * Passphrases are signature-critical — signing against the wrong network
+ * produces a signature that's valid for that network but rejected by every
+ * other. These values are verified byte-for-byte against
+ * `@stellar/stellar-sdk`'s own `Networks` export.
+ *
+ * Usage:
+ * ```ts
+ * import { Networks } from '@saganta/stellar-appkit';
+ *
+ * const appkit = new StellarAppKit({
+ *   network: 'TESTNET',
+ *   networkPassphrase: Networks.TESTNET, // optional — inferred from `network` for PUBLIC/TESTNET/FUTURENET
+ * });
+ * ```
+ *
+ * The `StellarAppKit` constructor auto-resolves the passphrase from the
+ * `network` field for the three well-known networks, so you only need to
+ * pass `networkPassphrase` for `STANDALONE` networks (which have no
+ * built-in passphrase).
+ */
+export const Networks = {
+  PUBLIC: 'Public Global Stellar Network ; September 2015',
+  TESTNET: 'Test SDF Network ; September 2015',
+  FUTURENET: 'Test SDF Future Network ; October 2022',
+  STANDALONE: 'Standalone Network ; February 2017',
+} as const satisfies Record<StellarNetwork, string>;
+
+/**
+ * Resolves the network passphrase for a well-known network.
+ * Returns `undefined` for `STANDALONE` (no built-in passphrase — must be
+ * passed explicitly via `StellarAppKitConfig.networkPassphrase`).
+ */
+export function resolveNetworkPassphrase(network: StellarNetwork): string | undefined {
+  if (network === 'STANDALONE') return undefined;
+  return Networks[network];
+}
+
 /** Platforms a connector can run on. Used for UI filtering, not enforcement. */
 export type ConnectorPlatform = 'browser-extension' | 'web' | 'react-native' | 'walletconnect' | 'hardware';
 

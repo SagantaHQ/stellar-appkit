@@ -1,5 +1,6 @@
 import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
+import { toSvg } from 'better-qr';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
@@ -966,22 +967,29 @@ export class SagantaAppKitModal extends ModalBase {
 
     if (hasQrUri) {
       const uri = this.wcPairingUri!;
-      // Use a data URI QR code from api.qrserver.com (free, no auth, returns PNG).
-      // This avoids adding a QR library dependency to the ui-web package.
-      // The request is lazy (only fires when WC is connecting) and cached by the browser.
-      const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&margin=1&data=${encodeURIComponent(uri)}`;
+      // Render the QR code as an inline SVG using better-qr (zero network
+      // dependency — no external API calls, works offline, no privacy leak).
+      // The SVG is embedded directly in the shadow DOM, so it inherits the
+      // modal's styling and scales crisply at any size.
+      let qrSvg = '';
+      try {
+        qrSvg = toSvg(uri, {
+          moduleSize: 6,
+          margin: 2,
+          foreground: '#000000',
+          background: '#ffffff',
+          errorCorrectionLevel: 'M',
+        });
+      } catch {
+        // If QR generation fails (e.g. URI too long), fall back to copy-only
+        qrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">QR generation failed. Use the copy button below.</div>`;
+      }
 
       return `
         <div class="connecting-view connecting-view--wc">
           <div class="wc-qr-wrap">
             <div class="wc-qr-frame">
-              <img src="${escapeAttr(qrImgUrl)}" alt="WalletConnect QR code" class="wc-qr-img"
-                   onerror="this.style.display='none'; this.parentElement.classList.add('wc-qr-frame--error');" />
-              <div class="wc-qr-fallback" style="display:none;">
-                <span style="font-size: 11px; color: var(--sak-color-text-muted); text-align: center; padding: 0 12px;">
-                  QR service unavailable. Use the deep link below or copy the URI.
-                </span>
-              </div>
+              ${qrSvg}
             </div>
             <img src="${escapeAttr(iconUrl)}" alt="" class="wc-qr-logo"
                  onerror="${onerrorHandler}" />

@@ -6,6 +6,8 @@ import { TabSync } from './tab-sync.js';
 import {
   ConnectError,
   NetworkMismatchError,
+  Networks,
+  resolveNetworkPassphrase,
   type ConnectSession,
   type ConnectStatus,
   type ConnectStorage,
@@ -567,18 +569,13 @@ export class StellarAppKit {
    */
   private resolveNetworkPassphrase(): string {
     if (this.customNetworkPassphrase) return this.customNetworkPassphrase;
-    switch (this.network) {
-      case 'PUBLIC':
-        return WELL_KNOWN_PASSPHRASES.PUBLIC;
-      case 'TESTNET':
-        return WELL_KNOWN_PASSPHRASES.TESTNET;
-      case 'FUTURENET':
-        return WELL_KNOWN_PASSPHRASES.FUTURENET;
-      default:
-        throw ConnectError.invalidRequest(
-          'STANDALONE networks need an explicit `networkPassphrase` in the StellarAppKit config to build transaction previews.'
-        );
+    const passphrase = resolveNetworkPassphrase(this.network);
+    if (!passphrase) {
+      throw ConnectError.invalidRequest(
+        'STANDALONE networks need an explicit `networkPassphrase` in the StellarAppKit config to build transaction previews.'
+      );
     }
+    return passphrase;
   }
 
   /**
@@ -748,16 +745,6 @@ export class StellarAppKit {
     });
   }
 }
-
-// Verified byte-for-byte against @stellar/stellar-sdk's own Networks export
-// (network passphrase correctness is signature-critical, not just cosmetic —
-// worth keeping this comment as a reminder to re-verify if this ever drifts
-// from a hardcoded copy to something else).
-const WELL_KNOWN_PASSPHRASES = {
-  PUBLIC: 'Public Global Stellar Network ; September 2015',
-  TESTNET: 'Test SDF Network ; September 2015',
-  FUTURENET: 'Test SDF Future Network ; October 2022',
-} as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

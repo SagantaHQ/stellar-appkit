@@ -75,11 +75,27 @@ export interface WalletConnectConnectorOptions {
   metadata: { name: string; description: string; url: string; icons: string[] };
   /**
    * Called with the WC pairing URI when a new connection is initiated.
-   * The app renders this as a QR code (desktop) or opens it as a deep
-   * link (mobile). Required — without this, the user can't scan the
-   * pairing code.
+   *
+   * **When using `<stellar-appkit-modal>` (recommended):** the modal
+   * intercepts this automatically via `setOnUri()` and renders the QR
+   * code inside the connecting view using `better-qr` — you can omit
+   * this entirely:
+   * ```ts
+   * createWalletConnectConnector({
+   *   projectId: '...',
+   *   metadata: { ... },
+   *   networkPassphrase: Networks.TESTNET,
+   *   // onUri not needed — the modal handles QR rendering
+   * })
+   * ```
+   *
+   * **When building your own UI (no modal):** render the URI as a QR
+   * code (desktop) or open it as a deep link (mobile). Use a library
+   * like `qrcode.react`, `qrcode`, or `better-qr`.
+   *
+   * Defaults to a no-op (`() => {}`).
    */
-  onUri: (uri: string) => void;
+  onUri?: (uri: string) => void;
   /**
    * Optional storage for persisting the WC session topic across page
    * reloads. If provided, `restore()` will attempt to reconnect using
@@ -123,7 +139,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    * to its own handler, then calls connect(), and the URI flows into the
    * modal's connecting view where the QR is rendered.
    */
-  let onUriHandler: ((uri: string) => void) | null = opts.onUri ?? null;
+  let onUriHandler: ((uri: string) => void) | null = opts.onUri ?? (() => {});
 
   /**
    * Lazy-imports @walletconnect/sign-client and initializes the SignClient
