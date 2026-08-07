@@ -330,6 +330,26 @@ export function buildStyles(theme: ConnectTheme): string {
       color: ${v('colorDanger', theme)};
       margin-bottom: 24px;
     }
+    .signing-view__actions {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+    .signing-view__cancel {
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: transparent;
+      color: ${v('colorText', theme)};
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 200ms ease, border-color 200ms ease;
+    }
+    .signing-view__cancel:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+    }
     .signing-view__retry {
       display: inline-flex;
       align-items: center;

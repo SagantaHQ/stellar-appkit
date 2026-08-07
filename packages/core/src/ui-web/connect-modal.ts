@@ -121,18 +121,23 @@ export class SagantaAppKitModal extends ModalBase {
         this.refreshAccountData();
       }),
       client.on('signQueueChange', () => {
-        // When the sign queue empties (signing completed successfully),
-        // close the modal if we're in the signing view.
+        // When the sign queue empties, check if we're in the signing view.
+        // Don't transition away immediately if there's an error — the error
+        // event handler will set connectingError and re-render. We use a
+        // small delay to let the error event fire first.
         if (this.view === 'signing' && client.pendingSignCount === 0) {
-          this.connectingError = null;
-          this.lastApprovedPreview = null;
-          // Go back to the connected view (or wallet-list if not connected)
-          this.view = client.session ? 'connected' : 'wallet-list';
-          this.render();
-          // Close the modal if it was opened specifically for this sign
-          // (i.e. it wasn't already open before the preview).
-          // For now, keep it open showing the connected view — the user
-          // can close it manually. This is better UX than auto-closing.
+          // Wait a tick to see if an error event follows (wallet rejection).
+          // If connectingError is set by the error handler within this window,
+          // we stay on the signing view showing the error + retry button.
+          setTimeout(() => {
+            // Only transition to connected if we're STILL on the signing view
+            // AND there's no error (meaning the sign succeeded, not rejected).
+            if (this.view === 'signing' && !this.connectingError) {
+              this.lastApprovedPreview = null;
+              this.view = client.session ? 'connected' : 'wallet-list';
+              this.render();
+            }
+          }, 50);
         } else if (this.view === 'connected') {
           this.render();
         }
@@ -197,6 +202,10 @@ export class SagantaAppKitModal extends ModalBase {
 
   close() {
     if (this.getAttribute('mode') === 'inline') return;
+    // Don't close during signing — the user should see the result (success
+    // or error) before the modal closes. If they want to cancel, they can
+    // click "Cancel" on the preview or reject in their wallet.
+    if (this.view === 'signing' && !this.connectingError) return;
     if (this.pendingPreview) {
       const { resolve } = this.pendingPreview;
       this.pendingPreview = null;
@@ -1039,13 +1048,16 @@ export class SagantaAppKitModal extends ModalBase {
           </div>
           <h2 class="signing-view__title">Signing rejected</h2>
           <p class="signing-view__subtitle">${escapeHtml(this.connectingError)}</p>
-          <button class="signing-view__retry" data-action="retry-signing">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 1 0 9-9" />
-              <path d="M3 4v5h5" />
-            </svg>
-            Try again
-          </button>
+          <div class="signing-view__actions">
+            <button class="signing-view__cancel" data-action="cancel-signing-error">Cancel</button>
+            <button class="signing-view__retry" data-action="retry-signing">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9" />
+                <path d="M3 4v5h5" />
+              </svg>
+              Try again
+            </button>
+          </div>
         </div>
       `;
     }
@@ -1323,6 +1335,15 @@ export class SagantaAppKitModal extends ModalBase {
         this.view = this._client?.session ? 'connected' : 'wallet-list';
         this.render();
       }
+    });
+
+    // Cancel from signing error — dismiss the error and go back to the
+    // connected view (or wallet-list). The user chose not to retry.
+    this.root.querySelector('[data-action="cancel-signing-error"]')?.addEventListener('click', () => {
+      this.connectingError = null;
+      this.lastApprovedPreview = null;
+      this.view = this._client?.session ? 'connected' : 'wallet-list';
+      this.render();
     });
 
     this.root.querySelector('[data-action="retry"]')?.addEventListener('click', () => {
