@@ -261,6 +261,102 @@ export function buildStyles(theme: ConnectTheme): string {
       color: ${v('colorDanger', theme)};
     }
 
+    /* ---- Signing view (after preview is approved) ---- */
+    /* Reuses the connecting-view layout but with different semantics:
+       "Continue in your wallet" while the wallet processes the sign request. */
+    .signing-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 32px 24px 28px;
+    }
+    .signing-view > * {
+      opacity: 0;
+      animation: sak-connecting-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .signing-view > *:nth-child(1) { animation-delay: 0ms; }
+    .signing-view > *:nth-child(2) { animation-delay: 80ms; }
+    .signing-view > *:nth-child(3) { animation-delay: 160ms; }
+    .signing-view > *:nth-child(4) { animation-delay: 240ms; }
+    .signing-view__logo-wrap {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .signing-view__logo {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      object-fit: contain;
+      position: relative;
+      z-index: 1;
+      background: ${v('colorSurface', theme)};
+      animation: sak-logo-breathe 2.8s ease-in-out infinite;
+    }
+    .signing-view__arc {
+      position: absolute;
+      inset: 0;
+      width: 88px;
+      height: 88px;
+      color: ${v('colorAccent', theme)};
+      animation: sak-connecting-dash 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .signing-view__icon {
+      color: ${v('colorDanger', theme)};
+      margin-bottom: 16px;
+    }
+    .signing-view__title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      color: ${v('colorText', theme)};
+      margin: 0 0 8px;
+      line-height: 1.3;
+    }
+    .signing-view__subtitle {
+      font-size: 14px;
+      line-height: 1.5;
+      color: ${v('colorTextMuted', theme)};
+      margin: 0 0 32px;
+      max-width: 280px;
+    }
+    .signing-view--error .signing-view__logo-wrap { display: none; }
+    .signing-view--error .signing-view__subtitle {
+      color: ${v('colorDanger', theme)};
+      margin-bottom: 24px;
+    }
+    .signing-view__retry {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: transparent;
+      color: ${v('colorText', theme)};
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 200ms ease, border-color 200ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .signing-view__retry:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+      transform: translateY(-1px);
+    }
+    .signing-view__retry:active {
+      transform: translateY(0) scale(0.97);
+    }
+    .signing-view__retry svg {
+      width: 14px;
+      height: 14px;
+    }
+
     .body {
       padding: 4px 10px 12px;
       overflow-y: auto;

@@ -8,7 +8,7 @@ import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from '
 
 export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
-type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'error';
+type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'signing' | 'error';
 
 const MOBILE_BREAKPOINT_PX = 640;
 
@@ -51,6 +51,8 @@ export class SagantaAppKitModal extends ModalBase {
   private connectingWalletId: string | null = null;
   /** Error message from the last connect() attempt — set when the client emits an 'error' event while view === 'connecting'. Cleared on retry. */
   private connectingError: string | null = null;
+  /** The preview that was approved — kept so we can retry the sign after a wallet-side rejection. */
+  private lastApprovedPreview: TransactionPreview | null = null;
   private lastError: ConnectError | null = null;
   private copyState: 'idle' | 'copied' = 'idle';
   /** Which address was most recently copied — tracks the copy button's "copied!" feedback per-address. */
@@ -119,16 +121,34 @@ export class SagantaAppKitModal extends ModalBase {
         this.refreshAccountData();
       }),
       client.on('signQueueChange', () => {
-        // Re-render the connected view to update the pending-signature banner
-        if (this.view === 'connected') this.render();
+        // When the sign queue empties (signing completed successfully),
+        // close the modal if we're in the signing view.
+        if (this.view === 'signing' && client.pendingSignCount === 0) {
+          this.connectingError = null;
+          this.lastApprovedPreview = null;
+          // Go back to the connected view (or wallet-list if not connected)
+          this.view = client.session ? 'connected' : 'wallet-list';
+          this.render();
+          // Close the modal if it was opened specifically for this sign
+          // (i.e. it wasn't already open before the preview).
+          // For now, keep it open showing the connected view — the user
+          // can close it manually. This is better UX than auto-closing.
+        } else if (this.view === 'connected') {
+          this.render();
+        }
       }),
       client.on('error', (err) => {
         this.lastError = err;
         // If we're in the connecting view and the error isn't a network mismatch,
         // stay on the connecting view but show the error + "Try again" button.
-        // Network mismatches get their own dedicated view with network-switch guidance.
         if (this.view === 'connecting' && this.connectingWalletId && !(err instanceof NetworkMismatchError)) {
           this.connectingError = err.message || String(err);
+        } else if (this.view === 'signing') {
+          // Signing was rejected or failed — show error with retry button.
+          // Stay on the signing view but switch to error display.
+          this.connectingError = err.message || String(err);
+          // Don't change view — the signing view itself renders the error
+          // when connectingError is set.
         } else {
           this.view = err instanceof NetworkMismatchError ? 'network-mismatch' : 'error';
         }
@@ -387,15 +407,28 @@ export class SagantaAppKitModal extends ModalBase {
 
   private resolvePreview(approved: boolean) {
     if (!this.pendingPreview) return;
-    const { resolve, wasAlreadyOpen } = this.pendingPreview;
-    resolve(approved);
+    const { resolve, preview, wasAlreadyOpen } = this.pendingPreview;
     this.pendingPreview = null;
-    if (wasAlreadyOpen) {
-      this.view = this._client?.session ? 'connected' : 'wallet-list';
+
+    if (approved) {
+      // Don't close the modal — switch to the "signing" view which shows
+      // "Continue in your wallet" with a spinner. The modal stays open
+      // while the wallet processes the sign request. The signQueueChange
+      // event or the error event will update the view.
+      this.lastApprovedPreview = preview;
+      this.view = 'signing';
       this.render();
     } else {
-      this.close();
+      // Rejected — go back to the previous view
+      if (wasAlreadyOpen) {
+        this.view = this._client?.session ? 'connected' : 'wallet-list';
+        this.render();
+      } else {
+        this.close();
+      }
     }
+
+    resolve(approved);
   }
 
   private async copyAddress(address: string) {
@@ -559,6 +592,8 @@ export class SagantaAppKitModal extends ModalBase {
         return 'Wrong network';
       case 'transaction-preview':
         return 'Review transaction';
+      case 'signing':
+        return 'Signing';
       default:
         return 'Connect a wallet';
     }
@@ -618,6 +653,8 @@ export class SagantaAppKitModal extends ModalBase {
         return this.renderNetworkMismatch();
       case 'transaction-preview':
         return this.renderTransactionPreview();
+      case 'signing':
+        return this.renderSigning();
       case 'error':
         return this.renderError();
       case 'connecting':
@@ -975,6 +1012,58 @@ export class SagantaAppKitModal extends ModalBase {
     `;
   }
 
+  /**
+   * Signing view — shown after the user approves the transaction preview.
+   * Displays "Continue in your wallet" with a spinner while the wallet
+   * processes the sign request. If the wallet rejects, shows an error
+   * with a "Try again" button that re-triggers the preview flow.
+   */
+  private renderSigning(): string {
+    const connector = this._client?.activeConnector;
+    const walletName = connector?.meta.name ?? 'your wallet';
+    const walletIcon = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
+    const fallbackIcon = connector ? getWalletIconDataUri(connector.id) : '';
+    const onerrorHandler = fallbackIcon
+      ? `this.src='${fallbackIcon}'; this.onerror=null;`
+      : `this.style.display='none';`;
+
+    // If there's an error (wallet rejected), show error state with retry
+    if (this.connectingError) {
+      return `
+        <div class="signing-view signing-view--error">
+          <div class="signing-view__icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M15 9l-6 6M9 9l6 6" />
+            </svg>
+          </div>
+          <h2 class="signing-view__title">Signing rejected</h2>
+          <p class="signing-view__subtitle">${escapeHtml(this.connectingError)}</p>
+          <button class="signing-view__retry" data-action="retry-signing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9" />
+              <path d="M3 4v5h5" />
+            </svg>
+            Try again
+          </button>
+        </div>
+      `;
+    }
+
+    // Normal signing state — "Continue in your wallet"
+    return `
+      <div class="signing-view">
+        <div class="signing-view__logo-wrap">
+          <div class="signing-view__arc" aria-hidden="true"></div>
+          <img src="${escapeAttr(walletIcon)}" alt="" class="signing-view__logo"
+               onerror="${onerrorHandler}" />
+        </div>
+        <h2 class="signing-view__title">Continue in ${escapeHtml(walletName)}</h2>
+        <p class="signing-view__subtitle">Approve the request in your wallet to continue</p>
+      </div>
+    `;
+  }
+
   private renderNetworkMismatch(): string {
     const err = this.lastError instanceof NetworkMismatchError ? this.lastError : null;
     return `
@@ -1216,6 +1305,25 @@ export class SagantaAppKitModal extends ModalBase {
 
     this.root.querySelector('[data-action="approve-preview"]')?.addEventListener('click', () => this.resolvePreview(true));
     this.root.querySelector('[data-action="reject-preview"]')?.addEventListener('click', () => this.resolvePreview(false));
+
+    // Retry signing — go back to the preview view so the user can approve again
+    this.root.querySelector('[data-action="retry-signing"]')?.addEventListener('click', () => {
+      this.connectingError = null;
+      if (this.lastApprovedPreview) {
+        // Re-show the preview — the user can approve again
+        this.pendingPreview = {
+          preview: this.lastApprovedPreview,
+          resolve: () => { /* no-op — the actual retry happens via the sign queue */ },
+          wasAlreadyOpen: true,
+        };
+        this.view = 'transaction-preview';
+        this.render();
+      } else {
+        // No preview to retry — go back to connected view
+        this.view = this._client?.session ? 'connected' : 'wallet-list';
+        this.render();
+      }
+    });
 
     this.root.querySelector('[data-action="retry"]')?.addEventListener('click', () => {
       this.view = 'wallet-list';
