@@ -551,12 +551,11 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
-    /* "Installed" badge — outline style using the theme's accent color.
-       Transparent background, accent-tinted border, accent-mixed text.
-       Uses color-mix for contrast: text = accent 60% + theme text 40%,
-       so it reads legibly on both light and dark surfaces without a
-       separate light-mode override. The dot is a small accent-colored
-       circle — static (no pulse) for a quiet, precise look. */
+    /* "Installed" badge — outline variant.
+       Transparent background, plain border color, muted text.
+       Only the dot uses the full accent color — quiet, precise, lets the
+       accent pop without overwhelming the row. Matches the outline style
+       from the design spec. */
     .wallet-sub--installed {
       display: inline-flex;
       align-items: center;
@@ -571,9 +570,8 @@ export function buildStyles(theme: ConnectTheme): string {
       white-space: nowrap;
       flex-shrink: 0;
       background: transparent;
-      border: 1px solid color-mix(in srgb, ${v('colorAccent', theme)} 32%, transparent);
-      color: color-mix(in srgb, ${v('colorAccent', theme)} 60%, ${v('colorText', theme)} 40%);
-      transition: border-color 0.2s ease, color 0.2s ease;
+      border: 1px solid ${v('colorBorder', theme)};
+      color: ${v('colorTextMuted', theme)};
     }
     .wallet-sub--installed::before {
       content: "";
