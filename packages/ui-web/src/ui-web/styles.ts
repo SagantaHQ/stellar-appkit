@@ -100,6 +100,10 @@ export function buildStyles(theme: ConnectTheme): string {
       display: flex;
       flex-direction: column;
       max-height: min(560px, 85vh);
+      /* Use dynamic viewport height on mobile browsers that support it —
+         fixes the panel being cut off by the address bar. dvh = dynamic
+         viewport height (changes as the address bar shows/hides). */
+      max-height: min(560px, 85dvh);
     }
 
     .header {

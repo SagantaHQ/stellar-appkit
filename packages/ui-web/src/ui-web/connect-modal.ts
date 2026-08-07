@@ -304,10 +304,17 @@ export class SagantaAppKitModal extends ModalBase {
         this.activeAnimation = anim;
         anim.onfinish = () => {
           this.activeAnimation = null;
-          // Clear the initial-state inline styles so subsequent renders don't inherit them
           panel.style.opacity = '';
         };
         anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
+        // Safety fallback: if the animation doesn't complete within 600ms,
+        // force-clear the opacity. This fixes a mobile issue where WAAPI
+        // animations sometimes don't fire onfinish on some Android browsers.
+        setTimeout(() => {
+          if (panel.style.opacity === '0') {
+            panel.style.opacity = '';
+          }
+        }, 600);
       } else {
         // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
         panel.style.opacity = '';
@@ -749,7 +756,20 @@ export class SagantaAppKitModal extends ModalBase {
     if (attr === 'modal' || attr === 'bottomsheet' || attr === 'bottom-sheet' || attr === 'inline') {
       return attr === 'bottom-sheet' ? 'bottomsheet' : (attr as EffectiveMode);
     }
-    return this.mediaQuery?.matches ? 'bottomsheet' : 'modal';
+    // For 'auto' mode, check the viewport width directly. Using matchMedia
+    // is more reliable than checking window.innerWidth because it accounts
+    // for scrollbar width and responds to orientation changes. But on some
+    // mobile browsers, the cached mediaQuery can be stale (especially after
+    // orientation changes or address bar show/hide). We re-evaluate on every
+    // call to ensure we get the current viewport state.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches ? 'bottomsheet' : 'modal';
+    }
+    // Fallback to innerWidth if matchMedia is not available
+    if (typeof window !== 'undefined' && typeof window.innerWidth === 'number') {
+      return window.innerWidth <= MOBILE_BREAKPOINT_PX ? 'bottomsheet' : 'modal';
+    }
+    return 'modal';
   }
 
   private resolveTheme(): ConnectTheme {
@@ -775,17 +795,95 @@ export class SagantaAppKitModal extends ModalBase {
     }
 
     const styleTag = `<style>${themeHostDeclarations(theme)}\n${this.cachedStyles}</style>`;
-    const panelHtml = this.renderPanel(effectiveMode);
+
+    // Check if we can do a targeted update (just the body content) instead
+    // of a full innerHTML replacement. This prevents image flash on re-renders
+    // (e.g. when walletList loads, when connect fires) — the <img> elements
+    // in the header and wallet list stay in the DOM and don't re-decode.
+    const existingOverlay = this.root.querySelector('.overlay');
+    const existingInline = this.root.querySelector('.inline-root');
+    const existingPanel = existingOverlay?.querySelector('.panel') ?? existingInline?.querySelector('.panel');
 
     if (effectiveMode === 'inline') {
-      this.root.innerHTML = `${styleTag}<div class="inline-root">${panelHtml}</div>`;
+      if (existingInline && existingPanel) {
+        // Targeted update: only replace the body content, preserving the panel shell
+        this.updatePanelContent(existingPanel, effectiveMode);
+      } else {
+        // Full render: create the entire structure
+        this.root.innerHTML = `${styleTag}<div class="inline-root">${this.renderPanel(effectiveMode)}</div>`;
+        this.wireEvents(effectiveMode);
+      }
     } else if (this.isOpen) {
       const openAttr = this.hasEnteredOpenState ? 'true' : 'false';
-      this.root.innerHTML = `${styleTag}<div class="overlay" data-mode="${effectiveMode}" data-open="${openAttr}" role="presentation">${panelHtml}</div>`;
+      if (existingOverlay && existingPanel) {
+        // Targeted update: update data attributes + body content only
+        existingOverlay.setAttribute('data-mode', effectiveMode);
+        existingOverlay.setAttribute('data-open', openAttr);
+        this.updatePanelContent(existingPanel, effectiveMode);
+      } else {
+        // Full render: create the entire structure
+        this.root.innerHTML = `${styleTag}<div class="overlay" data-mode="${effectiveMode}" data-open="${openAttr}" role="presentation">${this.renderPanel(effectiveMode)}</div>`;
+        this.wireEvents(effectiveMode);
+      }
     } else {
+      // Modal is closed — clear everything except the stylesheet
       this.root.innerHTML = styleTag;
     }
+  }
 
+  /**
+   * Updates only the body content and header of an existing panel, without
+   * replacing the entire innerHTML. This prevents <img> elements from being
+   * destroyed and recreated on every state change (which causes a visible
+   * flash as the browser re-decodes the base64 data URIs).
+   *
+   * Only re-renders the body if the view or wallet list actually changed —
+   * determined by comparing a lightweight render key.
+   */
+  private updatePanelContent(panel: Element, effectiveMode: EffectiveMode) {
+    // Update the drag handle (add/remove based on mode)
+    const existingHandle = panel.querySelector('.drag-handle');
+    if (effectiveMode === 'bottomsheet' && !existingHandle) {
+      const handle = document.createElement('div');
+      handle.className = 'drag-handle';
+      panel.insertBefore(handle, panel.firstChild);
+    } else if (effectiveMode !== 'bottomsheet' && existingHandle) {
+      existingHandle.remove();
+    }
+
+    // Update header
+    const existingHeader = panel.querySelector('.header, .header--connecting');
+    const headerHtml = this.renderPanelHeader(effectiveMode);
+    if (existingHeader) {
+      // Only replace the header if its content changed (avoid unnecessary DOM mutations)
+      const newHeaderEl = document.createElement('div');
+      newHeaderEl.innerHTML = headerHtml;
+      const newHeader = newHeaderEl.firstElementChild;
+      if (newHeader && existingHeader.outerHTML !== newHeader.outerHTML) {
+        existingHeader.replaceWith(newHeader);
+      }
+    } else {
+      // No header yet — insert before body
+      const body = panel.querySelector('.body');
+      if (body) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = headerHtml;
+        const newHeader = wrapper.firstElementChild;
+        if (newHeader) panel.insertBefore(newHeader, body);
+      }
+    }
+
+    // Update body content
+    const existingBody = panel.querySelector('.body');
+    if (existingBody) {
+      const bodyHtml = this.renderBody();
+      // Only update if content actually changed
+      if (existingBody.innerHTML !== bodyHtml) {
+        existingBody.innerHTML = bodyHtml;
+      }
+    }
+
+    // Re-wire events for the updated content
     this.wireEvents(effectiveMode);
   }
 
