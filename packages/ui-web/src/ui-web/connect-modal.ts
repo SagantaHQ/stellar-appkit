@@ -1948,11 +1948,21 @@ export class SagantaAppKitModal extends ModalBase {
       cancelAnimationFrame(rafId);
     };
 
-    /** Common drag-move logic. Uses rAF to batch transform updates. */
+    /** Common drag-move logic. Uses rAF to batch transform updates.
+     *  Supports bidirectional drag: downward drags move the sheet down 1:1,
+     *  upward drags apply rubber-band resistance (35% of pointer distance) so
+     *  the sheet follows the finger with a damped feel — same behavior as
+     *  iOS/Material bottom sheets when pulling past fully-open.
+     */
     const moveDrag = (clientY: number) => {
       if (!dragging) return;
       const dy = clientY - startY;
-      currentY = Math.max(0, dy);
+      // Rubber-band physics: downward drag (dy > 0) moves 1:1, upward drag
+      // (dy < 0) moves at 35% resistance — feels like pulling a spring.
+      // Without this, the old `Math.max(0, dy)` clamp made upward drag a
+      // dead zone (currentY was always 0 when dragging up).
+      const RESISTANCE = 0.35;
+      currentY = dy < 0 ? dy * RESISTANCE : dy;
       pendingY = currentY;
 
       // Track velocity (px/ms)
@@ -1973,11 +1983,13 @@ export class SagantaAppKitModal extends ModalBase {
           const panel = getPanel();
           if (panel && dragging) {
             panel.style.transform = `translate3d(0, ${pendingY}px, 0)`;
-            // Fade the overlay as the sheet moves down
+            // Fade the overlay as the sheet moves down. Clamp to [0, 1] —
+            // upward drags produce negative pendingY which could push
+            // opacity above 1 without the upper clamp.
             const overlay = root.querySelector<HTMLElement>('.overlay');
             if (overlay && sheetHeight > 0) {
               const progress = pendingY / sheetHeight;
-              overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
+              overlay.style.opacity = String(Math.min(1, Math.max(0, 1 - progress * 0.7)));
             }
           }
         });
@@ -1999,10 +2011,12 @@ export class SagantaAppKitModal extends ModalBase {
         panel.style.willChange = 'auto';
       }
 
-      // Velocity-aware dismiss: a quick flick (velocity > 0.4 px/ms) dismisses
-      // even from a short drag. Distance threshold (40% of sheet height) is
-      // the fallback for slow drags.
-      const shouldClose = Math.abs(velocity) > 0.4 || currentY > sheetHeight * 0.4;
+      // Velocity-aware dismiss: a quick downward flick (velocity > 0.5 px/ms)
+      // dismisses even from a short drag. Using signed velocity (not abs)
+      // so an upward flick doesn't trigger dismiss — the user is pulling
+      // up to see more, not to close. Distance threshold (40% of sheet
+      // height) is the fallback for slow drags.
+      const shouldClose = velocity > 0.5 || currentY > sheetHeight * 0.4;
 
       // Haptic feedback on dismiss (Android only — no-op on iOS Safari)
       if (shouldClose && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -2181,8 +2195,11 @@ export class SagantaAppKitModal extends ModalBase {
     // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
     // Only set up once — re-creating gesture handlers on every re-render
     // would kill in-flight drags (e.g. when wallet list loads mid-drag).
-    // The gesture handlers use event delegation on the panel element, so
-    // they survive targeted content updates (updatePanelContent).
+    // The gesture handlers use event delegation on the ShadowRoot, so
+    // they survive targeted content updates (updatePanelContent) and full
+    // re-renders that replace the panel element.
+    // Uses native touch+mouse events + a hand-rolled spring engine — zero
+    // external gesture library dependencies.
     if (effectiveMode === 'bottomsheet' && !this.gestureDestroyer) {
       void this.setupBottomSheetGestures();
     }
