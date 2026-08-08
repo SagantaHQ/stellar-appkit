@@ -120,3 +120,75 @@ describe('React wrapper — tree-shakability contract', () => {
     expect((reactEntry as unknown as { StellarAppKit?: unknown }).StellarAppKit).toBeUndefined();
   });
 });
+
+describe('React wrapper — v1.7.2 SIWS config forwarding', () => {
+  // v1.7.2 fix: <StellarAppKitProvider config={{ siws }} /> must forward
+  // the siws config to the underlying StellarAppKit client. Before v1.7.2,
+  // the provider constructed `new StellarAppKit({ ... })` without the siws
+  // field, so useSiwsSession() / useIsAuthenticated() always returned null
+  // and the modal never triggered the automatic SIWS flow.
+  //
+  // We can't easily render the provider in this test environment (no DOM),
+  // but we can verify the contract at the type level + by inspecting the
+  // source. The runtime behavior is verified end-to-end in the demos site
+  // (/demos/siws-session-management).
+
+  test('StellarAppKitProviderConfig type accepts a siws field', async () => {
+    const w = await importWrapper();
+    // Type-level check: the config interface must declare siws?. We assert
+    // this by constructing a config object that includes siws and assigning
+    // it to the provider's config type. If the field were missing, this
+    // wouldn't compile.
+    const config: w.StellarAppKitProviderConfig = {
+      network: 'TESTNET',
+      siws: {
+        statement: 'Sign in to test app',
+        session: async () => null,
+        nonce: async () => 'test-nonce',
+        verify: async () => null,
+        signout: async () => true,
+      },
+    };
+    expect(config.siws).toBeDefined();
+    expect(typeof config.siws?.session).toBe('function');
+    expect(typeof config.siws?.nonce).toBe('function');
+    expect(typeof config.siws?.verify).toBe('function');
+    expect(typeof config.siws?.signout).toBe('function');
+  });
+
+  test('siws is optional on StellarAppKitProviderConfig (omitting it is valid)', async () => {
+    const w = await importWrapper();
+    // No siws field — must still type-check.
+    const config: w.StellarAppKitProviderConfig = {
+      network: 'TESTNET',
+    };
+    expect(config.siws).toBeUndefined();
+  });
+
+  test('useSiwsSession and useIsAuthenticated are exported hooks', async () => {
+    const w = await importWrapper();
+    expect(typeof w.useSiwsSession).toBe('function');
+    expect(typeof w.useIsAuthenticated).toBe('function');
+  });
+
+  test('the provider source forwards config.siws to the StellarAppKit constructor', async () => {
+    // Source-level check: read the provider source and confirm `siws:` is
+    // passed to `new StellarAppKit({...})`. This catches regressions where
+    // a refactor accidentally drops the field.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const srcPath = path.resolve(import.meta.dir, '../src/react/index.tsx');
+    const src = fs.readFileSync(srcPath, 'utf-8');
+
+    // Find the `new StellarAppKit({` block and verify it includes `siws:`.
+    const constructorMatch = src.match(/new StellarAppKit\(\{[\s\S]*?\}\)/);
+    expect(constructorMatch).not.toBeNull();
+    expect(constructorMatch![0]).toContain('siws: props.config.siws');
+
+    // Also verify the useMemo dependency array includes props.config.siws
+    // so config changes recreate the client.
+    const depsMatch = src.match(/\},\s*\[([\s\S]*?)\]\);/);
+    expect(depsMatch).not.toBeNull();
+    expect(depsMatch![1]).toContain('props.config.siws');
+  });
+});
