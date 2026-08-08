@@ -36,7 +36,7 @@ import {
 // ---------------------------------------------------------------------------
 
 type FreighterApi = {
-  isConnected: () => Promise<{ error?: string }>;
+  isConnected: () => Promise<{ isConnected: boolean; error?: string }>;
   setAllowed: () => Promise<unknown>;
   getAddress: () => Promise<{ address: string; error?: string }>;
   getNetworkDetails: () => Promise<{ network: string; networkPassphrase: string; error?: string }>;
@@ -51,7 +51,7 @@ const OTHER_ADDRESS = 'GBWMCCC3BAXPRF7Y6YX3YZ3F7XK6Y5R2ZJ5HJZ7X3HJZT4PQYH4Q5R2';
 let fakeApi: Partial<FreighterApi> = {};
 
 const defaults: FreighterApi = {
-  isConnected: async () => ({ error: undefined }),
+  isConnected: async () => ({ isConnected: true, error: undefined }),
   setAllowed: async () => ({}),
   getAddress: async () => ({ address: TEST_ADDRESS, error: undefined }),
   getNetworkDetails: async () => ({
@@ -76,6 +76,8 @@ mock.module('@stellar/freighter-api', () => ({
 
 beforeEach(() => {
   fakeApi = {};
+  // Set window.freighter = true so the fast-path detection works
+  (globalThis as unknown as { freighter?: boolean }).freighter = true;
 });
 
 // ---------------------------------------------------------------------------

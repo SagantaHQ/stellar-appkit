@@ -15,7 +15,7 @@ import type { AuthEntryPreview } from '../src/index.js';
  */
 
 type FreighterApi = {
-  isConnected: () => Promise<{ error?: string }>;
+  isConnected: () => Promise<{ isConnected: boolean; error?: string }>;
   setAllowed: () => Promise<unknown>;
   getAddress: () => Promise<{ address: string; error?: string }>;
   getNetworkDetails: () => Promise<{ network: string; networkPassphrase: string; error?: string }>;
@@ -27,7 +27,7 @@ type FreighterApi = {
 let fakeApi: Partial<FreighterApi> = {};
 
 const defaults: FreighterApi = {
-  isConnected: async () => ({ error: undefined }),
+  isConnected: async () => ({ isConnected: true, error: undefined }),
   setAllowed: async () => ({}),
   getAddress: async () => ({ address: 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA' }),
   getNetworkDetails: async () => ({ network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' }),
@@ -48,6 +48,7 @@ mock.module('@stellar/freighter-api', () => ({
 
 beforeEach(() => {
   fakeApi = {};
+  (globalThis as unknown as { freighter?: boolean }).freighter = true;
 });
 
 /** Builds a real SorobanAuthorizationEntry XDR for testing. */

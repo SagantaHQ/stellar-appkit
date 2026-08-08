@@ -13,7 +13,7 @@ import { createFreighterConnector } from '../../src/connectors/freighter.js';
 
 // Type describing the subset of the freighter-api we exercise.
 type FreighterApi = {
-  isConnected: () => Promise<{ error?: string }>;
+  isConnected: () => Promise<{ isConnected: boolean; error?: string }>;
   setAllowed: () => Promise<unknown>;
   getAddress: () => Promise<{ address: string; error?: string }>;
   getNetworkDetails: () => Promise<{ network: string; networkPassphrase: string; error?: string }>;
@@ -27,7 +27,7 @@ let fakeApi: Partial<FreighterApi> = {};
 
 // Default implementations used when a test doesn't override a method.
 const defaults: FreighterApi = {
-  isConnected: async () => ({ error: undefined }),
+  isConnected: async () => ({ isConnected: true, error: undefined }),
   setAllowed: async () => ({}),
   getAddress: async () => ({ address: 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA' }),
   getNetworkDetails: async () => ({
@@ -55,6 +55,7 @@ mock.module('@stellar/freighter-api', () => ({
 
 beforeEach(() => {
   fakeApi = {};
+  (globalThis as unknown as { freighter?: boolean }).freighter = true;
 });
 
 describe('createFreighterConnector — signMessage', () => {

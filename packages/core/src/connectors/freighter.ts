@@ -68,6 +68,17 @@ export function createFreighterConnector(): WalletConnector {
     return stellar?.provider === 'freighter' && stellar?.platform === 'mobile';
   }
 
+  /**
+   * Quick synchronous check for the Freighter extension's presence.
+   * The extension injects `window.freighter = true` on page load — if this
+   * is present, we know the extension is installed without needing to call
+   * the async `isConnected()` API (which uses postMessage and can be slow).
+   */
+  function isFreighterExtensionPresent(): boolean {
+    if (typeof window === 'undefined') return false;
+    return !!(window as unknown as { freighter?: boolean }).freighter;
+  }
+
   const connector: WalletConnector = {
     id: meta.id,
     meta,
@@ -76,19 +87,25 @@ export function createFreighterConnector(): WalletConnector {
     async getReachability() {
       // Inside Freighter's mobile in-app browser, the extension API is not
       // available — connection must go through WalletConnect instead.
-      // Return 'not-installed' so the modal doesn't try to use this connector.
       if (isFreighterMobileWrapper()) return 'not-installed';
+
+      // Fast path: the extension injects `window.freighter = true` on load.
+      // If present, we know it's installed — skip the async isConnected() call
+      // entirely. This avoids timeout issues on slow machines.
+      if (isFreighterExtensionPresent()) return 'available';
 
       try {
         const { isConnected } = await sdk();
-        // 1-second timeout — matches Stellar Wallets Kit's approach so a
-        // non-responsive environment fails fast instead of hanging.
-        const timeout = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), 1000));
+        // 3-second timeout — gives the extension time to respond via
+        // postMessage. The extension's content script may need time to
+        // initialize, especially on page load or when the extension was
+        // recently installed/updated. 1s was too aggressive and caused
+        // false "not-installed" on some machines.
+        const timeout = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), 3000));
         const result = await Promise.race([isConnected(), timeout]);
         if (result === 'timeout') return 'not-installed';
-        const res = result as { error?: string };
-        const installed = !res.error;
-        return installed ? 'available' : 'not-installed';
+        const res = result as { isConnected?: boolean; error?: string };
+        return res.isConnected ? 'available' : 'not-installed';
       } catch {
         return 'not-installed';
       }
