@@ -52,6 +52,11 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SiwsSession,
+  type LocaleCode,
+  getLocale,
+  setLocale,
+  onLocaleChange,
 } from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
@@ -62,7 +67,7 @@ import {
 // Svelte's reactivity primitives — we import lazily so consumers who
 // don't use this subpath don't need svelte installed.
 // The `import type` ensures no runtime dependency on svelte for type-only usage.
-import { writable, type Readable } from 'svelte/store';
+import { writable, derived, type Readable } from 'svelte/store';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton (Svelte 5 doesn't have Context like React)
@@ -207,6 +212,32 @@ export function usePendingSignCountStore(): Readable<number> {
   const store = writable<number>(client.pendingSignCount);
   const unsub = client.on('signQueueChange', (n) => store.set(n));
   return { subscribe: store.subscribe } as Readable<number>;
+}
+
+/** Reactive SIWS session store. Re-renders when the session is set, cleared, or expires. (v1.7.0+) */
+export function useSiwsSessionStore(): Readable<SiwsSession | null> {
+  const client = getAppKit();
+  const store = writable<SiwsSession | null>(client.siwsSession);
+  const unsub = client.on('siwsSessionChange', (s) => store.set(s));
+  return { subscribe: store.subscribe } as Readable<SiwsSession | null>;
+}
+
+/** Convenience: `true` when the user has a valid (non-expired) SIWS session. (v1.7.0+) */
+export function useIsAuthenticatedStore(): Readable<boolean> {
+  const session = useSiwsSessionStore();
+  return derived(session, ($s) => $s !== null);
+}
+
+/** Reactive locale store — returns the current LocaleCode. Re-renders on change. (v1.8.0+) */
+export function useLocaleStore(): Readable<LocaleCode> {
+  const store = writable<LocaleCode>(getLocale());
+  const unsub = onLocaleChange((newLocale) => store.set(newLocale));
+  return { subscribe: store.subscribe } as Readable<LocaleCode>;
+}
+
+/** Returns the `setLocale` function for changing the active locale at runtime. (v1.8.0+) */
+export function useSetLocale(): (locale: LocaleCode) => Promise<void> {
+  return setLocale;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +520,9 @@ export const useSession = useSessionStore;
 export const useSessions = useSessionsStore;
 export const useAddress = useAddressStore;
 export const usePendingSignCount = usePendingSignCountStore;
+export const useSiwsSession = useSiwsSessionStore;
+export const useIsAuthenticated = useIsAuthenticatedStore;
+export const useLocale = useLocaleStore;
 export const useConnect = useConnectStore;
 export const useSignTransaction = useSignTransactionStore;
 export const useSignMessage = useSignMessageStore;

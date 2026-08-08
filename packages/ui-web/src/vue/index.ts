@@ -58,6 +58,11 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SiwsSession,
+  type LocaleCode,
+  getLocale,
+  setLocale,
+  onLocaleChange,
 } from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
@@ -222,6 +227,46 @@ export function usePendingSignCount(): Readonly<Ref<number>> {
   const unsub = client.on('signQueueChange', (n) => { count.value = n; });
   onUnmounted(unsub);
   return shallowReadonly(count);
+}
+
+/**
+ * Reactive SIWS session — returns `Readonly<Ref<SiwsSession | null>>`.
+ * Re-renders when the session is set, cleared, or expires. (v1.7.0+)
+ */
+export function useSiwsSession(): Readonly<Ref<SiwsSession | null>> {
+  const client = useClient();
+  const session = shallowRef<SiwsSession | null>(client.siwsSession);
+  const unsub = client.on('siwsSessionChange', (s) => { session.value = s; });
+  onUnmounted(unsub);
+  return shallowReadonly(session);
+}
+
+/**
+ * Convenience: `true` when the user has a valid (non-expired) SIWS session.
+ * (v1.7.0+)
+ */
+export function useIsAuthenticated(): ComputedRef<boolean> {
+  const session = useSiwsSession();
+  return computed(() => session.value !== null);
+}
+
+/**
+ * Reactive locale — returns `Readonly<Ref<LocaleCode>>`. Re-renders when
+ * the locale changes via `setLocale()` or `useSetLocale()`. (v1.8.0+)
+ */
+export function useLocale(): Readonly<Ref<LocaleCode>> {
+  const locale = ref<LocaleCode>(getLocale());
+  const unsub = onLocaleChange((newLocale) => { locale.value = newLocale; });
+  onUnmounted(unsub);
+  return shallowReadonly(locale);
+}
+
+/**
+ * Returns the `setLocale` function for changing the active locale at runtime.
+ * (v1.8.0+)
+ */
+export function useSetLocale(): (locale: LocaleCode) => Promise<void> {
+  return setLocale;
 }
 
 // ---------------------------------------------------------------------------
