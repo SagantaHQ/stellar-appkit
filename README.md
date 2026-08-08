@@ -231,7 +231,7 @@ That's a working wallet connect flow. Everything past here is what you reach for
 
 **Zero-config defaults:**
 - **`connectors`** — omit to auto-register Freighter, Albedo, xBull, and Ledger. Use `defaultConnectors()` to extend the set with WalletConnect.
-- **`appMetadata.domain` and `appMetadata.uri`** — omit to auto-derive from `window.location` (`hostname` and `origin`). If you pass them explicitly, they're auto-formatted: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`.
+- **`** `appMetadata` follows the WC metadata standard ** — `{ name, description?, url?, icons? }`. The same object is fed directly to WalletConnect. `domain` for SIWS is derived from `url` (strip protocol+path), `uri` = `url`. When `url` is omitted, auto-derived from `window.location.origin`.
 - **Modal animations** — `scale-blur` for desktop modal, `slide-up` for mobile bottom-sheet, out of the box. Override via the `animation` attribute or `modal.animation` config.
 
 See [The `<stellar-appkit-modal>` element](#the-stellar-appkit-modal-element) for the full list of animation presets.

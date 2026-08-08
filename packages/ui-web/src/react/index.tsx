@@ -88,7 +88,7 @@ export interface StellarAppKitProviderConfig {
    */
   connectors?: WalletConnector[];
   /** App identity surfaced in SIWS messages. Required if you use useSignIn(). */
-  appMetadata?: { name: string; domain?: string; uri?: string };
+  appMetadata?: { name: string; description?: string; url?: string; icons?: string[] };
   /** Required for STANDALONE networks; optional override otherwise. */
   networkPassphrase?: string;
   /** Set false to disable cross-tab session sync (on by default). */

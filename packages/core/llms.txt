@@ -55,7 +55,7 @@ await appkit.restore();
 
 Zero-config:
 - `connectors` — omit to auto-register Freighter + Albedo + xBull + Ledger. Use `defaultConnectors()` to extend with WalletConnect (requires `projectId`).
-- `appMetadata.domain` / `appMetadata.uri` — omit to auto-derive from `window.location` (`hostname` + `origin`). Auto-formatted if passed explicitly: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`. In SSR, pass them explicitly.
+- `appMetadata` follows WC metadata standard: `{ name, description?, url?, icons? }`. Same object fed to WalletConnect. `domain` for SIWS derived from `url`, `uri` = `url`. Auto-derived from `window.location.origin` when omitted.
 
 ### WalletConnect (Hana, Lobstr, Hot Wallet)
 

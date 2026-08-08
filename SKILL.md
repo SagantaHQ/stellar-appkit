@@ -64,7 +64,7 @@ await appkit.restore(); // resume persisted session
 
 **Zero-config defaults:**
 - **`connectors`** — omit to auto-register Freighter, Albedo, xBull, Ledger. WalletConnect excluded (requires `projectId`). Use `defaultConnectors()` to extend.
-- **`appMetadata.domain` / `appMetadata.uri`** — omit to auto-derive from `window.location` (`hostname` and `origin`). Auto-formatted if passed: `"https://example.com"` as domain → `"example.com"`; `"example.com"` as uri → `"https://example.com"`. In SSR (no `window`), pass them explicitly.
+- **`appMetadata`** follows the WC metadata standard: `{ name, description?, url?, icons? }`. Same object fed directly to WalletConnect. `domain` for SIWS derived from `url` (strip protocol+path), `uri` = `url`. Auto-derived from `window.location.origin` when omitted. In SSR, pass `url` explicitly.
 
 ### Signing transactions
 

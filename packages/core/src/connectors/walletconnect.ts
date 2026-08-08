@@ -186,10 +186,23 @@ export interface WalletConnectConnectorOptions {
 const WC_STORAGE_KEY = 'saganta-appkit:walletconnect-session';
 
 export function createWalletConnectConnector(opts: WalletConnectConnectorOptions): WalletConnector {
-  // Resolve metadata — use opts.metadata if provided, otherwise derive
-  // from window.location (browser) at connect time.
+  // App metadata injected by StellarAppKit constructor — same object as
+  // appMetadata in the config (WC metadata shape). When set, used directly
+  // as the WC metadata (no need for opts.metadata).
+  let appkitAppMetadata: { name: string; description?: string; url?: string; icons?: string[] } | undefined;
+
+  // Resolve metadata — priority: opts.metadata > appkitAppMetadata > window.location
   function resolveMetadata(): { name: string; description: string; url: string; icons: string[] } {
     if (opts.metadata) return opts.metadata;
+    // Use the appMetadata from StellarAppKit config if available
+    if (appkitAppMetadata) {
+      return {
+        name: appkitAppMetadata.name,
+        description: appkitAppMetadata.description || `${appkitAppMetadata.name} — Stellar dApp`,
+        url: appkitAppMetadata.url || 'https://example.com',
+        icons: appkitAppMetadata.icons || [],
+      };
+    }
     // Derive from window.location
     if (typeof window !== 'undefined' && window.location) {
       const host = window.location.hostname || 'localhost';
@@ -817,6 +830,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    */
   (connector as WalletConnector & { _setNetwork?: (network: string) => void })._setNetwork = (network: string) => {
     appkitNetwork = network;
+  };
+
+  /**
+   * Internal method called by StellarAppKit constructor to inject the
+   * appMetadata (WC metadata shape) so the connector can use it directly
+   * as the WC metadata when opts.metadata is not provided.
+   */
+  (connector as WalletConnector & { _setAppMetadata?: (meta: { name: string; description?: string; url?: string; icons?: string[] }) => void })._setAppMetadata = (meta: { name: string; description?: string; url?: string; icons?: string[] }) => {
+    appkitAppMetadata = meta;
   };
 
   return connector;
