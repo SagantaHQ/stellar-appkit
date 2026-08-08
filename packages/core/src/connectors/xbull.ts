@@ -159,30 +159,18 @@ export function createXBullConnector(): WalletConnector {
     capabilities,
 
     async getReachability() {
-      // The xBull extension injects `window.xBullSDK` (aka `globalThis.xBullSDK`
-      // — same object in a browser) asynchronously via a content script. The
-      // SDK's bridge checks this global synchronously inside connect()/sign()/
-      // signMessage() — if it's undefined at call time, the bridge silently
-      // falls back to opening the web wallet popup. We poll briefly for
-      // injection; if it doesn't appear within the timeout, we report
-      // 'not-installed' so the connect-modal can prompt the user to install
-      // the extension (or explicitly accept the web-wallet flow) rather than
-      // silently opening a popup.
+      // xBull is ALWAYS available — even without the extension installed.
+      // The xBull SDK bridge (`@creit.tech/xbull-wallet-connect`) falls back
+      // to the xBull web wallet (https://wallet.xbull.app) when the extension
+      // isn't detected. So we always return 'available'.
       //
-      // Previous versions of this connector always returned 'available' on
-      // the grounds that the web wallet fallback meant xBull was always
-      // usable. That's technically true but leads to a poor UX: the user
-      // has the extension installed, clicks connect, and gets a web wallet
-      // popup instead of the extension UI they expected. Reporting
-      // 'not-installed' when the extension isn't detected lets the modal
-      // surface the install link instead.
+      // We still call waitForXBullExtension() before connect()/sign() to give
+      // the extension time to inject its SDK — but if it doesn't appear,
+      // the bridge's web wallet fallback kicks in automatically.
       //
-      // In a non-browser environment (Node, bun, SSR), the extension can
-      // never be installed — return 'unavailable' immediately so the modal
-      // doesn't show xBull as an option.
+      // In a non-browser environment (Node, bun, SSR), return 'unavailable'.
       if (typeof window === 'undefined' && typeof (globalThis as { xBullSDK?: unknown }).xBullSDK === 'undefined') return 'unavailable';
-      const installed = await waitForXBullExtension();
-      return installed ? 'available' : 'not-installed';
+      return 'available';
     },
 
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {

@@ -249,6 +249,16 @@ export class StellarAppKit {
       : defaultConnectors();
     this.registry.registerMany(connectors);
     this.network = config.network;
+
+    // Inject the network into WalletConnect connectors so they can resolve
+    // the passphrase via the Networks map when networkPassphrase is not
+    // explicitly provided in the connector options.
+    for (const connector of connectors) {
+      const wc = connector as WalletConnector & { _setNetwork?: (n: string) => void };
+      if (typeof wc._setNetwork === 'function') {
+        wc._setNetwork(config.network);
+      }
+    }
     this.appMetadata = config.appMetadata ? normalizeAppMetadata(config.appMetadata) : undefined;
     this.storage = config.storage ?? createWebStorage();
     this.customNetworkPassphrase = config.networkPassphrase;

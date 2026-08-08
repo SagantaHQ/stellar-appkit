@@ -12,8 +12,9 @@ import type {
   SignAuthEntryResult,
   SignMessageResult,
   ConnectStorage,
+  StellarNetwork,
 } from '../types.js';
-import { ConnectError } from '../types.js';
+import { ConnectError, resolveNetworkPassphrase as resolveNetworkPassphraseFromNetwork } from '../types.js';
 import { withNormalizedError } from './error-utils.js';
 
 /**
@@ -133,27 +134,34 @@ function isFatalRelayError(error: unknown): boolean {
 export interface WalletConnectConnectorOptions {
   /** WalletConnect Cloud project ID — get one at cloud.walletconnect.com. */
   projectId: string;
-  /** App metadata shown in the wallet's connection approval dialog. */
-  metadata: { name: string; description: string; url: string; icons: string[] };
+  /**
+   * App metadata shown in the wallet's connection approval dialog.
+   *
+   * Optional — when omitted, derived from:
+   *   - `window.location` (browser): name from hostname, url from origin
+   *   - The StellarAppKit config's `appMetadata` if available
+   *
+   * When provided, follows the Reown/WalletConnect metadata style:
+   * ```ts
+   * metadata: {
+   *   name: 'My App',
+   *   description: 'A Stellar dApp',
+   *   url: 'https://saganta.com',
+   *   icons: ['https://saganta.com/icon.png'],
+   * }
+   * ```
+   * The `url` field is also used as the `uri` in SIWS messages.
+   * The `icons[0]` field is used as the signing/preview app icon.
+   * The `name` field is used as the app name in the connecting view.
+   */
+  metadata?: { name: string; description: string; url: string; icons: string[] };
   /**
    * Called with the WC pairing URI when a new connection is initiated.
    *
    * **When using `<stellar-appkit-modal>` (recommended):** the modal
    * intercepts this automatically via `setOnUri()` and renders the QR
    * code inside the connecting view using `better-qr` — you can omit
-   * this entirely:
-   * ```ts
-   * createWalletConnectConnector({
-   *   projectId: '...',
-   *   metadata: { ... },
-   *   networkPassphrase: Networks.TESTNET,
-   *   // onUri not needed — the modal handles QR rendering
-   * })
-   * ```
-   *
-   * **When building your own UI (no modal):** render the URI as a QR
-   * code (desktop) or open it as a deep link (mobile). Use a library
-   * like `qrcode.react`, `qrcode`, or `better-qr`.
+   * this entirely.
    *
    * Defaults to a no-op (`() => {}`).
    */
@@ -164,13 +172,59 @@ export interface WalletConnectConnectorOptions {
    * the saved topic. If not provided, sessions are lost on page reload.
    */
   storage?: ConnectStorage;
-  /** The Stellar network passphrase to include in the session proposal. */
-  networkPassphrase: string;
+  /**
+   * The Stellar network passphrase to include in the session proposal.
+   *
+   * Optional — when omitted, derived from the `network` field passed to
+   * `StellarAppKit` config (e.g. `'TESTNET'` → `Networks.TESTNET`).
+   * Only required for `STANDALONE` networks (which have no built-in
+   * passphrase) or when you want to override the default.
+   */
+  networkPassphrase?: string;
 }
 
 const WC_STORAGE_KEY = 'saganta-appkit:walletconnect-session';
 
 export function createWalletConnectConnector(opts: WalletConnectConnectorOptions): WalletConnector {
+  // Resolve metadata — use opts.metadata if provided, otherwise derive
+  // from window.location (browser) at connect time.
+  function resolveMetadata(): { name: string; description: string; url: string; icons: string[] } {
+    if (opts.metadata) return opts.metadata;
+    // Derive from window.location
+    if (typeof window !== 'undefined' && window.location) {
+      const host = window.location.hostname || 'localhost';
+      const origin = window.location.origin || 'http://localhost';
+      return {
+        name: host,
+        description: `${host} — Stellar dApp`,
+        url: origin,
+        icons: [],
+      };
+    }
+    // SSR fallback
+    return {
+      name: 'Stellar AppKit App',
+      description: 'A Stellar dApp',
+      url: 'https://example.com',
+      icons: [],
+    };
+  }
+
+  // Resolve networkPassphrase — use opts.networkPassphrase if provided,
+  // otherwise derive from the Networks map based on the StellarAppKit
+  // config's `network` field (injected by the constructor via appkitRef).
+  let appkitNetwork: string | undefined;
+  function resolveNetworkPassphrase(): string {
+    if (opts.networkPassphrase) return opts.networkPassphrase;
+    // Try to resolve from the appkit network (set via _setNetwork)
+    if (appkitNetwork) {
+      const passphrase = resolveNetworkPassphraseFromNetwork(appkitNetwork as StellarNetwork);
+      if (passphrase) return passphrase;
+    }
+    // Fallback to TESTNET
+    return 'Test SDF Network ; September 2015';
+  }
+
   const meta: WalletMeta = {
     id: 'walletconnect',
     name: 'WalletConnect',
@@ -284,7 +338,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       }
       client = await SignClient.init({
         projectId: opts.projectId,
-        metadata: opts.metadata,
+        metadata: resolveMetadata(),
         relayUrl: 'wss://relay.walletconnect.com',
       });
 
@@ -600,7 +654,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             // Wallet doesn't support stellar_getNetwork — use the configured passphrase
             cachedNetwork = {
               network: 'UNKNOWN',
-              networkPassphrase: opts.networkPassphrase,
+              networkPassphrase: resolveNetworkPassphrase(),
             };
           }
 
@@ -754,6 +808,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    */
   (connector as WalletConnector & { setOnUri?: (fn: ((uri: string) => void) | null) => void }).setOnUri = (fn: ((uri: string) => void) | null) => {
     onUriHandler = fn;
+  };
+
+  /**
+   * Internal method called by StellarAppKit constructor to inject the
+   * network (e.g. 'TESTNET') so the connector can resolve the passphrase
+   * via Networks map when networkPassphrase is not explicitly provided.
+   */
+  (connector as WalletConnector & { _setNetwork?: (network: string) => void })._setNetwork = (network: string) => {
+    appkitNetwork = network;
   };
 
   return connector;
