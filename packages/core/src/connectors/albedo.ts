@@ -30,7 +30,7 @@ export function createAlbedoConnector(): WalletConnector {
   const meta: WalletMeta = {
     id: 'albedo',
     name: 'Albedo',
-    icon: 'https://albedo.link/img/logo-icon.svg',
+    icon: 'data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMDA2NkIyIi8+PHBhdGggZD0iTTY0IDI2TDk2IDk4SDgyTDc1IDgwSDUzTDQ2IDk4SDMyTDY0IDI2Wk01OCA2OEg3MEw2NCA1Mkw1OCA2OFoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=',
     platforms: ['web'],
   };
 

@@ -47,8 +47,8 @@ export const walletIcons: Record<string, string> = {
 
   ledger: 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPHN2ZyB2ZXJzaW9uPSIxLjEiIGlkPSJMYXllcl8xIgogICAgIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIKICAgICB2aWV3Qm94PSIwIDAgNzY4LjkxIDY2OS4zNSIKICAgICB4bWw6c3BhY2U9InByZXNlcnZlIj4KCiAgPCEtLSBXaGl0ZSBiYWNrZ3JvdW5kIC0tPgogIDxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNmZmZmZmYiLz4KCiAgPCEtLSBCbGFjayBibG9jayBzaGFwZS90ZXh0IC0tPgogIDxwYXRoIGZpbGw9IiMwMDAwMDAiIGQ9Ik0wLDQ3OS4yOXYxOTAuMDZoMjg5LjIyVjYyNy4ySDQyLjE0VjQ3OS4yOUgwegogIE03MjYuNzcsNDc5LjI5VjYyNy4ySDQ3OS42OXY0Mi4xNGgyODkuMjJWNDc5LjI5SDcyNi43N3oKICBNMjg5LjY0LDE5MC4wNnYyODkuMjJoMTkwLjA1di0zOC4wMUgzMzEuNzhWMTkwLjA2SDI4OS42NHoKICBNMCwwdjE5MC4wNmg0Mi4xNFY0Mi4xNGgyNDcuMDhWMEgwegogIE00NzkuNjksMHY0Mi4xNGgyNDcuMDh2MTQ3LjkyaDQyLjE0VjBINDc5LjY5eiIvPgo8L3N2Zz4K',
 
-  // Stylized SVG fallback (for wallets where we don't have brand artwork)
-  albedo: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="al" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#FFB800"/><stop offset="100%" stop-color="#FF6B00"/></linearGradient></defs><rect width="128" height="128" rx="28" fill="url(#al)"/><path d="M64 28L78 56L106 64L78 72L64 100L50 72L22 64L50 56Z" fill="#fff" opacity="0.95"/><circle cx="64" cy="64" r="8" fill="#FF6B00"/></svg>`).toString('base64')}`,
+  // Albedo — stylized "A" logo on sea blue background
+  albedo: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><rect width="128" height="128" rx="28" fill="#0066B2"/><path d="M64 26L96 98H82L75 80H53L46 98H32L64 26ZM58 68H70L64 52L58 68Z" fill="#fff"/></svg>`).toString('base64')}`,
 };
 
 /**

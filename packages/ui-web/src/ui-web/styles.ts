@@ -62,7 +62,7 @@ export function buildStyles(theme: ConnectTheme): string {
       padding-bottom: env(safe-area-inset-bottom, 0px);
       transform: translateY(100%);
       transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
-      touch-action: pan-y;
+      touch-action: none;
       overscroll-behavior: contain;
     }
     .overlay[data-mode="bottomsheet"][data-open="true"] .panel { transform: translateY(0); }
@@ -541,11 +541,10 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      /* Background image set via inline style on the element.
-         Using background-image instead of <img> prevents the flash
-         on re-render — the browser caches the decoded image and
-         applies it instantly via CSS, no DOM element to destroy/recreate. */
-      background-size: 28px 28px;
+      /* Background image fills the tile — matches the parent's border-radius
+         via overflow:hidden + border-radius. Using cover so the icon fills
+         the tile edge-to-edge (no gap between icon and border). */
+      background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
     }
