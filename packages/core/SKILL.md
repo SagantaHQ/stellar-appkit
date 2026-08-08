@@ -138,24 +138,41 @@ if (result.ok) { /* result.claims.address is verified */ }
 
 #### Automatic SIWS authentication flow
 
-Set `siws` on the `StellarAppKit` config and the modal auto-triggers sign-in after wallet connect:
+Set `siws` on the `StellarAppKit` config and the modal auto-triggers sign-in after wallet connect. Full session lifecycle:
 
 ```ts
 const appkit = new StellarAppKit({
   network: 'TESTNET',
   siws: {
     statement: 'Sign in to Example App',
-    disconnectOnFail: true, // default
+    signoutOnDisconnect: true,  // default
+    disconnectOnFail: true,     // default
+    maxRetries: 3,              // default
+    timeoutMs: 15000,           // default
+    session: async () => (await fetch('/api/siws/session')).json() || null,
     nonce: async () => (await fetch('/api/siws/nonce')).text(),
-    verify: async (data, nonce) => (await fetch('/api/siws/verify', {
-      method: 'POST', body: JSON.stringify({ ...data, nonce }),
-    })).ok,
+    verify: async (data, nonce, ctx) => {
+      const res = await fetch('/api/siws/verify', {
+        method: 'POST', body: JSON.stringify({ ...data, nonce, ...ctx }),
+      });
+      return res.ok ? res.json() : null; // → SiwsSession | null
+    },
+    signout: async () => (await fetch('/api/siws/logout', { method: 'POST' })).ok,
+    refresh: async () => (await fetch('/api/siws/refresh')).json() || null, // optional
   },
 });
 ```
 
-- `disconnectOnFail: true` (default): wallet disconnected when user closes modal without completing auth
-- `disconnectOnFail: false`: wallet stays connected even if SIWS fails
+Flow: check session → fetch nonce → sign in wallet → verify (returns SiwsSession) → validate address+network+expiry → store persistently.
+
+API:
+- `appkit.siwsSession` — SiwsSession | null (auto-expiry)
+- `appkit.signOut()` — clear session + signout() + disconnect
+- `appkit.requireAuth()` — throws if not authenticated
+- `appkit.validateSession()` — refresh from server, returns SiwsSession | null
+- `appkit.reauthenticate()` — force re-auth
+- `useSiwsSession()` / `useIsAuthenticated()` — React hooks
+- `siwsSessionChange` event — fires on session set/clear/expire
 
 ### React hooks
 

@@ -778,44 +778,78 @@ When `siws?: SiwsConfig` is set on the `StellarAppKit` config, the modal automat
 
 ```ts
 interface SiwsConfig {
-  statement: string;           // e.g. "Sign in to My App"
-  disconnectOnFail?: boolean;  // default true
+  statement: string;
+  signoutOnDisconnect?: boolean;  // default true
+  disconnectOnFail?: boolean;     // default true
+  maxRetries?: number;            // default 3
+  timeoutMs?: number;             // default 15000
+  session: () => Promise<SiwsSession | null | undefined>;
   nonce: () => Promise<string>;
-  verify: (data: SignInResult, nonce: string) => Promise<boolean>;
+  verify: (data, nonce, context: { address, network }) => Promise<SiwsSession | null | undefined>;
+  signout: () => Promise<boolean> | boolean;
+  refresh?: () => Promise<SiwsSession | null | undefined>;
+}
+
+interface SiwsSession {
+  network: string;
+  address: string;
+  expiry: number;  // epoch ms
+  metadata?: Record<string, unknown>;
 }
 ```
 
 ### Flow
 
 1. Wallet connects (extension popup or WalletConnect QR)
-2. Modal shows "Fetching nonce…" → calls `siwsConfig.nonce()`
-3. Modal shows "Approve the sign-in request in [Wallet]" → calls `signIn()` (wallet prompts)
-4. Modal shows "Verifying your signature…" → calls `siwsConfig.verify(result, nonce)`
-5. If `verify` returns `true` → connected view, `siwsPending = false`
-6. If any step fails → extract error message, show SIWS error view with "Try again" button
+2. Modal shows "Checking session…" → calls `session()`. If existing session matches wallet's address + network + not expired → skip to connected view
+3. Modal shows "Fetching nonce…" → calls `nonce()` (with timeout)
+4. Modal shows "Approve the sign-in request in [Wallet]" → calls `signIn()` (wallet prompts)
+5. Modal shows "Verifying your signature…" → calls `verify(data, nonce, context)` (with timeout). Must return `SiwsSession` or `null`
+6. Session validation — returned session's `address` + `network` + `expiry` validated against connected wallet
+7. Success → session stored in localStorage + `siwsSession` getter, connected view
+8. Failure → error + "Try again" (max 3 retries) + Cancel button
 
-### `disconnectOnFail` behavior
+### Session persistence
 
-The wallet is **not** disconnected immediately on failure — the user can retry. The wallet is only disconnected when the user **closes the modal** (X button, drag-to-dismiss, Escape, overlay click) if `disconnectOnFail` is `true` and `siwsPending` is still `true` (meaning SIWS never succeeded).
+- SIWS session stored in `localStorage` (`saganta-appkit:siws-session`)
+- Restored on `appkit.restore()` alongside wallet sessions
+- `siwsSession` getter auto-clears expired sessions
+- `siwsSessionChange` event fires on set/clear/expire
 
-- `true` (default): wallet stays connected during error + retry. On modal close without SIWS success → disconnect.
-- `false`: wallet never disconnected, even if SIWS fails and user closes modal.
+### API methods on `StellarAppKit`
 
-### Error message extraction
+- `appkit.siwsSession` — getter, `SiwsSession | null` (auto-expiry)
+- `appkit.setSiwsSession(session)` — setter (called by modal after verify)
+- `appkit.clearSiwsSession()` — clears session + calls `signout()` if configured
+- `appkit.signOut()` — clears session + `signout()` + disconnect wallet
+- `appkit.requireAuth()` — throws `ConnectError` if not authenticated
+- `appkit.validateSession()` — calls `refresh()` (or `session()`) to validate against server
+- `appkit.reauthenticate()` — clears session + triggers re-auth
 
-Errors from any step are extracted from any error type:
-- `Error.message`
-- `ConnectError.message`
-- Plain strings
-- Objects with `message` or `reason` properties
+### Hooks (React)
+
+- `useSiwsSession()` — reactive `SiwsSession | null`
+- `useIsAuthenticated()` — reactive `boolean`
+
+### Security
+
+- Address binding: session address must match connected wallet
+- Network binding: session network must match connected wallet
+- Expiry auto-check: getter auto-clears expired sessions
+- Signout on disconnect: `signoutOnDisconnect` (default true) prevents orphaned server sessions
+- Timeout: prevents hanging on unresponsive servers (15s default)
+- Retry limiting: max 3 attempts (configurable)
 
 ### Implementation
 
-- `siwsPending` flag on the modal — `true` when SIWS is required but hasn't succeeded
-- `triggerSiwsFlow()` method — called after `selectWallet()` or `pickAccount()` succeeds
-- `handleSiwsFailure()` — sets `siwsPending = true`, shows error view (does NOT disconnect)
-- `close()` — checks `siwsPending` + `disconnectOnFail` → disconnects after modal is visually closed
-- 4 new view states: `siws-nonce`, `siws-signing`, `siws-verifying`, `siws-error`
+- `siwsPending` flag — true when SIWS required but not succeeded
+- `siwsRetryCount` — tracks retry attempts
+- `siwsCancelled` — set when user clicks Cancel
+- `triggerSiwsFlow()` — called after `selectWallet()` or `pickAccount()` succeeds
+- `withTimeout()` — wraps `nonce()` and `verify()` calls
+- `handleSiwsFailure()` — shows error, increments retry count, does NOT disconnect
+- `close()` — checks `siwsPending` + `disconnectOnFail` → disconnects after modal close
+- 5 view states: `siws-checking`, `siws-nonce`, `siws-signing`, `siws-verifying`, `siws-error`
 
 ---
 

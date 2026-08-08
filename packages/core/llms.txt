@@ -125,8 +125,17 @@ const { message, signedMessage, signerAddress, signedData } = await appkit.signI
 });
 
 // Automatic SIWS — set `siws` on the StellarAppKit config and the modal
-// auto-triggers sign-in after wallet connect:
-// siws: { statement, disconnectOnFail: true, nonce: async () => ..., verify: async (data, nonce) => boolean }
+// auto-triggers sign-in after wallet connect. Full session lifecycle:
+// siws: { statement, signoutOnDisconnect, disconnectOnFail, maxRetries, timeoutMs,
+//   session: async () => SiwsSession | null,  // check existing
+//   nonce: async () => string,
+//   verify: async (data, nonce, ctx: {address, network}) => SiwsSession | null,
+//   signout: async () => boolean,
+//   refresh: async () => SiwsSession | null,  // optional
+// }
+// API: appkit.siwsSession, signOut(), requireAuth(), validateSession(), reauthenticate()
+// Hooks: useSiwsSession(), useIsAuthenticated()
+// Event: siwsSessionChange
 
 // Auth entry (Soroban delegated auth)
 const result = await appkit.signAuthEntry(preimageBase64);

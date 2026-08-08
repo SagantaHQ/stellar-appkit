@@ -45,7 +45,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 **Identity**
 - Sign-In With Stellar (SIWS) — a self-issued, SEP-43-based message-signing flow analogous to Sign-In With Ethereum, with a server-side verifier package
 - **Unified `signedData` contract** — every connector surfaces the exact bytes the wallet signed, so SIWS verification works out of the box for Freighter, Albedo, xBull, and Ledger with no per-wallet custom verifier
-- **Automatic SIWS authentication flow** — set `siws: { statement, nonce, verify, disconnectOnFail }` on the `StellarAppKit` config and the modal automatically triggers sign-in immediately after wallet connect. The flow: fetch nonce → sign in wallet → verify on server → connected. If it fails, the user sees the error + "Try again" button. `disconnectOnFail: true` (default) disconnects the wallet when the user closes the modal without completing auth; `false` keeps the wallet connected.
+- **Automatic SIWS authentication flow** — set `siws: { statement, session, nonce, verify, signout, ... }` on the `StellarAppKit` config and the modal automatically triggers sign-in immediately after wallet connect. Checks for existing session first (skip if valid), fetches nonce, signs in wallet, verifies on server, stores `SiwsSession` persistently. Includes retry limiting, timeouts, cancel button, `signOut()`, `validateSession()`, `requireAuth()`, `reauthenticate()`, and `useSiwsSession()` / `useIsAuthenticated()` hooks.
 
 **Soroban**
 - One `invoke()` call covers build → simulate → prepare → sign → submit → poll
@@ -507,32 +507,81 @@ const appkit = new StellarAppKit({
   network: 'TESTNET',
   siws: {
     statement: 'Sign in to Example App',
-    disconnectOnFail: true, // default — disconnects wallet when user closes modal without completing auth
+    signoutOnDisconnect: true,  // default — calls signout() before wallet disconnect
+    disconnectOnFail: true,     // default — disconnects wallet on modal close if SIWS failed
+    maxRetries: 3,              // default — max retry attempts before "Too many attempts"
+    timeoutMs: 15000,           // default — timeout for nonce() and verify() calls
+
+    // Check for existing session — skip sign-in if valid
+    session: async () => {
+      const res = await fetch('/api/siws/session');
+      return res.ok ? res.json() : null;
+    },
+
+    // Fetch nonce from server
     nonce: async () => {
       const res = await fetch('/api/siws/nonce');
       return res.text();
     },
-    verify: async (data, nonce) => {
+
+    // Verify sign-in result — must return SiwsSession or null
+    verify: async (data, nonce, context) => {
       const res = await fetch('/api/siws/verify', {
         method: 'POST',
-        body: JSON.stringify({ ...data, nonce }),
+        body: JSON.stringify({ ...data, nonce, ...context }),
       });
+      return res.ok ? res.json() : null;
+    },
+
+    // Log out from server
+    signout: async () => {
+      const res = await fetch('/api/siws/logout', { method: 'POST' });
       return res.ok;
+    },
+
+    // Optional: refresh session without new sign-in
+    refresh: async () => {
+      const res = await fetch('/api/siws/refresh');
+      return res.ok ? res.json() : null;
     },
   },
 });
 ```
 
 The flow:
-1. **"Fetching nonce…"** — modal shows spinner while calling `nonce()`
-2. **"Approve the sign-in request in [Wallet]"** — wallet prompts the user to sign
-3. **"Verifying your signature…"** — modal shows spinner while calling `verify()`
-4. **Success** → connected view
-5. **Failure** → error message + "Try again" button (wallet stays connected)
+1. **"Checking session…"** — calls `session()`. If existing session matches wallet's address + network and isn't expired → skip to connected view
+2. **"Fetching nonce…"** — calls `nonce()` (with 15s timeout)
+3. **"Approve the sign-in request in [Wallet]"** — wallet prompts the user to sign
+4. **"Verifying your signature…"** — calls `verify(data, nonce, context)` (with 15s timeout). Must return `SiwsSession` or `null`
+5. **Session validation** — returned session's `address` + `network` + `expiry` are validated against the connected wallet
+6. **Success** → session stored persistently (survives page reload), connected view
+7. **Failure** → error message + "Try again" button (max 3 retries). Cancel button available during flow.
 
-`disconnectOnFail` behavior:
-- `true` (default): wallet stays connected while user sees error + "Try again". Only when user **closes the modal** and SIWS hasn't succeeded, the wallet is disconnected.
-- `false`: wallet is never disconnected, even if SIWS fails and user closes the modal.
+**Session persistence**: the SIWS session is stored in `localStorage` and restored on `appkit.restore()`. The `siwsSession` getter auto-clears expired sessions.
+
+**API methods**:
+- `appkit.siwsSession` — getter, returns `SiwsSession | null` (auto-expiry check)
+- `appkit.signOut()` — clears session, calls `signout()`, disconnects wallet. For "Log out" buttons.
+- `appkit.requireAuth()` — throws if not authenticated. For guarding actions.
+- `appkit.validateSession()` — calls `refresh()` (or `session()`) to validate against server. Returns `SiwsSession | null`.
+- `appkit.reauthenticate()` — clears session + triggers re-auth. For privilege escalation.
+
+**Hooks** (React):
+- `useSiwsSession()` — reactive `SiwsSession | null`
+- `useIsAuthenticated()` — reactive `boolean`
+
+**Events**:
+- `siwsSessionChange` — fires with `SiwsSession | null` when session is set, cleared, or expires
+
+**`SiwsSession` type**:
+```ts
+interface SiwsSession {
+  network: string;      // 'TESTNET', 'PUBLIC', etc.
+  address: string;      // connected wallet address
+  expiry: number;       // epoch ms
+  metadata?: Record<string, unknown>;  // username, avatar, roles, etc.
+}
+```
 
 ### Theming
 
