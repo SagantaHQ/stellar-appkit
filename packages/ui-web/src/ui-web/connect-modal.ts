@@ -60,8 +60,14 @@ export class SagantaAppKitModal extends ModalBase {
    *  before connect() is called. When non-null, the connecting view renders
    *  a QR code + deep link instead of the generic spinner. */
   private wcPairingUri: string | null = null;
-  /** Error message from the last connect() attempt — set when the client emits an 'error' event while view === 'connecting'. Cleared on retry. */
+  /** Error message from the last connect() or SIWS attempt — set when the
+   *  client emits an 'error' event while view === 'connecting', or when
+   *  the SIWS flow fails. Cleared on retry. */
   private connectingError: string | null = null;
+  /** True when SIWS is configured but hasn't succeeded yet. When the user
+   *  closes the modal with this flag true and disconnectOnFail is true,
+   *  the wallet is disconnected — because the auth flow wasn't completed. */
+  private siwsPending = false;
   /** The preview that was approved — kept so we can retry the sign after a wallet-side rejection. */
   private lastApprovedPreview: TransactionPreview | null = null;
   private lastError: ConnectError | null = null;
@@ -396,6 +402,21 @@ export class SagantaAppKitModal extends ModalBase {
       if (panel) panel.style.transform = '';
       if (panel) panel.style.opacity = '';
       if (overlay) overlay.style.opacity = '';
+
+      // SIWS disconnect-on-close logic:
+      // If SIWS was configured but never succeeded (siwsPending is true),
+      // and disconnectOnFail is true (default), disconnect the wallet
+      // because the authentication flow wasn't completed.
+      // This runs AFTER the modal is visually closed so the user doesn't
+      // see a disconnect flash — the wallet is just gone on next open.
+      if (this.siwsPending && this._client?.siwsConfig) {
+        const disconnectOnFail = this._client.siwsConfig.disconnectOnFail !== false;
+        if (disconnectOnFail && this._client.session) {
+          void this._client.disconnect().catch(() => {});
+        }
+      }
+      this.siwsPending = false; // reset for next connect
+
       this.render();
     };
 
@@ -701,14 +722,17 @@ export class SagantaAppKitModal extends ModalBase {
    * 1. Show "Fetching nonce…" → call `siwsConfig.nonce()`
    * 2. Show "Sign in your wallet" → call `signIn({ statement, nonce })`
    * 3. Show "Verifying…" → call `siwsConfig.verify(result, nonce)`
-   * 4. If verify returns `true` → connected view (success)
-   * 5. If any step fails → extract error message, show SIWS error view,
-   *    and if `disconnectOnFail` is true (default), disconnect the wallet.
+   * 4. If verify returns `true` → connected view (success), siwsPending = false
+   * 5. If any step fails → show SIWS error view with "Try again" button.
+   *    The wallet is NOT disconnected immediately — it stays connected so
+   *    the user can retry. The wallet is only disconnected when the user
+   *    closes the modal (via close()) if `disconnectOnFail` is true and
+   *    `siwsPending` is still true (meaning SIWS never succeeded).
    */
   private async triggerSiwsFlow(): Promise<void> {
     if (!this._client?.siwsConfig) return;
     const siws = this._client.siwsConfig;
-    const disconnectOnFail = siws.disconnectOnFail !== false; // default true
+    this.siwsPending = true; // SIWS is required but hasn't succeeded yet
 
     // Helper: extract a human-readable message from any error type
     const extractErrorMessage = (err: unknown): string => {
@@ -722,12 +746,13 @@ export class SagantaAppKitModal extends ModalBase {
       return 'Sign-in failed. Please try again.';
     };
 
-    // Helper: handle SIWS failure — disconnect if configured, show error
+    // Helper: handle SIWS failure — show error + retry, do NOT disconnect
+    // immediately. The wallet is only disconnected when the user closes the
+    // modal (via close()) if disconnectOnFail is true and siwsPending is
+    // still true (meaning SIWS never succeeded).
     const handleSiwsFailure = async (err: unknown) => {
       const msg = extractErrorMessage(err);
-      if (disconnectOnFail && this._client?.session) {
-        await this._client.disconnect();
-      }
+      this.siwsPending = true; // SIWS hasn't succeeded — close() will check this
       this.connectingError = msg;
       this.view = 'siws-error';
       this.render();
@@ -761,7 +786,8 @@ export class SagantaAppKitModal extends ModalBase {
       const verified = await siws.verify(signInResult, nonce);
 
       if (verified) {
-        // Success — go to connected view
+        // Success — SIWS completed, clear the pending flag
+        this.siwsPending = false;
         this.view = 'connected';
         this.connectingError = null;
         this.render();

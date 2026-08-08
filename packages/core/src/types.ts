@@ -316,8 +316,13 @@ export interface StellarAppKitEvents {
  * 4. Modal shows "Verifying…" → calls `verify(result, nonce)`
  * 5. If verify returns `true` → connected view (success)
  * 6. If verify returns `false` or any step fails:
- *    - If `disconnectOnFail` is `true` (default), disconnects the wallet
- *    - Shows the error message to the user with a "Try again" button
+ *    - Shows the error message + "Try again" button (wallet stays connected)
+ *    - The wallet is NOT disconnected immediately — the user can retry
+ *    - If `disconnectOnFail` is `true` (default): when the user closes the
+ *      modal (X button, drag-to-dismiss, Escape, overlay click) and SIWS
+ *      hasn't succeeded, the wallet is disconnected
+ *    - If `disconnectOnFail` is `false`: the wallet stays connected even
+ *      if the user closes the modal without completing SIWS
  *
  * Error messages are extracted from any error type (Error, string, object
  * with `message` property, ConnectError) so the user always sees a
@@ -327,9 +332,16 @@ export interface SiwsConfig {
   /** Human-readable statement shown in the SIWS message (e.g. "Sign in to My App"). */
   statement: string;
   /**
-   * When `true` (default), disconnects the wallet entirely if SIWS fails
-   * at any step (nonce fetch, sign, verify). When `false`, the wallet
-   * stays connected but the SIWS error is shown.
+   * Controls when the wallet is disconnected on SIWS failure:
+   *
+   * - `true` (default): The wallet stays connected while the user sees the
+   *   error + "Try again" button. Only when the user **closes the modal**
+   *   (X button, drag-to-dismiss, Escape, overlay click) and SIWS hasn't
+   *   succeeded, the wallet is disconnected. This ensures the auth flow
+   *   was completed before the wallet session is kept.
+   *
+   * - `false`: The wallet is never disconnected, even if SIWS fails and the
+   *   user closes the modal. The wallet stays connected without auth.
    */
   disconnectOnFail?: boolean;
   /**
