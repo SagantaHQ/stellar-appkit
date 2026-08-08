@@ -1,5 +1,6 @@
 import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
+import { t, onLocaleChange } from '@saganta/stellar-appkit';
 import { toSvg } from 'better-qr';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
@@ -83,6 +84,7 @@ export class SagantaAppKitModal extends ModalBase {
   private releaseFocusTrap: (() => void) | null = null;
   private gestureDestroyer: { destroy: () => void } | null = null;
   private clientUnsubscribers: Array<() => void> = [];
+  private localeUnsubscriber: (() => void) | null = null;
   private mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
   /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
   private avatarCache: Map<string, string | null> = new Map();
@@ -108,12 +110,17 @@ export class SagantaAppKitModal extends ModalBase {
       this.isOpen = true;
       this.render();
     }
+    // Re-render when the locale changes so all strings update immediately.
+    this.localeUnsubscriber = onLocaleChange(() => {
+      this.render();
+    });
   }
 
   disconnectedCallback() {
     this.releaseFocusTrap?.();
     this.gestureDestroyer?.destroy();
     this.clientUnsubscribers.forEach((unsub) => unsub());
+    this.localeUnsubscriber?.();
   }
 
   attributeChangedCallback(name: string) {
@@ -573,19 +580,19 @@ export class SagantaAppKitModal extends ModalBase {
 
         for (const tx of txs.records) {
           // Determine transaction type from the operations
-          let type = 'Transaction';
+          let type = t('tx.default_type');
           let amount = '';
-          let asset = 'XLM';
+          let asset = t('tx.default_asset');
 
           try {
             const ops = await horizon.operations().forTransaction(tx.hash).limit(1).call();
             if (ops.records.length > 0) {
               const op = ops.records[0] as { type: string; amount?: string; asset_type?: string; asset_code?: string };
-              type = op.type || 'Transaction';
+              type = op.type || t('tx.default_type');
               if (op.type === 'payment' || op.type === 'create_account') {
                 amount = parseFloat(op.amount || '0').toFixed(2);
                 if (op.asset_type && op.asset_type !== 'native') {
-                  asset = op.asset_code || 'UNKNOWN';
+                  asset = op.asset_code || t('tx.unknown_asset');
                 }
               }
             }
@@ -596,7 +603,7 @@ export class SagantaAppKitModal extends ModalBase {
 
           // For received payments, amount is positive; for sent, negative
           // (Horizon doesn't tell us direction easily, so we show it as-is)
-          history.push({ hash: tx.hash, type, amount: amount || '—', asset, date, success });
+          history.push({ hash: tx.hash, type, amount: amount || t('tx.no_amount'), asset, date, success });
         }
 
         this.cachedTxHistory = history;
@@ -748,7 +755,7 @@ export class SagantaAppKitModal extends ModalBase {
       return Promise.race([
         promise,
         new Promise<T>((_, reject) =>
-          setTimeout(() => reject(new Error('Request timed out. Please try again.')), ms)
+          setTimeout(() => reject(new Error(t('error.request_timed_out'))), ms)
         ),
       ]);
     };
@@ -762,7 +769,7 @@ export class SagantaAppKitModal extends ModalBase {
         if (e.message) return e.message;
         if (e.reason) return e.reason;
       }
-      return 'Sign-in failed. Please try again.';
+      return t('siws.error_generic');
     };
 
     // Helper: handle SIWS failure — show error + retry, do NOT disconnect
@@ -773,7 +780,7 @@ export class SagantaAppKitModal extends ModalBase {
       this.siwsPending = true;
 
       if (this.siwsRetryCount >= maxRetries) {
-        this.connectingError = `Too many failed attempts (${maxRetries}). Please try again later.`;
+        this.connectingError = t('siws.error_too_many_attempts', { maxRetries });
       } else {
         this.connectingError = msg;
       }
@@ -836,7 +843,7 @@ export class SagantaAppKitModal extends ModalBase {
       );
 
       if (!siwsSession) {
-        await handleSiwsFailure('Sign-in verification failed.');
+        await handleSiwsFailure(t('siws.error_verification_failed'));
         return;
       }
 
@@ -847,9 +854,9 @@ export class SagantaAppKitModal extends ModalBase {
         const notExpired = !siwsSession.expiry || siwsSession.expiry > Date.now();
 
         if (!addressMatches || !networkMatches || !notExpired) {
-          const reason = !addressMatches ? 'Session address does not match connected wallet'
-            : !networkMatches ? 'Session network does not match connected wallet'
-            : 'Session has expired';
+          const reason = !addressMatches ? t('siws.error_address_mismatch')
+            : !networkMatches ? t('siws.error_network_mismatch')
+            : t('siws.error_session_expired');
           await handleSiwsFailure(reason);
           return;
         }
@@ -1126,7 +1133,7 @@ export class SagantaAppKitModal extends ModalBase {
         ${effectiveMode === 'bottomsheet' ? '<div class="drag-handle"></div>' : ''}
         ${this.renderPanelHeader(effectiveMode)}
         <div class="body">${this.renderBody()}</div>
-        <div class="footer">Powered by <a href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a></div>
+        <div class="footer">${t('footer.powered_by', { brand: '<a href="https://github.com/sagantaHQ/stellar-appkit" target="_blank" rel="noopener" style="color: var(--sak-color-accent); text-decoration: none;">Stellar AppKit</a>' })}</div>
       </div>
     `;
   }
@@ -1174,18 +1181,18 @@ export class SagantaAppKitModal extends ModalBase {
           const icon = getWalletIconDataUri(connector.id) ?? connector.meta.icon;
           return connector.meta.name;
         }
-        return 'Account';
+        return t('title.account');
       }
       case 'account-picker':
-        return 'Choose an account';
+        return t('title.choose_account');
       case 'network-mismatch':
-        return 'Wrong network';
+        return t('title.wrong_network');
       case 'transaction-preview':
-        return 'Review transaction';
+        return t('title.review_transaction');
       case 'signing':
-        return 'Signing';
+        return t('title.signing');
       default:
-        return 'Connect a wallet';
+        return t('title.connect_wallet');
     }
   }
 
@@ -1198,12 +1205,12 @@ export class SagantaAppKitModal extends ModalBase {
     // (back cancels the connecting state and returns to the wallet list).
     if (this.view === 'connecting' && this.connectingWalletId) {
       const connector = this._client?.registry.get(this.connectingWalletId);
-      const walletName = connector?.meta.name ?? 'Wallet';
+      const walletName = connector?.meta.name ?? t('wallet.fallback_name');
       return `
         <div class="header header--connecting">
-          <button class="icon-btn" data-action="cancel-connecting" aria-label="Back">${icons.chevronLeft}</button>
+          <button class="icon-btn" data-action="cancel-connecting" aria-label="${t('aria.back')}">${icons.chevronLeft}</button>
           <span class="title">${escapeHtml(walletName)}</span>
-          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+          ${showClose ? `<button class="icon-btn" data-action="close" aria-label="${t('aria.close_dialog')}">${icons.close}</button>` : ''}
         </div>
       `;
     }
@@ -1228,7 +1235,7 @@ export class SagantaAppKitModal extends ModalBase {
     return `
       <div class="header">
         <div class="brand">${headerBrand}</div>
-        ${showClose ? `<button class="icon-btn" data-action="close" aria-label="Close">${icons.close}</button>` : ''}
+        ${showClose ? `<button class="icon-btn" data-action="close" aria-label="${t('aria.close_dialog')}">${icons.close}</button>` : ''}
       </div>
     `;
   }
@@ -1319,7 +1326,7 @@ export class SagantaAppKitModal extends ModalBase {
         });
       } catch {
         // If QR generation fails (e.g. URI too long), fall back to copy-only
-        qrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">QR generation failed. Use the copy button below.</div>`;
+        qrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
       }
 
       return `
@@ -1331,16 +1338,16 @@ export class SagantaAppKitModal extends ModalBase {
             <img src="${escapeAttr(iconUrl)}" alt="" class="wc-qr-logo"
                  onerror="${onerrorHandler}" />
           </div>
-          <h2 class="connecting-view__title">Scan with ${escapeHtml(walletName)}</h2>
-          <p class="connecting-view__subtitle">Open Hana, Lobstr, or Hot Wallet and scan this QR code to connect.</p>
+          <h2 class="connecting-view__title">${t('wc.scan_with', { walletName: escapeHtml(walletName) })}</h2>
+          <p class="connecting-view__subtitle">${t('wc.scan_instructions')}</p>
           <div class="wc-actions">
             <a class="wc-deeplink" href="${escapeAttr(uri)}" target="_blank" rel="noopener">
               ${icons.externalLink}
-              Open in wallet app
+              ${t('wc.open_in_wallet')}
             </a>
             <button class="wc-copy-uri" data-action="copy-wc-uri" data-uri="${escapeAttr(uri)}">
               ${icons.copy}
-              Copy URI
+              ${t('wc.copy_uri')}
             </button>
           </div>
         </div>
@@ -1348,10 +1355,10 @@ export class SagantaAppKitModal extends ModalBase {
     }
 
     const subtitle = hasError
-      ? 'Connection declined or failed. Try again or pick a different wallet.'
+      ? t('connecting.error_subtitle')
       : isWalletConnect
-        ? 'Generating pairing code…'
-        : 'Accept connection request in the wallet';
+        ? t('wc.generating_code')
+        : t('connecting.accept_request');
 
     const arcHtml = hasError
       ? '' // no spinner on error
@@ -1369,7 +1376,7 @@ export class SagantaAppKitModal extends ModalBase {
              <path d="M3 12a9 9 0 1 0 9-9" />
              <path d="M3 4v5h5" />
            </svg>
-           Try again
+           ${t('action.try_again')}
          </button>`
       : '';
 
@@ -1380,7 +1387,7 @@ export class SagantaAppKitModal extends ModalBase {
           <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
                onerror="${onerrorHandler}" />
         </div>
-        <h2 class="connecting-view__title">Continue in ${escapeHtml(walletName)}</h2>
+        <h2 class="connecting-view__title">${t('connecting.continue_in_wallet', { walletName: escapeHtml(walletName) })}</h2>
         <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
         ${retryHtml}
       </div>
@@ -1392,9 +1399,9 @@ export class SagantaAppKitModal extends ModalBase {
       // If we have a client, the list is loading (reachability checks in flight).
       // Show a sleek loading placeholder instead of "No wallets registered".
       if (this._client) {
-        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>Loading wallets…</div>`;
+        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>${t('wallet_list.loading')}</div>`;
       }
-      return `<div style="padding: 24px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">No wallets registered. Pass connectors into the StellarAppKit config.</div>`;
+      return `<div style="padding: 24px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">${t('wallet_list.empty')}</div>`;
     }
 
     return this.walletList
@@ -1419,8 +1426,8 @@ export class SagantaAppKitModal extends ModalBase {
               <span class="wallet-tile" style="background-image: url('${escapeAttr(connector.meta.icon)}')">
               </span>
               <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
-              <span class="wallet-sub">Not installed</span>
-              ${installUrl ? `<a class="wallet-install-btn" href="${escapeAttr(installUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation();">Install</a>` : ''}
+              <span class="wallet-sub">${t('wallet_list.not_installed')}</span>
+              ${installUrl ? `<a class="wallet-install-btn" href="${escapeAttr(installUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation();">${t('wallet_list.install')}</a>` : ''}
             </button>
           `;
         }
@@ -1430,10 +1437,10 @@ export class SagantaAppKitModal extends ModalBase {
         // ready to use vs. which need to be installed first (those show an
         // "Install" button instead of a subLabel — see the not-installed branch above).
         const subLabel =
-          isConnecting ? 'Connecting…'
-          : reachability === 'locked' ? 'Locked'
-          : reachability === 'unavailable' ? 'Unavailable'
-          : 'Installed';
+          isConnecting ? t('wallet_list.status.connecting')
+          : reachability === 'locked' ? t('wallet_list.status.locked')
+          : reachability === 'unavailable' ? t('wallet_list.status.unavailable')
+          : t('wallet_list.status.installed');
         const subLabelClass =
           isConnecting || reachability === 'locked' || reachability === 'unavailable'
             ? 'wallet-sub'
@@ -1469,10 +1476,10 @@ export class SagantaAppKitModal extends ModalBase {
             <button class="wallet-row" data-action="pick-account" data-address="${escapeAttr(account.address)}">
               <span class="account-avatar" style="background: ${gradient};">${avatarHtml}</span>
               <span style="min-width:0; text-align:left; flex:1;">
-                <span class="wallet-name" style="display:block;">${escapeHtml(account.label ?? 'Account')}</span>
+                <span class="wallet-name" style="display:block;">${escapeHtml(account.label ?? t('account.default_label'))}</span>
                 <span class="account-network" style="font-family: var(--sak-font-mono);">${truncateAddress(account.address)}</span>
               </span>
-              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(account.address)}" aria-label="Copy address" onclick="event.stopPropagation();">${isCopied ? icons.check : icons.copy}</button>
+              <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(account.address)}" aria-label="${t('aria.copy_address')}" onclick="event.stopPropagation();">${isCopied ? icons.check : icons.copy}</button>
             </button>
           `;
         }
@@ -1505,7 +1512,7 @@ export class SagantaAppKitModal extends ModalBase {
     const pendingBanner = pendingCount > 0
       ? `<div class="pending-banner">
            <span class="pending-spinner"></span>
-           <span>${pendingCount} pending signature${pendingCount > 1 ? 's' : ''}</span>
+           <span>${t('connected.pending_signatures', { count: pendingCount })}</span>
          </div>`
       : '';
 
@@ -1527,7 +1534,7 @@ export class SagantaAppKitModal extends ModalBase {
             </a>
           `;
         }).join('')
-      : `<div class="tx-empty">No recent transactions</div>`;
+      : `<div class="tx-empty">${t('connected.no_transactions')}</div>`;
 
     return `
       <div class="account">
@@ -1535,7 +1542,7 @@ export class SagantaAppKitModal extends ModalBase {
         <div class="account-header">
           <div class="account-avatar" style="background: ${gradient};">${avatarHtml}</div>
           <div class="account-info">
-            <div class="account-address-row" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" title="Click to copy address">
+            <div class="account-address-row" data-action="copy-address-inline" data-address="${escapeAttr(session.address)}" title="${t('aria.click_to_copy')}">
               <span class="account-address">${truncateAddress(session.address)}</span>
               <span class="account-copy-icon">${isCopied ? icons.check : icons.copy}</span>
             </div>
@@ -1544,12 +1551,12 @@ export class SagantaAppKitModal extends ModalBase {
                 <span class="network-dot"></span>
                 ${escapeHtml(networkLabel)}
               </span>
-              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="View on explorer">
+              <a class="explorer-link" href="${escapeAttr(explorerUrl)}" target="_blank" rel="noopener" title="${t('aria.view_on_explorer')}">
                 ${icons.externalLink}
               </a>
             </div>
           </div>
-          <button class="icon-btn" data-action="toggle-overflow" aria-label="More options" title="More options">
+          <button class="icon-btn" data-action="toggle-overflow" aria-label="${t('aria.more_options')}" title="${t('aria.more_options')}">
             <svg viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><circle cx="4" cy="10" r="2"/><circle cx="10" cy="10" r="2"/><circle cx="16" cy="10" r="2"/></svg>
           </button>
         </div>
@@ -1558,11 +1565,11 @@ export class SagantaAppKitModal extends ModalBase {
         <div class="overflow-menu" data-overflow="false">
           <button class="overflow-item" data-action="switch-wallet">
             ${icons.wallet}
-            <span>Switch Wallet</span>
+            <span>${t('action.switch_wallet')}</span>
           </button>
           <button class="overflow-item overflow-danger" data-action="disconnect">
             ${icons.logOut}
-            <span>Disconnect</span>
+            <span>${t('action.disconnect')}</span>
           </button>
         </div>
 
@@ -1571,13 +1578,13 @@ export class SagantaAppKitModal extends ModalBase {
 
         <!-- Balance — large typography, no card border -->
         <div class="balance-section">
-          <div class="balance-label">XLM Balance</div>
+          <div class="balance-label">${t('connected.balance_label')}</div>
           <div class="balance-amount">${balanceHtml}</div>
         </div>
 
         <!-- Transaction history -->
         <div class="tx-history">
-          <div class="tx-header">Recent Activity</div>
+          <div class="tx-header">${t('connected.recent_activity')}</div>
           ${historyHtml}
         </div>
       </div>
@@ -1613,11 +1620,11 @@ export class SagantaAppKitModal extends ModalBase {
 
     // Determine the action label — "Sign" for messages/SIWS, "Approve" for transactions
     const isMessageSign = preview.operations.length === 1 && preview.operations[0]?.type === 'signMessage';
-    const actionLabel = isMessageSign ? 'Sign' : 'Approve';
-    const titleText = isMessageSign ? 'Sign message' : 'Review transaction';
+    const actionLabel = isMessageSign ? t('action.sign') : t('action.approve');
+    const titleText = isMessageSign ? t('preview.title.sign_message') : t('preview.title.review_transaction');
     const subtitleText = isMessageSign
-      ? `Sign this message to prove you own ${walletName}. Canceling will dismiss the request.`
-      : `Review the transaction details below. Approve to continue signing in ${walletName}.`;
+      ? t('preview.subtitle.sign_message', { walletName })
+      : t('preview.subtitle.review_transaction', { walletName });
 
     // Operations list
     const opsHtml = preview.operations
@@ -1656,15 +1663,15 @@ export class SagantaAppKitModal extends ModalBase {
         <!-- Meta: source account + fee -->
         <div class="preview-meta">
           <span class="preview-meta-item">
-            From ${truncateAddress(preview.sourceAccount)}
-            <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(preview.sourceAccount)}" aria-label="Copy address">${isCopied ? icons.check : icons.copy}</button>
+            ${t('preview.from_account', { address: truncateAddress(preview.sourceAccount) })}
+            <button class="icon-btn" data-action="copy-address-inline" data-address="${escapeAttr(preview.sourceAccount)}" aria-label="${t('aria.copy_address')}">${isCopied ? icons.check : icons.copy}</button>
           </span>
           ${feeHtml}
         </div>
 
         <!-- Actions: Cancel + Sign/Approve -->
         <div class="preview-actions">
-          <button class="preview-btn preview-btn--cancel" data-action="reject-preview">Cancel</button>
+          <button class="preview-btn preview-btn--cancel" data-action="reject-preview">${t('action.cancel')}</button>
           <button class="preview-btn preview-btn--approve" data-action="approve-preview">${escapeHtml(actionLabel)}</button>
         </div>
       </div>
@@ -1679,7 +1686,7 @@ export class SagantaAppKitModal extends ModalBase {
    */
   private renderSigning(): string {
     const connector = this._client?.activeConnector;
-    const walletName = connector?.meta.name ?? 'your wallet';
+    const walletName = connector?.meta.name ?? t('wallet.fallback_your_wallet');
     const walletIcon = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
     const fallbackIcon = connector ? getWalletIconDataUri(connector.id) : '';
     const onerrorHandler = fallbackIcon
@@ -1696,16 +1703,16 @@ export class SagantaAppKitModal extends ModalBase {
               <path d="M15 9l-6 6M9 9l6 6" />
             </svg>
           </div>
-          <h2 class="signing-view__title">Signing rejected</h2>
+          <h2 class="signing-view__title">${t('signing.error_title')}</h2>
           <p class="signing-view__subtitle">${escapeHtml(this.connectingError)}</p>
           <div class="signing-view__actions">
-            <button class="signing-view__cancel" data-action="cancel-signing-error">Cancel</button>
+            <button class="signing-view__cancel" data-action="cancel-signing-error">${t('action.cancel')}</button>
             <button class="signing-view__retry" data-action="retry-signing">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 12a9 9 0 1 0 9-9" />
                 <path d="M3 4v5h5" />
               </svg>
-              Try again
+              ${t('action.try_again')}
             </button>
           </div>
         </div>
@@ -1721,7 +1728,7 @@ export class SagantaAppKitModal extends ModalBase {
                onerror="${onerrorHandler}" />
         </div>
         <h2 class="signing-view__title">Continue in ${escapeHtml(walletName)}</h2>
-        <p class="signing-view__subtitle">Approve the request in your wallet to continue</p>
+        <p class="signing-view__subtitle">${t('signing.subtitle')}</p>
       </div>
     `;
   }
@@ -1732,7 +1739,7 @@ export class SagantaAppKitModal extends ModalBase {
    */
   private renderSiwsLoading(): string {
     const connector = this._client?.activeConnector;
-    const walletName = connector?.meta.name ?? 'your wallet';
+    const walletName = connector?.meta.name ?? t('wallet.fallback_your_wallet');
     const iconUrl = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
     const fallbackIcon = connector ? getWalletIconDataUri(connector.id) : '';
     const onerrorHandler = fallbackIcon
@@ -1740,10 +1747,10 @@ export class SagantaAppKitModal extends ModalBase {
       : `this.style.display='none';`;
 
     const subtitle =
-      this.view === 'siws-checking' ? 'Checking session…'
-      : this.view === 'siws-nonce' ? 'Fetching secure nonce…'
-      : this.view === 'siws-signing' ? `Approve the sign-in request in ${escapeHtml(walletName)}`
-      : 'Verifying your signature…';
+      this.view === 'siws-checking' ? t('siws.phase.checking_session')
+      : this.view === 'siws-nonce' ? t('siws.phase.fetching_nonce')
+      : this.view === 'siws-signing' ? t('siws.phase.approve_in_wallet', { walletName: escapeHtml(walletName) })
+      : t('siws.phase.verifying');
 
     return `
       <div class="connecting-view">
@@ -1756,9 +1763,9 @@ export class SagantaAppKitModal extends ModalBase {
           <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
                onerror="${onerrorHandler}" />
         </div>
-        <h2 class="connecting-view__title">Sign-In With Stellar</h2>
+        <h2 class="connecting-view__title">${t('siws.title')}</h2>
         <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
-        <button class="connecting-view__cancel" data-action="cancel-siws">Cancel</button>
+        <button class="connecting-view__cancel" data-action="cancel-siws">${t('action.cancel')}</button>
       </div>
     `;
   }
@@ -1777,7 +1784,7 @@ export class SagantaAppKitModal extends ModalBase {
       ? `this.src='${fallbackIcon}'; this.onerror=null;`
       : `this.style.display='none';`;
 
-    const errorMsg = this.connectingError ?? 'Sign-in failed.';
+    const errorMsg = this.connectingError ?? t('siws.error_default');
     const isConnected = !!this._client?.session;
 
     return `
@@ -1786,14 +1793,14 @@ export class SagantaAppKitModal extends ModalBase {
           <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
                onerror="${onerrorHandler}" />
         </div>
-        <h2 class="connecting-view__title">Sign-in failed</h2>
+        <h2 class="connecting-view__title">${t('siws.error_title')}</h2>
         <p class="connecting-view__subtitle">${escapeHtml(errorMsg)}</p>
         <button class="connecting-view__retry" data-action="retry-siws">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 12a9 9 0 1 0 9-9" />
             <path d="M3 4v5h5" />
           </svg>
-          ${isConnected ? 'Try again' : 'Connect wallet'}
+          ${isConnected ? t('action.try_again') : t('siws.connect_wallet')}
         </button>
       </div>
     `;
@@ -1804,12 +1811,12 @@ export class SagantaAppKitModal extends ModalBase {
     return `
       <div class="error-state">
         ${icons.alertCircle}
-        <div class="error-title">Wrong network</div>
+        <div class="error-title">${t('network_mismatch.title')}</div>
         <div class="error-message">
-          ${err ? `This wallet is on <strong>${escapeHtml(err.actualNetwork)}</strong>, this app needs <strong>${escapeHtml(err.expectedNetwork)}</strong>.` : 'This wallet is on the wrong network.'}
-          Switch networks in your wallet, then try again.
+          ${err ? t('network_mismatch.detail', { actualNetwork: `<strong>${escapeHtml(err.actualNetwork)}</strong>`, expectedNetwork: `<strong>${escapeHtml(err.expectedNetwork)}</strong>` }) : t('network_mismatch.detail_fallback')}
+          ${t('network_mismatch.action_hint')}
         </div>
-        <button class="btn" data-action="retry" style="margin-top: 6px;">Try again</button>
+        <button class="btn" data-action="retry" style="margin-top: 6px;">${t('action.try_again')}</button>
       </div>
     `;
   }
@@ -1818,9 +1825,9 @@ export class SagantaAppKitModal extends ModalBase {
     return `
       <div class="error-state">
         ${icons.alertCircle}
-        <div class="error-title">Something went wrong</div>
-        <div class="error-message">${escapeHtml(this.lastError?.message ?? 'Unknown error.')}</div>
-        <button class="btn" data-action="retry" style="margin-top: 6px;">Try again</button>
+        <div class="error-title">${t('error.title')}</div>
+        <div class="error-message">${escapeHtml(this.lastError?.message ?? t('error.default_message'))}</div>
+        <button class="btn" data-action="retry" style="margin-top: 6px;">${t('action.try_again')}</button>
       </div>
     `;
   }
@@ -2190,7 +2197,7 @@ export class SagantaAppKitModal extends ModalBase {
         // Brief visual feedback — swap the copy icon for a check
         const btn = e.currentTarget as HTMLElement;
         const originalHTML = btn.innerHTML;
-        btn.innerHTML = `${icons.check} <span>Copied!</span>`;
+        btn.innerHTML = `${icons.check} <span>${t('wc.copied')}</span>`;
         setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
       }
     });

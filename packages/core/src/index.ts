@@ -8,3 +8,4 @@ export * from './storage.js';
 export * from './events.js';
 export * from './decode.js';
 export * from './connectors/index.js';
+export * from './i18n/index.js';

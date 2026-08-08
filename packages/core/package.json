@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "1.7.3",
+  "version": "1.8.0",
   "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK (no UI).",
   "type": "module",
   "sideEffects": false,
@@ -25,15 +25,16 @@
     "prepublishOnly": "node ../../scripts/sync-ai-files.mjs"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.0.0",
-    "@stellar/freighter-api": "^4.1.0",
     "@albedo-link/intent": "^0.13.0",
     "@creit.tech/xbull-wallet-connect": "^0.4.0",
-    "@ledgerhq/hw-transport": "^6.0.0",
     "@ledgerhq/hw-app-str": "^7.7.7",
+    "@ledgerhq/hw-transport": "^6.0.0",
     "@ledgerhq/hw-transport-webhid": "^6.36.0",
     "@ledgerhq/hw-transport-webusb": "^6.35.0",
-    "@walletconnect/sign-client": "^2.0.0"
+    "@stellar/freighter-api": "^4.1.0",
+    "@stellar/stellar-sdk": "^13.0.0",
+    "@walletconnect/sign-client": "^2.0.0",
+    "intl-messageformat": "^11.2.13"
   },
   "license": "MIT",
   "homepage": "https://stellar-appkit.saganta.com",

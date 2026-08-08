@@ -111,11 +111,11 @@ describe('connect-modal — v1.7.x SIWS retry + timeout configuration', () => {
   });
 
   test('withTimeout rejects with a human-readable "Request timed out" message', () => {
-    expect(MODAL_SRC).toContain("Request timed out. Please try again.");
+    expect(MODAL_SRC).toContain("t('error.request_timed_out')");
   });
 
   test('shows "Too many failed attempts" message when retry count reaches maxRetries', () => {
-    expect(MODAL_SRC).toMatch(/Too many failed attempts/);
+    expect(MODAL_SRC).toContain("t('siws.error_too_many_attempts'");
     expect(MODAL_SRC).toMatch(/siwsRetryCount >= maxRetries/);
   });
 
@@ -334,15 +334,15 @@ describe('connect-modal — SIWS timeout wrapper (behavioral)', () => {
 
 describe('connect-modal — v1.7.x SIWS status text (user-facing)', () => {
   test('shows "Checking session…" for siws-checking view', () => {
-    expect(MODAL_SRC).toContain('Checking session…');
+    expect(MODAL_SRC).toContain("t('siws.phase.checking_session')");
   });
 
   test('shows "Fetching secure nonce…" for siws-nonce view', () => {
-    expect(MODAL_SRC).toContain('Fetching secure nonce…');
+    expect(MODAL_SRC).toContain("t('siws.phase.fetching_nonce')");
   });
 
   test('shows "Approve the sign-in request in" for siws-signing view', () => {
-    expect(MODAL_SRC).toContain('Approve the sign-in request in');
+    expect(MODAL_SRC).toContain("t('siws.phase.approve_in_wallet'");
   });
 
   test('shows "Verifying signature…" or similar for siws-verifying view', () => {

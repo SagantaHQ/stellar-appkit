@@ -26,6 +26,7 @@ import {
   type WalletReachability,
 } from './types.js';
 import { signInWithStellar, type SignInOptions, type SignInResult } from './siws.js';
+import { setLocale, type LocaleCode } from './i18n/index.js';
 import {
   buildTransactionPreview,
   buildAuthEntryPreview,
@@ -101,6 +102,29 @@ export interface StellarAppKitConfig {
    * after the wallet connects. See `SiwsConfig` for the full flow.
    */
   siws?: SiwsConfig;
+  /**
+   * UI locale for the modal + error messages. Defaults to `'en'` (English).
+   *
+   * English is bundled with the library; all other locales are lazy-loaded
+   * via dynamic `import()` on first use. Pass a locale code here to set the
+   * initial locale at app startup:
+   *
+   * ```ts
+   * new StellarAppKit({
+   *   network: 'TESTNET',
+   *   locale: 'zh-CN', // ← modal renders in Simplified Chinese
+   *   ...
+   * });
+   * ```
+   *
+   * To change the locale at runtime, call `setLocale('ja')` from the i18n
+   * module, or use the `useSetLocale()` React hook.
+   *
+   * Supported codes: `'en' | 'zh-CN' | 'zh-TW' | 'es' | 'pt-BR' | 'ja' |
+   * 'ko' | 'de' | 'fr' | 'ru' | 'ar' | 'hi' | 'it' | 'tr' | 'pl' | 'vi' |
+   * 'id' | 'uk' | 'nl' | 'th' | 'he' | 'cs' | 'sv' | 'ro' | 'fa'`
+   */
+  locale?: LocaleCode;
 }
 
 /**
@@ -285,6 +309,14 @@ export class StellarAppKit {
     this.previewOptions = config.previewOptions ?? {};
     this.modalConfig = config.modal;
     this.siwsConfig = config.siws;
+
+    // Set the initial locale if the config specifies one. This triggers the
+    // lazy-load of the locale file (if non-English) — we don't await it here
+    // because the constructor can't be async. The modal will re-render when
+    // the locale finishes loading (via the localechange event).
+    if (config.locale && config.locale !== 'en') {
+      void setLocale(config.locale);
+    }
 
     if (config.syncAcrossTabs !== false) {
       this.tabSync = new TabSync(SESSION_STORAGE_KEY, () => {

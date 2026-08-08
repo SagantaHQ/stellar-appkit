@@ -67,6 +67,10 @@ import {
   type SignTxOptions,
   type SignOptions,
   type SiwsConfig,
+  type LocaleCode,
+  getLocale,
+  setLocale,
+  onLocaleChange,
 } from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
@@ -116,6 +120,14 @@ export interface StellarAppKitProviderConfig {
    * retry/timeout/disconnectOnFail/signoutOnDisconnect knobs.
    */
   siws?: SiwsConfig;
+  /**
+   * UI locale for the modal + error messages. Defaults to `'en'` (English,
+   * bundled). All other locales are lazy-loaded via dynamic `import()` on
+   * first use. See `LocaleCode` for the full list of supported codes.
+   *
+   * To change the locale at runtime, use `useSetLocale()` or `setLocale()`.
+   */
+  locale?: LocaleCode;
 }
 
 interface AppKitContextValue {
@@ -155,6 +167,7 @@ export function StellarAppKitProvider(props: {
       syncAcrossTabs: props.config.syncAcrossTabs,
       previewOptions: props.config.previewOptions,
       siws: props.config.siws,
+      locale: props.config.locale,
     });
     // We intentionally depend on the whole config object's primitive
     // fields rather than the object itself, so a new object identity
@@ -167,6 +180,7 @@ export function StellarAppKitProvider(props: {
     props.config.syncAcrossTabs,
     props.config.previewOptions,
     props.config.siws,
+    props.config.locale,
   ]);
 
   // Restore any persisted session on mount (default: true). We do this
@@ -311,6 +325,40 @@ export function useSiwsSession() {
  */
 export function useIsAuthenticated(): boolean {
   return useSiwsSession() !== null;
+}
+
+/**
+ * Reactive locale — returns the currently active `LocaleCode`. Re-renders
+ * when the locale changes (via `useSetLocale()` or `setLocale()` called
+ * anywhere in the app).
+ *
+ * ```tsx
+ * const locale = useLocale();
+ * return <p>Current language: {locale}</p>;
+ * ```
+ */
+export function useLocale(): LocaleCode {
+  const [locale, setLocaleState] = useState<LocaleCode>(getLocale);
+  useEffect(() => {
+    return onLocaleChange((newLocale) => {
+      setLocaleState(newLocale);
+    });
+  }, []);
+  return locale;
+}
+
+/**
+ * Returns an async function that changes the active locale. The modal and
+ * all `useLocale()` subscribers re-render automatically when the locale
+ * finishes loading.
+ *
+ * ```tsx
+ * const setLocale = useSetLocale();
+ * await setLocale('zh-CN'); // lazy-loads the zh-CN locale
+ * ```
+ */
+export function useSetLocale(): (locale: LocaleCode) => Promise<void> {
+  return setLocale;
 }
 
 // ---------------------------------------------------------------------------
