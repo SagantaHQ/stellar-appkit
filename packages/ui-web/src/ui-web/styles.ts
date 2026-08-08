@@ -547,10 +547,13 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      /* Background image fills the tile — matches the parent's border-radius
-         via overflow:hidden + border-radius. Using cover so the icon fills
-         the tile edge-to-edge (no gap between icon and border). */
-      background-size: cover;
+      /* Background image fills the tile completely — 100% 100% stretches
+         the icon to fill edge-to-edge with NO padding/gap between the icon
+         and the tile border. Using cover left gaps on icons that had
+         transparent padding baked into the image data (Freighter, xBull,
+         WalletConnect, Ledger). 100% 100% ensures the image fills the
+         tile completely regardless of the icon's internal aspect ratio. */
+      background-size: 100% 100%;
       background-position: center;
       background-repeat: no-repeat;
     }
@@ -671,6 +674,7 @@ export function buildStyles(theme: ConnectTheme): string {
       height: 20px;
       border-radius: 5px;
       display: block;
+      object-fit: fill;
     }
 
     /* Account header — avatar + address (clickable) + network pill + overflow */
