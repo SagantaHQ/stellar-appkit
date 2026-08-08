@@ -1278,7 +1278,7 @@ export class SagantaAppKitModal extends ModalBase {
       try {
         qrSvg = toSvg(uri, {
           moduleSize: 6,
-          margin: 2,
+          margin: 4, // QR spec requires ≥4 modules of quiet zone for reliable scanning
           foreground: '#000000',
           background: '#ffffff',
           errorCorrectionLevel: 'M',

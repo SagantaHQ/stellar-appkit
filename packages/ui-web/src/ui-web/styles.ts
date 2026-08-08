@@ -50,6 +50,8 @@ export function buildStyles(theme: ConnectTheme): string {
       transform: scale(0.94) translateY(8px);
       opacity: 0;
       transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 240ms ease;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .overlay[data-mode="modal"][data-open="true"] .panel { transform: scale(1) translateY(0); opacity: 1; }
 
@@ -71,16 +73,12 @@ export function buildStyles(theme: ConnectTheme): string {
       height: 5px;
       border-radius: 4px;
       background: ${v('colorBorder', theme)};
-      margin: 10px auto 2px;
+      margin: 8px auto 4px;
       cursor: grab;
       touch-action: none;
       transition: background 0.15s ease;
-      /* Make the grab area larger than the visible handle — users expect
-         to grab a ~24px tall area, not just the 5px visual. The extra
-         padding is transparent but receives pointer events. */
-      padding: 10px 0;
-      box-sizing: content-box;
-      margin-top: 0;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .drag-handle:active {
       cursor: grabbing;
@@ -120,10 +118,12 @@ export function buildStyles(theme: ConnectTheme): string {
       gap: 10px;
       padding: 16px 18px 8px;
       flex-shrink: 0;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .header .brand { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
     .header .brand img, .header .brand ::slotted(*) { width: 22px; height: 22px; border-radius: 6px; display: block; }
-    .header .title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .header .title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; -webkit-user-select: none; }
     .icon-btn {
       all: unset;
       display: inline-flex;
@@ -529,6 +529,8 @@ export function buildStyles(theme: ConnectTheme): string {
       cursor: pointer;
       box-sizing: border-box;
       transition: background-color 180ms ease, transform 180ms ease;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .wallet-row:hover { background: ${v('colorSurfaceHover', theme)}; }
     .wallet-row:active { transform: scale(0.985); }

@@ -53,19 +53,41 @@ export function createFreighterConnector(): WalletConnector {
     return import('@stellar/freighter-api');
   }
 
+  /**
+   * Detects if we're running inside Freighter's mobile in-app browser.
+   * Freighter's mobile app injects `window.stellar = { provider: "freighter",
+   * platform: "mobile" }` — when this is present, the extension API is NOT
+   * available, and the connection must go through WalletConnect instead.
+   *
+   * This is the same detection used by Stellar Wallets Kit:
+   * https://github.com/Creit-Tech/Stellar-Wallets-Kit
+   */
+  function isFreighterMobileWrapper(): boolean {
+    if (typeof window === 'undefined') return false;
+    const stellar = (window as unknown as { stellar?: { provider?: string; platform?: string } }).stellar;
+    return stellar?.provider === 'freighter' && stellar?.platform === 'mobile';
+  }
+
   const connector: WalletConnector = {
     id: meta.id,
     meta,
     capabilities,
 
     async getReachability() {
+      // Inside Freighter's mobile in-app browser, the extension API is not
+      // available — connection must go through WalletConnect instead.
+      // Return 'not-installed' so the modal doesn't try to use this connector.
+      if (isFreighterMobileWrapper()) return 'not-installed';
+
       try {
         const { isConnected } = await sdk();
-        const res = await isConnected();
-        const installed = !('error' in res) || !res.error;
-        // freighter-api's isConnected() reflects "extension installed", not
-        // "unlocked" — it doesn't expose a distinct lock-state check, so we
-        // can't honestly report 'locked' here without a real signal for it.
+        // 1-second timeout — matches Stellar Wallets Kit's approach so a
+        // non-responsive environment fails fast instead of hanging.
+        const timeout = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), 1000));
+        const result = await Promise.race([isConnected(), timeout]);
+        if (result === 'timeout') return 'not-installed';
+        const res = result as { error?: string };
+        const installed = !res.error;
         return installed ? 'available' : 'not-installed';
       } catch {
         return 'not-installed';
@@ -74,6 +96,15 @@ export function createFreighterConnector(): WalletConnector {
 
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
+        // Safety check — should never reach here because getReachability()
+        // returns 'not-installed' in the mobile wrapper, but guard anyway.
+        if (isFreighterMobileWrapper()) {
+          throw ConnectError.invalidRequest(
+            'Freighter extension API is not available inside the Freighter mobile in-app browser. Use WalletConnect instead.',
+            undefined,
+            meta.id
+          );
+        }
         const { setAllowed, getAddress } = await sdk();
         await setAllowed();
         const res = unwrapResult(meta.id, await getAddress());
