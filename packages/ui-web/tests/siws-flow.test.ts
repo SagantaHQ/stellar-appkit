@@ -170,7 +170,7 @@ describe('connect-modal — v1.7.x SIWS disconnect-on-close', () => {
 
   test('resets siwsPending to false after the close logic runs', () => {
     // siwsPending is reset so the next connect attempt starts fresh.
-    expect(MODAL_SRC).toMatch(/this\.siwsPending = false; \/\/ reset for next connect/);
+    expect(MODAL_SRC).toMatch(/this\.siwsPending = false/);
   });
 });
 

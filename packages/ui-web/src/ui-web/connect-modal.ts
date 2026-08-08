@@ -8,11 +8,18 @@ import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
 import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
 import {
-  resolveAnimation,
-  type AnimationPreset,
+  ModalMotionAnimator,
+  BottomsheetMotionAnimator,
   type AnimationPresetName,
-  type ModalAnimationOption,
-} from './animations/index.js';
+} from './animations/motion-animator.js';
+import { BottomsheetMotionDragController } from './animations/motion-drag-controller.js';
+
+// Re-export for backward compatibility
+export type { AnimationPresetName };
+export type ModalAnimationOption = AnimationPresetName | {
+  open?: AnimationPresetName;
+  close?: AnimationPresetName;
+};
 
 export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
@@ -77,14 +84,17 @@ export class SagantaAppKitModal extends ModalBase {
   private copiedAddress: string | null = null;
   /** Cached XLM balance for the connected account (in lumens, e.g. "123.4567890"). */
   private cachedBalance: string | null = null;
-  /** Cached transaction history for the connected account (latest 5). */
+  /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
+  private _pendingSignCount = 0;
   private cachedTxHistory: Array<{ hash: string; type: string; amount: string; asset: string; date: string; success: boolean }> = [];
   private pendingAccountPicker: { connector: WalletConnector; accounts: WalletAccountOption[] } | null = null;
   private pendingPreview: { preview: TransactionPreview; resolve: (approved: boolean) => void; wasAlreadyOpen: boolean } | null = null;
   private releaseFocusTrap: (() => void) | null = null;
-  private gestureDestroyer: { destroy: () => void } | null = null;
   private clientUnsubscribers: Array<() => void> = [];
   private localeUnsubscriber: (() => void) | null = null;
+  private modalAnimator = new ModalMotionAnimator();
+  private bottomsheetAnimator = new BottomsheetMotionAnimator();
+  private dragController: BottomsheetMotionDragController | null = null;
   private mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
   /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
   private avatarCache: Map<string, string | null> = new Map();
@@ -95,10 +105,6 @@ export class SagantaAppKitModal extends ModalBase {
   /** Set of image URLs that have been preloaded into the browser cache.
       Prevents flash-of-empty-image when the modal first renders. */
   private preloadedImages: Set<string> = new Set();
-  /** Active WAAPI animation instance — tracked for interruption handling. */
-  private activeAnimation: Animation | null = null;
-  /** Resolved animation presets (open + close). */
-  private resolvedAnimations: { open: AnimationPreset; close: AnimationPreset } | null = null;
 
   constructor() {
     super();
@@ -118,16 +124,16 @@ export class SagantaAppKitModal extends ModalBase {
 
   disconnectedCallback() {
     this.releaseFocusTrap?.();
-    this.gestureDestroyer?.destroy();
+    this.dragController?.destroy();
+    this.dragController = null;
+    this.modalAnimator.destroy();
+    this.bottomsheetAnimator.destroy();
     this.clientUnsubscribers.forEach((unsub) => unsub());
     this.localeUnsubscriber?.();
   }
 
   attributeChangedCallback(name: string) {
-    // Clear animation cache when animation attributes change
-    if (name === 'animation' || name === 'animation-open' || name === 'animation-close' || name === 'mode') {
-      this.resolvedAnimations = null;
-    }
+    // Animation attributes changed — re-render to pick up new presets
     this.render();
   }
 
@@ -135,10 +141,6 @@ export class SagantaAppKitModal extends ModalBase {
     this.clientUnsubscribers.forEach((unsub) => unsub());
     this.clientUnsubscribers = [];
     this._client = client;
-
-    // The animation config may come from the client (config.modal.animation),
-    // so clear the cached resolution whenever a new client is attached.
-    this.resolvedAnimations = null;
 
     if (client.onPreviewTransaction) {
       console.warn('[saganta-appkit] Overwriting an existing onPreviewTransaction handler with this modal\u2019s own preview UI.');
@@ -297,7 +299,12 @@ export class SagantaAppKitModal extends ModalBase {
     }
 
     // Cancel any ongoing exit animation
-    this.cancelActiveAnimation();
+    const effectiveMode = this.computeEffectiveMode();
+    if (effectiveMode === 'bottomsheet') {
+      this.bottomsheetAnimator.cancel();
+    } else {
+      this.modalAnimator.cancel();
+    }
 
     this.isOpen = true;
     if (!this.pendingPreview && !this.pendingAccountPicker) {
@@ -308,66 +315,29 @@ export class SagantaAppKitModal extends ModalBase {
     // Render IMMEDIATELY with whatever walletList data we have.
     this.render();
 
-    // Set data-open="true" IMMEDIATELY after render().
-    // This triggers the CSS transition as a FALLBACK:
-    //   .overlay[data-open="true"] .panel { transform: translateY(0); opacity: 1; }
-    // The WAAPI animation below is the PRIMARY mechanism (smoother, supports
-    // custom presets). But on mobile where WAAPI doesn't fire reliably, the
-    // CSS transition ensures the panel is always visible.
+    // Set data-open="true" for CSS state + accessibility
     this.hasEnteredOpenState = true;
     const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
     if (overlayEl) {
       overlayEl.setAttribute('data-open', 'true');
     }
 
-    // WAAPI animation — primary mechanism for smooth custom presets.
+    // Motion animation — primary mechanism for smooth spring-based animations.
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
-    if (panel) {
-      // Disable the CSS transition on the panel so it doesn't fight the WAAPI
-      // enter animation. The CSS transition (transform 320ms) would try to
-      // animate the panel from translateY(100%) to translateY(0) at the same
-      // time the WAAPI animation is running its own keyframes — they conflict.
-      panel.style.transition = 'none';
-      // Set the initial state explicitly so the panel doesn't flash at its
-      // final position before the WAAPI animation kicks in.
-      panel.style.opacity = '0';
-      const { open } = this.getResolvedAnimations();
-      const anim = open.enter(panel);
-      if (anim) {
-        this.activeAnimation = anim;
-        anim.onfinish = () => {
-          this.activeAnimation = null;
-          panel.style.opacity = '';
-          panel.style.transition = '';
-        };
-        anim.oncancel = () => {
-          this.activeAnimation = null;
-          panel.style.opacity = '';
-          panel.style.transition = '';
-        };
-        // Safety fallback: if the animation doesn't complete within 600ms,
-        // force-clear the opacity + transition. This fixes a mobile issue where
-        // WAAPI animations sometimes don't fire onfinish on some Android browsers.
-        setTimeout(() => {
-          if (panel.style.opacity === '0') {
-            panel.style.opacity = '';
-          }
-          if (panel.style.transition === 'none') {
-            panel.style.transition = '';
-          }
-        }, 600);
+    if (panel && overlay) {
+      const { open: openPreset } = this.getAnimationPreset();
+      if (effectiveMode === 'bottomsheet') {
+        this.bottomsheetAnimator.open(panel, overlay);
       } else {
-        // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
-        panel.style.opacity = '';
-        panel.style.transition = '';
+        // Set initial opacity to prevent flash before Motion kicks in
+        panel.style.opacity = '0';
+        this.modalAnimator.open(panel, overlay, openPreset).then(() => {
+          panel.style.opacity = '';
+        }).catch(() => {
+          panel.style.opacity = '';
+        });
       }
-    }
-    // Animate overlay opacity separately
-    if (overlay) {
-      overlay.style.opacity = '0';
-      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' })
-        .onfinish = () => { overlay.style.opacity = ''; };
     }
 
     this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
@@ -399,30 +369,21 @@ export class SagantaAppKitModal extends ModalBase {
       resolve(false);
     }
 
-    // Cancel any ongoing enter animation
-    this.cancelActiveAnimation();
+    // Cancel any ongoing animation
+    this.modalAnimator.cancel();
+    this.bottomsheetAnimator.cancel();
 
     // Get the panel + overlay elements.
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
 
-    // Disable the CSS transition on the panel BEFORE playing the WAAPI exit
-    // animation. Without this, the CSS transition (transform 320ms) fights
-    // the WAAPI animation — the CSS transition tries to animate transform
-    // back to translateY(100%) when data-open flips to false, which conflicts
-    // with the WAAPI keyframes. The WAAPI animation should be the sole driver.
-    if (panel) {
-      panel.style.transition = 'none';
-    }
-
-    // Set data-open="false" — this is used by CSS for the overlay opacity
-    // transition (which is CSS-based, not WAAPI) and for accessibility state.
-    // The panel's CSS transition is disabled above so it doesn't fight WAAPI.
+    // Set data-open="false" for accessibility state
     if (overlay) {
       overlay.setAttribute('data-open', 'false');
     }
 
-    const { close } = this.getResolvedAnimations();
+    const { close: closePreset } = this.getAnimationPreset();
+    const effectiveMode = this.computeEffectiveMode();
 
     const finishClose = () => {
       document.removeEventListener('keydown', this.handleGlobalKeydown);
@@ -430,13 +391,10 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
-      // Clean up the bottom-sheet gesture handlers so they get recreated
-      // fresh on the next open() (with a new panel element).
-      this.gestureDestroyer?.destroy();
-      this.gestureDestroyer = null;
-      // Clear any inline styles left over from drag/spring/animation so the
-      // next open() starts clean. This includes the transition: none we set
-      // above — restore it so the next open() can use the CSS transition.
+      // Clean up the drag controller so it gets recreated fresh on next open()
+      this.dragController?.destroy();
+      this.dragController = null;
+      // Clear any inline styles left over from drag/animation
       if (panel) {
         panel.style.transform = '';
         panel.style.opacity = '';
@@ -445,19 +403,14 @@ export class SagantaAppKitModal extends ModalBase {
       }
       if (overlay) overlay.style.opacity = '';
 
-      // SIWS disconnect-on-close logic:
-      // If SIWS was configured but never succeeded (siwsPending is true),
-      // and disconnectOnFail is true (default), disconnect the wallet
-      // because the authentication flow wasn't completed.
-      // This runs AFTER the modal is visually closed so the user doesn't
-      // see a disconnect flash — the wallet is just gone on next open.
+      // SIWS disconnect-on-close logic
       if (this.siwsPending && this._client?.siwsConfig) {
         const disconnectOnFail = this._client.siwsConfig.disconnectOnFail !== false;
         if (disconnectOnFail && this._client.session) {
           void this._client.disconnect().catch(() => {});
         }
       }
-      this.siwsPending = false; // reset for next connect
+      this.siwsPending = false;
 
       this.render();
     };
@@ -467,51 +420,24 @@ export class SagantaAppKitModal extends ModalBase {
       return;
     }
 
-    if (panel) {
-      const anim = close.exit(panel);
-      if (anim) {
-        this.activeAnimation = anim;
-        anim.onfinish = () => { this.activeAnimation = null; finishClose(); };
-        anim.oncancel = () => { this.activeAnimation = null; };
-        // Safety timeout in case animation doesn't fire onfinish
-        setTimeout(() => { if (this.activeAnimation === anim) finishClose(); }, 500);
-      } else {
-        finishClose();
-      }
+    // Use the Motion animator for the close animation
+    if (panel && overlay) {
+      const closePromise = effectiveMode === 'bottomsheet'
+        ? this.bottomsheetAnimator.close(panel, overlay)
+        : this.modalAnimator.close(panel, overlay, closePreset);
+
+      closePromise.then(finishClose).catch(finishClose);
+
+      // Safety timeout in case the animation doesn't complete
+      setTimeout(() => { if (this.isOpen) finishClose(); }, 600);
     } else {
       finishClose();
     }
-
-    // Animate overlay opacity separately (only when not skipping — drag-dismiss
-    // fades the overlay via the spring itself)
-    if (overlay) {
-      overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease', fill: 'forwards' });
-    }
   }
 
-  /** Cancel any active WAAPI animation (interruption handling). */
-  private cancelActiveAnimation() {
-    if (this.activeAnimation) {
-      try { this.activeAnimation.cancel(); } catch { /* AbortError — expected */ }
-      this.activeAnimation = null;
-    }
-  }
-
-  /** Resolve animation presets from attributes or defaults based on mode. */
-  private getResolvedAnimations(): { open: AnimationPreset; close: AnimationPreset } {
-    if (this.resolvedAnimations) return this.resolvedAnimations;
-
+  /** Resolve animation preset name from attributes or defaults based on mode. */
+  private getAnimationPreset(): { open: AnimationPresetName; close: AnimationPresetName } {
     const effectiveMode = this.computeEffectiveMode();
-    // Defaults: scale-blur for desktop modal, slide-up for mobile bottom-sheet.
-    // On mobile (bottomsheet mode), we use slide-up (transform-only, no blur)
-    // because filter:blur() is a known source of skipped/dropped animations on
-    // weaker mobile GPUs — the animation's onfinish may not fire reliably,
-    // leaving the panel stuck at opacity:0 (invisible). slide-up is pure
-    // transform, which is GPU-composited and reliable everywhere.
-    //
-    // Even in modal mode on mobile (e.g. tablet in landscape), we fall back
-    // to `scale` (no blur) if the viewport is mobile-sized, to avoid the same
-    // blur-related issues.
     const isMobileViewport = typeof window !== 'undefined'
       && typeof window.matchMedia === 'function'
       && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
@@ -522,39 +448,31 @@ export class SagantaAppKitModal extends ModalBase {
       defaultOpen = 'slide-up';
       defaultClose = 'slide-up';
     } else if (isMobileViewport) {
-      // Mobile but forced to modal mode — use scale (no blur) for GPU safety
       defaultOpen = 'scale';
       defaultClose = 'scale';
     } else {
-      // Desktop modal — blur is safe, GPU has headroom
       defaultOpen = 'scale-blur';
       defaultClose = 'scale-blur';
     }
 
-    // Priority (highest → lowest):
-    //   1. HTML attributes: animation-open / animation-close (most specific)
-    //   2. HTML attribute: animation (single preset for both)
-    //   3. StellarAppKit config: client.modalConfig.animation
-    //   4. Mode-based defaults above
+    // Priority: HTML attrs > config > mode defaults
     const animAttr = this.getAttribute('animation');
     const openAttr = this.getAttribute('animation-open');
     const closeAttr = this.getAttribute('animation-close');
 
-    let option: ModalAnimationOption | undefined;
-    if (openAttr || closeAttr) {
-      option = {
-        open: (openAttr as AnimationPresetName) ?? undefined,
-        close: (closeAttr as AnimationPresetName) ?? undefined,
-      };
-    } else if (animAttr) {
-      option = animAttr as AnimationPresetName;
-    } else if (this._client?.modalConfig?.animation) {
-      // Fall back to the programmatic config passed to StellarAppKit
-      option = this._client.modalConfig.animation as ModalAnimationOption;
-    }
+    const configAnim = this._client?.modalConfig?.animation as ModalAnimationOption | undefined;
 
-    this.resolvedAnimations = resolveAnimation(option, defaultOpen, defaultClose);
-    return this.resolvedAnimations;
+    const open = (openAttr as AnimationPresetName) ??
+      (typeof animAttr === 'string' ? animAttr as AnimationPresetName : undefined) ??
+      (typeof configAnim === 'string' ? configAnim : configAnim?.open) ??
+      defaultOpen;
+
+    const close = (closeAttr as AnimationPresetName) ??
+      (typeof animAttr === 'string' ? animAttr as AnimationPresetName : undefined) ??
+      (typeof configAnim === 'string' ? configAnim : configAnim?.close) ??
+      defaultClose;
+
+    return { open, close };
   }
 
   private handleGlobalKeydown = (e: KeyboardEvent) => {
@@ -1867,323 +1785,6 @@ export class SagantaAppKitModal extends ModalBase {
     `;
   }
 
-  /**
-   * Wires up the drag-to-dismiss gesture for the bottom-sheet using
-   * native pointer events + a custom spring engine. Zero dependencies —
-   * no @use-gesture/vanilla, no motion. The spring is ~30 lines of code
-   * and gives an iOS-like drawer feel with GPU-composited transforms.
-   *
-   * Behavior:
-   * - Drag down on the sheet moves it following the pointer
-   * - Release with velocity > 0.5px/ms or drag > 40% of sheet height → close
-   * - Release otherwise → spring back to open position
-   * - Only vertical dragging is enabled (horizontal swipes are ignored)
-   * - Works with both touch and mouse pointers
-   *
-   * IMPORTANT: this must be called after every render() that touches the
-   * bottom-sheet DOM, because render() replaces innerHTML and destroys the
-   * element the gesture was bound to. wireEvents() calls this automatically.
-   */
-  private setupBottomSheetGestures() {
-    // Drag-to-dismiss gesture for the bottom-sheet, inspired by PlainSheet's
-    // approach (@plainsheet/core). Key design decisions learned from studying
-    // their source:
-    //
-    // 1. Use BOTH touch events AND mouse events (not pointer events).
-    //    Pointer events can be unreliable on some mobile browsers (especially
-    //    iOS Safari) — PlainSheet uses dual touch+mouse listeners instead.
-    //
-    // 2. Do NOT use setPointerCapture. It can fail silently and break the
-    //    drag. Instead, for mouse events, attach mousemove/mouseup to
-    //    document (so the drag continues even if the cursor leaves the panel).
-    //    For touch events, the touch is implicitly captured to the element
-    //    that received touchstart.
-    //
-    // 3. Use requestAnimationFrame to batch transform updates during drag
-    //    move. Setting style.transform on every touchmove/mousemove event
-    //    can fire faster than the browser can paint — rAF coalesces them
-    //    into one update per frame for smooth 60fps dragging.
-    //
-    // 4. Attach touchstart to the ShadowRoot (event delegation — survives
-    //    panel element replacement during re-renders). Attach mousemove/
-    //    mouseup to document (so mouse drag continues outside the panel).
-
-    const root = this.root;
-    const doc = typeof document !== 'undefined' ? document : null;
-
-    let startY = 0;
-    let currentY = 0;
-    let lastY = 0;
-    let lastTime = 0;
-    let velocity = 0;
-    let sheetHeight = 0;
-    let dragging = false;
-    let rafId = 0;
-    let pendingY = 0; // The Y position we want to apply on the next animation frame
-
-    const getPanel = (): HTMLElement | null =>
-      root.querySelector<HTMLElement>('.panel');
-
-    /** Returns true if the target is in a drag zone (handle, header, footer, loading/error views). */
-    const isInDragZone = (target: HTMLElement | null): boolean => {
-      if (!target) return false;
-      // Don't start drag on interactive elements
-      if (target.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return false;
-      // Only drag from handle, header, footer, or full-screen loading/error views
-      return !!target.closest('.drag-handle, .header, .footer, .connecting-view, .signing-view, .error-state');
-    };
-
-    /** Common drag-start logic for both touch and mouse. */
-    const startDrag = (clientY: number) => {
-      const panel = getPanel();
-      if (!panel) return;
-      dragging = true;
-      startY = clientY;
-      lastY = clientY;
-      lastTime = performance.now();
-      velocity = 0;
-      sheetHeight = panel.offsetHeight;
-      panel.style.transition = 'none';
-      panel.style.willChange = 'transform';
-      cancelAnimationFrame(rafId);
-    };
-
-    /** Common drag-move logic. Uses rAF to batch transform updates.
-     *  Supports bidirectional drag: downward drags move the sheet down 1:1,
-     *  upward drags apply rubber-band resistance (35% of pointer distance) so
-     *  the sheet follows the finger with a damped feel — same behavior as
-     *  iOS/Material bottom sheets when pulling past fully-open.
-     */
-    const moveDrag = (clientY: number) => {
-      if (!dragging) return;
-      const dy = clientY - startY;
-      // Rubber-band physics: downward drag (dy > 0) moves 1:1, upward drag
-      // (dy < 0) moves at 35% resistance — feels like pulling a spring.
-      // Without this, the old `Math.max(0, dy)` clamp made upward drag a
-      // dead zone (currentY was always 0 when dragging up).
-      const RESISTANCE = 0.35;
-      currentY = dy < 0 ? dy * RESISTANCE : dy;
-      pendingY = currentY;
-
-      // Track velocity (px/ms)
-      const now = performance.now();
-      const dt = now - lastTime;
-      if (dt > 0) {
-        velocity = (clientY - lastY) / dt;
-        lastY = clientY;
-        lastTime = now;
-      }
-
-      // Batch the transform update via requestAnimationFrame — setting
-      // style.transform on every touchmove event can fire faster than the
-      // browser can paint, causing jank. rAF coalesces into one update/frame.
-      if (rafId === 0) {
-        rafId = requestAnimationFrame(() => {
-          rafId = 0;
-          const panel = getPanel();
-          if (panel && dragging) {
-            panel.style.transform = `translate3d(0, ${pendingY}px, 0)`;
-            // Fade the overlay as the sheet moves down. Clamp to [0, 1] —
-            // upward drags produce negative pendingY which could push
-            // opacity above 1 without the upper clamp.
-            const overlay = root.querySelector<HTMLElement>('.overlay');
-            if (overlay && sheetHeight > 0) {
-              const progress = pendingY / sheetHeight;
-              overlay.style.opacity = String(Math.min(1, Math.max(0, 1 - progress * 0.7)));
-            }
-          }
-        });
-      }
-    };
-
-    /** Common drag-end logic. */
-    const endDrag = () => {
-      if (!dragging) return;
-      dragging = false;
-      // Ensure the last rAF callback fires so the final position is applied
-      cancelAnimationFrame(rafId);
-      rafId = 0;
-
-      const panel = getPanel();
-      if (panel) {
-        // Apply the final position immediately (don't wait for rAF)
-        panel.style.transform = `translate3d(0, ${currentY}px, 0)`;
-        panel.style.willChange = 'auto';
-      }
-
-      // Velocity-aware dismiss: a quick downward flick (velocity > 0.5 px/ms)
-      // dismisses even from a short drag. Using signed velocity (not abs)
-      // so an upward flick doesn't trigger dismiss — the user is pulling
-      // up to see more, not to close. Distance threshold (40% of sheet
-      // height) is the fallback for slow drags.
-      const shouldClose = velocity > 0.5 || currentY > sheetHeight * 0.4;
-
-      // Haptic feedback on dismiss (Android only — no-op on iOS Safari)
-      if (shouldClose && typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-        navigator.vibrate(10);
-      }
-
-      if (shouldClose) {
-        if (panel) {
-          this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
-            this.close(true);
-            panel.style.transform = '';
-            currentY = 0;
-          });
-        }
-        const overlay = root.querySelector<HTMLElement>('.overlay');
-        if (overlay) {
-          this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity), 0, 0, 0.25, () => {
-            overlay.style.opacity = '';
-          }, 'opacity');
-        }
-      } else {
-        // Spring back to open position
-        if (panel) {
-          this.springTo(panel, currentY, 0, velocity, 0.3, () => {
-            panel.style.transform = '';
-            currentY = 0;
-          });
-        }
-        const overlay = root.querySelector<HTMLElement>('.overlay');
-        if (overlay) {
-          this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity) || 0, 1, 0, 0.3, () => {
-            overlay.style.opacity = '';
-          }, 'opacity');
-        }
-      }
-    };
-
-    // --- Touch event handlers (for mobile) ---
-    const onTouchStart = (e: Event) => {
-      const te = e as TouchEvent;
-      if (te.touches.length !== 1) return; // single-finger only
-      const target = te.target as HTMLElement | null;
-      if (!isInDragZone(target)) return;
-      const touch = te.touches[0];
-      if (!touch) return;
-      startDrag(touch.clientY);
-    };
-    const onTouchMove = (e: Event) => {
-      const te = e as TouchEvent;
-      if (!dragging || te.touches.length !== 1) return;
-      const touch = te.touches[0];
-      if (!touch) return;
-      moveDrag(touch.clientY);
-    };
-    const onTouchEnd = () => {
-      endDrag();
-    };
-
-    // --- Mouse event handlers (for desktop) ---
-    // mousedown is on the ShadowRoot (event delegation). mousemove and
-    // mouseup are on document so the drag continues even if the cursor
-    // leaves the panel — same behavior as native drag.
-    const onMouseDown = (e: Event) => {
-      const me = e as MouseEvent;
-      if (me.button !== 0) return; // left click only
-      const target = me.target as HTMLElement | null;
-      if (!isInDragZone(target)) return;
-      startDrag(me.clientY);
-    };
-    const onMouseMove = (e: Event) => {
-      if (!dragging) return;
-      const me = e as MouseEvent;
-      moveDrag(me.clientY);
-    };
-    const onMouseUp = () => {
-      endDrag();
-    };
-
-    // Attach touch listeners to ShadowRoot (passive: true for touchstart
-    // since we don't need preventDefault — touch-action: none on the panel
-    // CSS handles scrolling suppression)
-    root.addEventListener('touchstart', onTouchStart, { passive: true });
-    root.addEventListener('touchmove', onTouchMove, { passive: true });
-    root.addEventListener('touchend', onTouchEnd, { passive: true });
-    root.addEventListener('touchcancel', onTouchEnd, { passive: true });
-
-    // Attach mousedown to ShadowRoot, mousemove/mouseup to document
-    root.addEventListener('mousedown', onMouseDown);
-    if (doc) {
-      doc.addEventListener('mousemove', onMouseMove);
-      doc.addEventListener('mouseup', onMouseUp);
-    }
-
-    this.gestureDestroyer = {
-      destroy: () => {
-        cancelAnimationFrame(rafId);
-        rafId = 0;
-        root.removeEventListener('touchstart', onTouchStart);
-        root.removeEventListener('touchmove', onTouchMove);
-        root.removeEventListener('touchend', onTouchEnd);
-        root.removeEventListener('touchcancel', onTouchEnd);
-        root.removeEventListener('mousedown', onMouseDown);
-        if (doc) {
-          doc.removeEventListener('mousemove', onMouseMove);
-          doc.removeEventListener('mouseup', onMouseUp);
-        }
-      },
-    };
-  }
-
-  /**
-   * Custom spring animation engine — zero dependencies.
-   * Uses requestAnimationFrame for smooth 60fps animation.
-   *
-   * @param el Element to animate
-   * @param from Starting value
-   * @param to Target value
-   * @param velocity Initial velocity (px/ms)
-   * @param duration Approximate duration in seconds (used to compute stiffness)
-   * @param onComplete Callback when animation finishes
-   * @param property CSS property to animate ('transform' uses translateY, others set directly)
-   */
-  private springTo(
-    el: HTMLElement,
-    from: number,
-    to: number,
-    velocity: number,
-    duration: number,
-    onComplete: () => void,
-    property: 'transform' | 'opacity' = 'transform',
-  ) {
-    // Spring constants — tuned for iOS-like feel
-    const stiffness = 0.12; // How strongly it pulls toward target
-    const damping = 0.82;   // How quickly it stops oscillating
-    const epsilon = 0.1;    // Stop threshold
-
-    let current = from;
-    let vel = velocity * 16; // Convert px/ms to px/frame (approx 16ms/frame)
-
-    const animate = () => {
-      const force = (to - current) * stiffness;
-      vel += force;
-      vel *= damping;
-      current += vel;
-
-      if (property === 'transform') {
-        el.style.transform = `translate3d(0, ${current}px, 0)`;
-      } else {
-        el.style.opacity = String(Math.max(0, Math.min(1, current)));
-      }
-
-      if (Math.abs(vel) > epsilon || Math.abs(to - current) > epsilon) {
-        requestAnimationFrame(animate);
-      } else {
-        // Snap to final value
-        if (property === 'transform') {
-          el.style.transform = `translate3d(0, ${to}px, 0)`;
-        } else {
-          el.style.opacity = String(to);
-        }
-        onComplete();
-      }
-    };
-
-    requestAnimationFrame(animate);
-  }
-
   private wireEvents(effectiveMode: EffectiveMode) {
     this.root.querySelector('[data-action="close"]')?.addEventListener('click', () => this.close());
     if (effectiveMode !== 'inline') {
@@ -2192,16 +1793,15 @@ export class SagantaAppKitModal extends ModalBase {
       });
     }
 
-    // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
-    // Only set up once — re-creating gesture handlers on every re-render
-    // would kill in-flight drags (e.g. when wallet list loads mid-drag).
-    // The gesture handlers use event delegation on the ShadowRoot, so
-    // they survive targeted content updates (updatePanelContent) and full
-    // re-renders that replace the panel element.
-    // Uses native touch+mouse events + a hand-rolled spring engine — zero
-    // external gesture library dependencies.
-    if (effectiveMode === 'bottomsheet' && !this.gestureDestroyer) {
-      void this.setupBottomSheetGestures();
+    // Set up the Motion-based drag controller for bottom-sheet mode.
+    // Only create once per open cycle — the controller uses event delegation
+    // on the ShadowRoot, so it survives targeted content updates.
+    if (effectiveMode === 'bottomsheet' && !this.dragController) {
+      this.dragController = new BottomsheetMotionDragController({
+        animator: this.bottomsheetAnimator,
+        onDismiss: () => this.close(true),
+      });
+      this.dragController.attach(this.root);
     }
 
     this.root.querySelectorAll<HTMLElement>('[data-action="select-wallet"]').forEach((el) => {
