@@ -430,6 +430,10 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
+      // Clean up the bottom-sheet gesture handlers so they get recreated
+      // fresh on the next open() (with a new panel element).
+      this.gestureDestroyer?.destroy();
+      this.gestureDestroyer = null;
       // Clear any inline styles left over from drag/spring/animation so the
       // next open() starts clean. This includes the transition: none we set
       // above — restore it so the next open() can use the CSS transition.
@@ -1881,11 +1885,15 @@ export class SagantaAppKitModal extends ModalBase {
    * element the gesture was bound to. wireEvents() calls this automatically.
    */
   private setupBottomSheetGestures() {
-    const panel = this.root.querySelector<HTMLElement>('.panel');
-    if (!panel) return;
+    // Attach listeners to the ShadowRoot (this.root) instead of the panel
+    // element — this way the listeners survive full re-renders that replace
+    // the panel element entirely (this.root.innerHTML = ...). Event
+    // delegation: we check e.target in each handler.
+    const root = this.root;
 
-    // Clean up any previous gesture handler (e.g. from a re-render)
-    this.gestureDestroyer?.destroy();
+    // Note: we do NOT clean up a previous gesture handler here —
+    // this method is now only called once (guarded by `!this.gestureDestroyer`
+    // in wireEvents()). Cleanup happens in finishClose().
 
     let startY = 0;
     let currentY = 0;
@@ -1895,46 +1903,56 @@ export class SagantaAppKitModal extends ModalBase {
     let sheetHeight = 0;
     let dragging = false;
     let rafId = 0;
+    let capturedPointerId: number | null = null;
 
-    const onPointerDown = (e: PointerEvent) => {
+    const getPanel = (): HTMLElement | null =>
+      root.querySelector<HTMLElement>('.panel');
+
+    const onPointerDown = (e: Event) => {
+      const pe = e as PointerEvent;
       // Only respond to primary button (touch or left-click)
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      if (pe.button !== 0 && pe.pointerType === 'mouse') return;
       // Don't start drag when the user is interacting with a button, link,
-      // or any element marked with [data-action]. Without this check,
-      // panel.setPointerCapture() below steals the pointerup event from
-      // the close button — so the click event never fires on it and the
-      // X icon doesn't close the modal.
-      const target = e.target as HTMLElement | null;
+      // or any element marked with [data-action].
+      const target = pe.target as HTMLElement | null;
       if (target?.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return;
 
       // Only start dragging from the drag handle, the header area, or the
       // footer area — NOT from the body content (which may contain scrollable
       // lists, preview content, etc. where the user expects to scroll, not
-      // drag the sheet). The drag handle is the primary grab target; the
-      // header is a secondary grab target (common in native bottom sheets).
+      // drag the sheet).
       const isInDragZone = target?.closest('.drag-handle, .header, .footer, .connecting-view, .signing-view, .error-state');
       if (!isInDragZone) return;
 
+      const panel = getPanel();
+      if (!panel) return;
+
       dragging = true;
-      startY = e.clientY;
-      lastY = e.clientY;
+      capturedPointerId = pe.pointerId;
+      startY = pe.clientY;
+      lastY = pe.clientY;
       lastTime = performance.now();
       velocity = 0;
       sheetHeight = panel.offsetHeight;
       panel.style.transition = 'none';
       panel.style.willChange = 'transform';
-      panel.setPointerCapture(e.pointerId);
+      // Use setPointerCapture on the panel so pointermove/pointerup fire
+      // even if the pointer leaves the panel bounds.
+      try { panel.setPointerCapture(pe.pointerId); } catch { /* may fail if pointerId invalid */ }
       cancelAnimationFrame(rafId);
     };
 
-    const onPointerMove = (e: PointerEvent) => {
+    const onPointerMove = (e: Event) => {
       if (!dragging) return;
-      const dy = e.clientY - startY;
+      const pe = e as PointerEvent;
+      const panel = getPanel();
+      if (!panel) return;
+      const dy = pe.clientY - startY;
       currentY = Math.max(0, dy);
       panel.style.transform = `translate3d(0, ${currentY}px, 0)`;
 
       // Fade the overlay as the sheet moves down
-      const overlay = this.root.querySelector<HTMLElement>('.overlay');
+      const overlay = root.querySelector<HTMLElement>('.overlay');
       if (overlay && sheetHeight > 0) {
         const progress = currentY / sheetHeight;
         overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
@@ -1944,23 +1962,27 @@ export class SagantaAppKitModal extends ModalBase {
       const now = performance.now();
       const dt = now - lastTime;
       if (dt > 0) {
-        velocity = (e.clientY - lastY) / dt;
-        lastY = e.clientY;
+        velocity = (pe.clientY - lastY) / dt;
+        lastY = pe.clientY;
         lastTime = now;
       }
     };
 
-    const onPointerUp = (e: PointerEvent) => {
+    const onPointerUp = (e: Event) => {
       if (!dragging) return;
       dragging = false;
-      panel.releasePointerCapture(e.pointerId);
-      panel.style.willChange = 'auto';
+      const panel = getPanel();
+      if (panel) {
+        if (capturedPointerId !== null) {
+          try { panel.releasePointerCapture(capturedPointerId); } catch { /* already released */ }
+        }
+        panel.style.willChange = 'auto';
+      }
+      capturedPointerId = null;
 
       // Velocity-aware dismiss: a quick flick (velocity > 0.4 px/ms) dismisses
       // even from a short drag. Distance threshold (40% of sheet height) is
-      // the fallback for slow drags. This feels dramatically more native than
-      // distance-only — a flick always closes, a slow drag needs to pass
-      // the halfway mark.
+      // the fallback for slow drags.
       const shouldClose = Math.abs(velocity) > 0.4 || currentY > sheetHeight * 0.4;
 
       // Haptic feedback on dismiss (Android only — no-op on iOS Safari)
@@ -1973,12 +1995,14 @@ export class SagantaAppKitModal extends ModalBase {
         // way off-screen, so when close() runs we pass skipAnimation=true
         // — otherwise the WAAPI exit animation would jump the panel back to
         // translateY(0) and slide it down again (visible flash).
-        this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
-          this.close(true);
-          panel.style.transform = '';
-          currentY = 0;
-        });
-        const overlay = this.root.querySelector<HTMLElement>('.overlay');
+        if (panel) {
+          this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
+            this.close(true);
+            panel.style.transform = '';
+            currentY = 0;
+          });
+        }
+        const overlay = root.querySelector<HTMLElement>('.overlay');
         if (overlay) {
           this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity), 0, 0, 0.25, () => {
             overlay.style.opacity = '';
@@ -1986,11 +2010,13 @@ export class SagantaAppKitModal extends ModalBase {
         }
       } else {
         // Spring back to open position
-        this.springTo(panel, currentY, 0, velocity, 0.3, () => {
-          panel.style.transform = '';
-          currentY = 0;
-        });
-        const overlay = this.root.querySelector<HTMLElement>('.overlay');
+        if (panel) {
+          this.springTo(panel, currentY, 0, velocity, 0.3, () => {
+            panel.style.transform = '';
+            currentY = 0;
+          });
+        }
+        const overlay = root.querySelector<HTMLElement>('.overlay');
         if (overlay) {
           this.springTo(overlay, parseFloat(getComputedStyle(overlay).opacity) || 0, 1, 0, 0.3, () => {
             overlay.style.opacity = '';
@@ -1999,18 +2025,19 @@ export class SagantaAppKitModal extends ModalBase {
       }
     };
 
-    panel.addEventListener('pointerdown', onPointerDown);
-    panel.addEventListener('pointermove', onPointerMove);
-    panel.addEventListener('pointerup', onPointerUp);
-    panel.addEventListener('pointercancel', onPointerUp);
+    // Attach to the ShadowRoot — survives panel element replacement
+    root.addEventListener('pointerdown', onPointerDown);
+    root.addEventListener('pointermove', onPointerMove);
+    root.addEventListener('pointerup', onPointerUp);
+    root.addEventListener('pointercancel', onPointerUp);
 
     this.gestureDestroyer = {
       destroy: () => {
         cancelAnimationFrame(rafId);
-        panel.removeEventListener('pointerdown', onPointerDown);
-        panel.removeEventListener('pointermove', onPointerMove);
-        panel.removeEventListener('pointerup', onPointerUp);
-        panel.removeEventListener('pointercancel', onPointerUp);
+        root.removeEventListener('pointerdown', onPointerDown);
+        root.removeEventListener('pointermove', onPointerMove);
+        root.removeEventListener('pointerup', onPointerUp);
+        root.removeEventListener('pointercancel', onPointerUp);
       },
     };
   }
@@ -2081,9 +2108,11 @@ export class SagantaAppKitModal extends ModalBase {
     }
 
     // Wire up the draggable bottom-sheet gesture when in bottom-sheet mode.
-    // Uses @use-gesture/vanilla + motion (lazy-imported bundled deps)
-    // so apps that don't use the bottom-sheet mode don't need them installed.
-    if (effectiveMode === 'bottomsheet') {
+    // Only set up once — re-creating gesture handlers on every re-render
+    // would kill in-flight drags (e.g. when wallet list loads mid-drag).
+    // The gesture handlers use event delegation on the panel element, so
+    // they survive targeted content updates (updatePanelContent).
+    if (effectiveMode === 'bottomsheet' && !this.gestureDestroyer) {
       void this.setupBottomSheetGestures();
     }
 
