@@ -49,6 +49,20 @@ export const walletIcons: Record<string, string> = {
 
   // Albedo — stylized "A" logo on sea blue background
   albedo: `data:image/svg+xml;base64,${Buffer.from(`<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><rect width="128" height="128" rx="28" fill="#0066B2"/><path d="M64 26L96 98H82L75 80H53L46 98H32L64 26ZM58 68H70L64 52L58 68Z" fill="#fff"/></svg>`).toString('base64')}`,
+
+  // Rabet — purple gradient with stylized "R" mark
+  rabet: `data:image/svg+xml;base64,${Buffer.from(
+    `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="rabet-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#7B2FBE"/>
+          <stop offset="100%" stop-color="#4A1E73"/>
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="28" fill="url(#rabet-grad)"/>
+      <text x="64" y="86" font-family="Arial, sans-serif" font-size="64" font-weight="bold" fill="#fff" text-anchor="middle">R</text>
+    </svg>`
+  ).toString('base64')}`,
 };
 
 /**
