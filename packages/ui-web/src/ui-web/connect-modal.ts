@@ -15,7 +15,7 @@ import {
 
 export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
-type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'signing' | 'error';
+type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'signing' | 'error' | 'siws-nonce' | 'siws-signing' | 'siws-verifying' | 'siws-error';
 
 const MOBILE_BREAKPOINT_PX = 640;
 
@@ -642,6 +642,13 @@ export class SagantaAppKitModal extends ModalBase {
 
       this.view = 'connected';
       this.render();
+
+      // If SIWS config is set, trigger the automatic sign-in flow.
+      // This runs AFTER the connected view renders, so the user sees their
+      // wallet connected, then immediately sees the SIWS loading state.
+      if (this._client?.siwsConfig) {
+        void this.triggerSiwsFlow();
+      }
     } catch {
       // The client's 'error' event handler (wired in the client setter) already
       // set this.connectingError and re-rendered. We keep connectingWalletId
@@ -673,11 +680,102 @@ export class SagantaAppKitModal extends ModalBase {
       await this._client.switchAccount(this.pendingAccountPicker.connector.id, address);
       this.pendingAccountPicker = null;
       this.view = 'connected';
+      this.render();
+      // Trigger SIWS flow after account selection if configured
+      if (this._client?.siwsConfig) {
+        void this.triggerSiwsFlow();
+      }
     } catch (err) {
       this.lastError = err instanceof ConnectError ? err : ConnectError.internal(String(err));
       this.view = 'error';
     }
     this.render();
+  }
+
+  /**
+   * SIWS (Sign-In With Stellar) automatic authentication flow.
+   *
+   * Triggered after wallet connect succeeds (or after account picker) when
+   * `siwsConfig` is set on the StellarAppKit instance. The flow is:
+   *
+   * 1. Show "Fetching nonce…" → call `siwsConfig.nonce()`
+   * 2. Show "Sign in your wallet" → call `signIn({ statement, nonce })`
+   * 3. Show "Verifying…" → call `siwsConfig.verify(result, nonce)`
+   * 4. If verify returns `true` → connected view (success)
+   * 5. If any step fails → extract error message, show SIWS error view,
+   *    and if `disconnectOnFail` is true (default), disconnect the wallet.
+   */
+  private async triggerSiwsFlow(): Promise<void> {
+    if (!this._client?.siwsConfig) return;
+    const siws = this._client.siwsConfig;
+    const disconnectOnFail = siws.disconnectOnFail !== false; // default true
+
+    // Helper: extract a human-readable message from any error type
+    const extractErrorMessage = (err: unknown): string => {
+      if (typeof err === 'string') return err;
+      if (err instanceof Error) return err.message || String(err);
+      if (err && typeof err === 'object') {
+        const e = err as { message?: string; reason?: string };
+        if (e.message) return e.message;
+        if (e.reason) return e.reason;
+      }
+      return 'Sign-in failed. Please try again.';
+    };
+
+    // Helper: handle SIWS failure — disconnect if configured, show error
+    const handleSiwsFailure = async (err: unknown) => {
+      const msg = extractErrorMessage(err);
+      if (disconnectOnFail && this._client?.session) {
+        await this._client.disconnect();
+      }
+      this.connectingError = msg;
+      this.view = 'siws-error';
+      this.render();
+      // Haptic feedback on error (Android — no-op on iOS)
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate([30, 50, 30]);
+      }
+    };
+
+    try {
+      // Step 1: Fetch nonce
+      this.view = 'siws-nonce';
+      this.connectingError = null;
+      this.render();
+
+      const nonce = await siws.nonce();
+
+      // Step 2: Sign in with the wallet
+      this.view = 'siws-signing';
+      this.render();
+
+      const signInResult = await this._client.signIn({
+        statement: siws.statement,
+        nonce,
+      });
+
+      // Step 3: Verify the sign-in result
+      this.view = 'siws-verifying';
+      this.render();
+
+      const verified = await siws.verify(signInResult, nonce);
+
+      if (verified) {
+        // Success — go to connected view
+        this.view = 'connected';
+        this.connectingError = null;
+        this.render();
+        // Haptic feedback on success (Android — no-op on iOS)
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate(15);
+        }
+      } else {
+        // Verify returned false — treat as failure
+        await handleSiwsFailure('Sign-in verification failed.');
+      }
+    } catch (err) {
+      await handleSiwsFailure(err);
+    }
   }
 
   /**
@@ -1059,6 +1157,12 @@ export class SagantaAppKitModal extends ModalBase {
         return this.renderError();
       case 'connecting':
         return this.renderConnecting();
+      case 'siws-nonce':
+      case 'siws-signing':
+      case 'siws-verifying':
+        return this.renderSiwsLoading();
+      case 'siws-error':
+        return this.renderSiwsError();
       case 'wallet-list':
       default:
         return this.renderWalletList();
@@ -1529,6 +1633,77 @@ export class SagantaAppKitModal extends ModalBase {
     `;
   }
 
+  /**
+   * SIWS loading view — shown during nonce fetch, wallet signing, and
+   * server verification. Each phase has a different subtitle + spinner.
+   */
+  private renderSiwsLoading(): string {
+    const connector = this._client?.activeConnector;
+    const walletName = connector?.meta.name ?? 'your wallet';
+    const iconUrl = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
+    const fallbackIcon = connector ? getWalletIconDataUri(connector.id) : '';
+    const onerrorHandler = fallbackIcon
+      ? `this.src='${fallbackIcon}'; this.onerror=null;`
+      : `this.style.display='none';`;
+
+    const subtitle =
+      this.view === 'siws-nonce' ? 'Fetching secure nonce…'
+      : this.view === 'siws-signing' ? `Approve the sign-in request in ${escapeHtml(walletName)}`
+      : 'Verifying your signature…';
+
+    return `
+      <div class="connecting-view">
+        <div class="connecting-view__logo-wrap">
+          <svg class="connecting-view__arc" viewBox="0 0 88 88" fill="none" aria-hidden="true">
+            <rect x="3" y="3" width="82" height="82" rx="20" ry="20"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                  stroke-dasharray="120 240" />
+          </svg>
+          <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
+               onerror="${onerrorHandler}" />
+        </div>
+        <h2 class="connecting-view__title">Sign-In With Stellar</h2>
+        <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
+      </div>
+    `;
+  }
+
+  /**
+   * SIWS error view — shown when nonce fetch, signing, or verification
+   * fails. Shows the extracted error message and a "Try again" button
+   * that re-triggers the SIWS flow (or returns to wallet list if the
+   * wallet was disconnected).
+   */
+  private renderSiwsError(): string {
+    const connector = this._client?.activeConnector;
+    const iconUrl = connector ? (getWalletIconDataUri(connector.id) ?? connector.meta.icon) : '';
+    const fallbackIcon = connector ? getWalletIconDataUri(connector.id) : '';
+    const onerrorHandler = fallbackIcon
+      ? `this.src='${fallbackIcon}'; this.onerror=null;`
+      : `this.style.display='none';`;
+
+    const errorMsg = this.connectingError ?? 'Sign-in failed.';
+    const isConnected = !!this._client?.session;
+
+    return `
+      <div class="connecting-view connecting-view--error">
+        <div class="connecting-view__logo-wrap">
+          <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
+               onerror="${onerrorHandler}" />
+        </div>
+        <h2 class="connecting-view__title">Sign-in failed</h2>
+        <p class="connecting-view__subtitle">${escapeHtml(errorMsg)}</p>
+        <button class="connecting-view__retry" data-action="retry-siws">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 9-9" />
+            <path d="M3 4v5h5" />
+          </svg>
+          ${isConnected ? 'Try again' : 'Connect wallet'}
+        </button>
+      </div>
+    `;
+  }
+
   private renderNetworkMismatch(): string {
     const err = this.lastError instanceof NetworkMismatchError ? this.lastError : null;
     return `
@@ -1797,6 +1972,20 @@ export class SagantaAppKitModal extends ModalBase {
       this.connectingError = null;
       const connector = this._client?.registry.get(walletId);
       if (connector) this.selectWallet(connector);
+    });
+
+    // Retry SIWS — if wallet is still connected, re-trigger the SIWS flow.
+    // If wallet was disconnected (disconnectOnFail), go back to wallet list.
+    this.root.querySelector('[data-action="retry-siws"]')?.addEventListener('click', () => {
+      this.connectingError = null;
+      if (this._client?.session) {
+        // Wallet still connected — re-trigger SIWS flow
+        void this.triggerSiwsFlow();
+      } else {
+        // Wallet was disconnected — go back to wallet list
+        this.view = 'wallet-list';
+        this.render();
+      }
     });
 
     this.root.querySelectorAll<HTMLElement>('[data-action="pick-account"]').forEach((el) => {

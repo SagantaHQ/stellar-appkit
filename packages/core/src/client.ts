@@ -8,6 +8,7 @@ import {
   NetworkMismatchError,
   Networks,
   resolveNetworkPassphrase,
+  SiwsConfig,
   type ConnectSession,
   type ConnectStatus,
   type ConnectStorage,
@@ -87,6 +88,12 @@ export interface StellarAppKitConfig {
    * Presets: `'none' | 'fade' | 'scale' | 'scale-blur' | 'slide-up' | 'slide-left' | 'implode'`.
    */
   modal?: StellarAppKitModalConfig;
+  /**
+   * SIWS (Sign-In With Stellar) configuration for automatic authentication.
+   * When set, the modal automatically triggers a SIWS sign-in immediately
+   * after the wallet connects. See `SiwsConfig` for the full flow.
+   */
+  siws?: SiwsConfig;
 }
 
 /**
@@ -266,6 +273,7 @@ export class StellarAppKit {
     this.onPreviewAuthEntry = config.onPreviewAuthEntry ?? null;
     this.previewOptions = config.previewOptions ?? {};
     this.modalConfig = config.modal;
+    this.siwsConfig = config.siws;
 
     if (config.syncAcrossTabs !== false) {
       this.tabSync = new TabSync(SESSION_STORAGE_KEY, () => {
@@ -276,6 +284,9 @@ export class StellarAppKit {
 
   /** Modal UI config from StellarAppKitConfig.modal — read by ui-web when attached. */
   readonly modalConfig?: StellarAppKitModalConfig;
+
+  /** SIWS config from StellarAppKitConfig.siws — read by ui-web for auto sign-in. */
+  readonly siwsConfig?: SiwsConfig;
 
   /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
   get pendingSignCount(): number {

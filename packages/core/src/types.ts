@@ -302,3 +302,69 @@ export interface StellarAppKitEvents {
   signQueueChange: number;
   error: ConnectError;
 }
+
+/**
+ * SIWS (Sign-In With Stellar) configuration for automatic authentication.
+ *
+ * When set on the `StellarAppKit` config, the modal automatically triggers
+ * a SIWS sign-in immediately after the wallet connects — without closing
+ * the wallet UI. The flow is:
+ *
+ * 1. User connects wallet (extension popup or WC QR)
+ * 2. Modal shows "Fetching nonce…" → calls `nonce()`
+ * 3. Modal shows "Sign in your wallet" → calls `signIn()` (wallet prompts)
+ * 4. Modal shows "Verifying…" → calls `verify(result, nonce)`
+ * 5. If verify returns `true` → connected view (success)
+ * 6. If verify returns `false` or any step fails:
+ *    - If `disconnectOnFail` is `true` (default), disconnects the wallet
+ *    - Shows the error message to the user with a "Try again" button
+ *
+ * Error messages are extracted from any error type (Error, string, object
+ * with `message` property, ConnectError) so the user always sees a
+ * meaningful message.
+ */
+export interface SiwsConfig {
+  /** Human-readable statement shown in the SIWS message (e.g. "Sign in to My App"). */
+  statement: string;
+  /**
+   * When `true` (default), disconnects the wallet entirely if SIWS fails
+   * at any step (nonce fetch, sign, verify). When `false`, the wallet
+   * stays connected but the SIWS error is shown.
+   */
+  disconnectOnFail?: boolean;
+  /**
+   * Async function that fetches a server-issued nonce. Called after the
+   * wallet connects but before `signIn()`. The modal shows a loading
+   * spinner while this is in flight.
+   *
+   * Example:
+   * ```ts
+   * nonce: async () => {
+   *   const res = await fetch('/api/siws/nonce');
+   *   return res.text();
+   * }
+   * ```
+   */
+  nonce: () => Promise<string>;
+  /**
+   * Async function that verifies the SIWS result after the wallet signs.
+   * Called with the `SignInResult` and the nonce from `nonce()`. The
+   * modal shows a "Verifying…" spinner while this is in flight.
+   *
+   * Must return `true` for success, `false` for failure (or throw an
+   * Error with a message). If it returns `false` without throwing, the
+   * user sees "Sign-in verification failed."
+   *
+   * Example:
+   * ```ts
+   * verify: async (data, nonce) => {
+   *   const res = await fetch('/api/siws/verify', {
+   *     method: 'POST',
+   *     body: JSON.stringify({ ...data, nonce }),
+   *   });
+   *   return res.ok;
+   * }
+   * ```
+   */
+  verify: (data: { message: string; signedMessage: string; signerAddress: string; signedData?: string; issuedAt: string; expirationTime: string }, nonce: string) => Promise<boolean>;
+}
