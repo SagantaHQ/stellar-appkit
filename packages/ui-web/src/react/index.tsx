@@ -66,6 +66,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SiwsConfig,
 } from '@saganta/stellar-appkit';
 import {
   SorobanConnection,
@@ -103,6 +104,18 @@ export interface StellarAppKitProviderConfig {
    * set it to override the default open/close transitions.
    */
   modal?: { animation?: import('@saganta/stellar-appkit').StellarAppKitModalConfig['animation'] };
+  /**
+   * SIWS (Sign-In With Stellar) configuration for automatic authentication.
+   * When set, the modal automatically triggers a SIWS sign-in immediately
+   * after the wallet connects. The session is exposed via `useSiwsSession()`
+   * and `useIsAuthenticated()`, persisted to localStorage across page
+   * reloads, and cleared on disconnect (calling `signout()` first).
+   *
+   * See `SiwsConfig` in `@saganta/stellar-appkit` for the full callback
+   * shape — `session`, `nonce`, `verify`, `signout`, optional `refresh`, plus
+   * retry/timeout/disconnectOnFail/signoutOnDisconnect knobs.
+   */
+  siws?: SiwsConfig;
 }
 
 interface AppKitContextValue {
@@ -141,6 +154,7 @@ export function StellarAppKitProvider(props: {
       networkPassphrase: props.config.networkPassphrase,
       syncAcrossTabs: props.config.syncAcrossTabs,
       previewOptions: props.config.previewOptions,
+      siws: props.config.siws,
     });
     // We intentionally depend on the whole config object's primitive
     // fields rather than the object itself, so a new object identity
@@ -152,6 +166,7 @@ export function StellarAppKitProvider(props: {
     props.config.networkPassphrase,
     props.config.syncAcrossTabs,
     props.config.previewOptions,
+    props.config.siws,
   ]);
 
   // Restore any persisted session on mount (default: true). We do this
