@@ -136,6 +136,27 @@ const result = await verifySiws(
 if (result.ok) { /* result.claims.address is verified */ }
 ```
 
+#### Automatic SIWS authentication flow
+
+Set `siws` on the `StellarAppKit` config and the modal auto-triggers sign-in after wallet connect:
+
+```ts
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  siws: {
+    statement: 'Sign in to Example App',
+    disconnectOnFail: true, // default
+    nonce: async () => (await fetch('/api/siws/nonce')).text(),
+    verify: async (data, nonce) => (await fetch('/api/siws/verify', {
+      method: 'POST', body: JSON.stringify({ ...data, nonce }),
+    })).ok,
+  },
+});
+```
+
+- `disconnectOnFail: true` (default): wallet disconnected when user closes modal without completing auth
+- `disconnectOnFail: false`: wallet stays connected even if SIWS fails
+
 ### React hooks
 
 ```tsx

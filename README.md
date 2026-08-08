@@ -25,6 +25,8 @@ Every connector is its own independently tree-shakeable module — pick one wall
 - Unified adapter interface aligned with SEP-43, so new wallets are one file, not a redesign
 - Freighter, Albedo, xBull, and Ledger (WebHID/WebUSB) adapters, ready to use
 - **Zero-config defaults** — omit `connectors` from the `StellarAppKit` config and all four browser-side wallets (Freighter, Albedo, xBull, Ledger) are auto-registered. WalletConnect is excluded from defaults because it requires a `projectId`.
+- **xBull web wallet fallback** — when the xBull extension isn't installed, the connector automatically falls back to the xBull web wallet (`https://wallet.xbull.app`) — always reports `'available'`
+- **WalletConnect simplified** — `metadata` and `networkPassphrase` are now **optional** on `createWalletConnectConnector()`. When omitted, `metadata` is derived from `window.location` and `networkPassphrase` is derived from the `StellarAppKit` config's `network` field via the `Networks` map. You can now write `createWalletConnectConnector({ projectId: '...' })`
 - **`Networks` object exported from core** — `import { Networks } from '@saganta/stellar-appkit'` gives you `Networks.PUBLIC`, `Networks.TESTNET`, `Networks.FUTURENET`, `Networks.STANDALONE` without needing `@stellar/stellar-sdk`
 - Hardware wallets with real multi-account support (derivation-path based) via `listAccounts()`/`selectAccount()`
 - Richer-than-boolean reachability (`'available' | 'locked' | 'not-installed' | 'unavailable'`)
@@ -43,6 +45,7 @@ Every connector is its own independently tree-shakeable module — pick one wall
 **Identity**
 - Sign-In With Stellar (SIWS) — a self-issued, SEP-43-based message-signing flow analogous to Sign-In With Ethereum, with a server-side verifier package
 - **Unified `signedData` contract** — every connector surfaces the exact bytes the wallet signed, so SIWS verification works out of the box for Freighter, Albedo, xBull, and Ledger with no per-wallet custom verifier
+- **Automatic SIWS authentication flow** — set `siws: { statement, nonce, verify, disconnectOnFail }` on the `StellarAppKit` config and the modal automatically triggers sign-in immediately after wallet connect. The flow: fetch nonce → sign in wallet → verify on server → connected. If it fails, the user sees the error + "Try again" button. `disconnectOnFail: true` (default) disconnects the wallet when the user closes the modal without completing auth; `false` keeps the wallet connected.
 
 **Soroban**
 - One `invoke()` call covers build → simulate → prepare → sign → submit → poll
@@ -249,14 +252,13 @@ See [The `<stellar-appkit-modal>` element](#the-stellar-appkit-modal-element) fo
 
 ### Connecting WalletConnect-based wallets (Hana, Lobstr, Hot Wallet)
 
-WalletConnect is not in the default set because it requires a `projectId` from [WalletConnect Cloud](https://cloud.walletconnect.com/). Add it explicitly:
+WalletConnect is not in the default set because it requires a `projectId` from [WalletConnect Cloud](https://cloud.walletconnect.com/). Add it explicitly — `metadata` and `networkPassphrase` are **optional** (derived from `window.location` and the `network` config field respectively):
 
 ```ts
 import {
   StellarAppKit,
   createWalletConnectConnector,
   defaultConnectors,
-  Networks,
 } from '@saganta/stellar-appkit';
 
 const appkit = new StellarAppKit({
@@ -265,16 +267,9 @@ const appkit = new StellarAppKit({
     ...defaultConnectors(), // Freighter, Albedo, xBull, Ledger
     createWalletConnectConnector({
       projectId: 'your-wc-cloud-project-id',
-      metadata: {
-        name: 'My App',
-        description: 'A Stellar dApp',
-        url: 'https://app.example.com',
-        icons: ['https://app.example.com/icon.png'],
-      },
-      networkPassphrase: Networks.TESTNET,
+      // metadata is OPTIONAL — derived from window.location when omitted
+      // networkPassphrase is OPTIONAL — derived from `network: 'TESTNET'` above
       // onUri is OPTIONAL — the modal renders the QR code automatically
-      // using better-qr. Only set it if you're building your own UI
-      // (no modal) and need to render the QR code yourself.
     }),
   ],
 });
@@ -502,6 +497,42 @@ if (result.ok) { /* result.claims.address is verified */ }
 ```
 
 No per-wallet custom verifier is needed — `verifySiws` works out of the box for Freighter, Ledger, Albedo, and xBull. The `signedData` field is what makes Albedo (which signs a server-derived hash) and xBull (which signs a prefixed `fullMessage`) verifiable without app-side special-casing. If a third-party connector doesn't populate `signedData`, the verifier falls back to `utf8(message)` — correct for any direct signer (Freighter, Ledger, SEP-43) and fails loudly for transformative signers, rather than silently passing.
+
+#### Automatic SIWS authentication flow
+
+Set `siws` on the `StellarAppKit` config and the modal automatically triggers sign-in immediately after wallet connect — without closing the wallet UI:
+
+```ts
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  siws: {
+    statement: 'Sign in to Example App',
+    disconnectOnFail: true, // default — disconnects wallet when user closes modal without completing auth
+    nonce: async () => {
+      const res = await fetch('/api/siws/nonce');
+      return res.text();
+    },
+    verify: async (data, nonce) => {
+      const res = await fetch('/api/siws/verify', {
+        method: 'POST',
+        body: JSON.stringify({ ...data, nonce }),
+      });
+      return res.ok;
+    },
+  },
+});
+```
+
+The flow:
+1. **"Fetching nonce…"** — modal shows spinner while calling `nonce()`
+2. **"Approve the sign-in request in [Wallet]"** — wallet prompts the user to sign
+3. **"Verifying your signature…"** — modal shows spinner while calling `verify()`
+4. **Success** → connected view
+5. **Failure** → error message + "Try again" button (wallet stays connected)
+
+`disconnectOnFail` behavior:
+- `true` (default): wallet stays connected while user sees error + "Try again". Only when user **closes the modal** and SIWS hasn't succeeded, the wallet is disconnected.
+- `false`: wallet is never disconnected, even if SIWS fails and user closes the modal.
 
 ### Theming
 

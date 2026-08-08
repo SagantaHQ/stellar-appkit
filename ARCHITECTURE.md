@@ -770,7 +770,81 @@ Before the URI arrives, the subtitle shows "Generating pairing code…" instead 
 
 ---
 
-## 8.16 AI-readable files — `SKILL.md` and `llms.txt`
+## 8.16 Automatic SIWS authentication flow — `SiwsConfig`
+
+When `siws?: SiwsConfig` is set on the `StellarAppKit` config, the modal automatically triggers a Sign-In With Stellar flow immediately after the wallet connects — without closing the wallet UI.
+
+### `SiwsConfig` type
+
+```ts
+interface SiwsConfig {
+  statement: string;           // e.g. "Sign in to My App"
+  disconnectOnFail?: boolean;  // default true
+  nonce: () => Promise<string>;
+  verify: (data: SignInResult, nonce: string) => Promise<boolean>;
+}
+```
+
+### Flow
+
+1. Wallet connects (extension popup or WalletConnect QR)
+2. Modal shows "Fetching nonce…" → calls `siwsConfig.nonce()`
+3. Modal shows "Approve the sign-in request in [Wallet]" → calls `signIn()` (wallet prompts)
+4. Modal shows "Verifying your signature…" → calls `siwsConfig.verify(result, nonce)`
+5. If `verify` returns `true` → connected view, `siwsPending = false`
+6. If any step fails → extract error message, show SIWS error view with "Try again" button
+
+### `disconnectOnFail` behavior
+
+The wallet is **not** disconnected immediately on failure — the user can retry. The wallet is only disconnected when the user **closes the modal** (X button, drag-to-dismiss, Escape, overlay click) if `disconnectOnFail` is `true` and `siwsPending` is still `true` (meaning SIWS never succeeded).
+
+- `true` (default): wallet stays connected during error + retry. On modal close without SIWS success → disconnect.
+- `false`: wallet never disconnected, even if SIWS fails and user closes modal.
+
+### Error message extraction
+
+Errors from any step are extracted from any error type:
+- `Error.message`
+- `ConnectError.message`
+- Plain strings
+- Objects with `message` or `reason` properties
+
+### Implementation
+
+- `siwsPending` flag on the modal — `true` when SIWS is required but hasn't succeeded
+- `triggerSiwsFlow()` method — called after `selectWallet()` or `pickAccount()` succeeds
+- `handleSiwsFailure()` — sets `siwsPending = true`, shows error view (does NOT disconnect)
+- `close()` — checks `siwsPending` + `disconnectOnFail` → disconnects after modal is visually closed
+- 4 new view states: `siws-nonce`, `siws-signing`, `siws-verifying`, `siws-error`
+
+---
+
+## 8.17 xBull web wallet fallback
+
+The xBull connector now always returns `'available'` from `getReachability()`, even when the extension isn't detected. The xBull SDK bridge (`@creit.tech/xbull-wallet-connect`) automatically falls back to the xBull web wallet (`https://wallet.xbull.app`) when `window.xBullSDK` is absent.
+
+Previously, `getReachability()` returned `'not-installed'` when the extension wasn't detected, which showed an "Install" button instead of letting the user connect via the web wallet.
+
+The `waitForXBullExtension()` function still polls for injection (up to 5s) before `connect()`/`sign()` calls — giving the extension time to inject its SDK. But if it doesn't appear, the bridge's web wallet fallback kicks in automatically.
+
+---
+
+## 8.18 WalletConnect `metadata` + `networkPassphrase` optional
+
+`createWalletConnectConnector()` now accepts just `{ projectId: '...' }` — `metadata` and `networkPassphrase` are optional:
+
+- **`metadata`**: when omitted, derived from `window.location` (browser): `name` from hostname, `url` from origin, `description` auto-generated, `icons` empty.
+- **`networkPassphrase`**: when omitted, derived from the `StellarAppKit` config's `network` field via the `Networks` map. The `StellarAppKit` constructor injects the network into the WC connector via `_setNetwork()`.
+
+This means you can now write:
+```ts
+createWalletConnectConnector({ projectId: '...' })
+```
+instead of being forced to pass `metadata: { name, description, url, icons }` and `networkPassphrase: Networks.TESTNET`.
+
+---
+
+## 8.19 AI-readable files — `SKILL.md` and `llms.txt`
 
 The repo ships two AI-readable files at the root so AI coding assistants (Cursor, GitHub Copilot, Claude Code, Windsurf, Continue) can produce correct Stellar AppKit code on the first try without the user pasting docs into chat. Both are included in the published npm tarball alongside `dist/` and `src/`, so once a consumer app has `@saganta/stellar-appkit` in its `package.json`, agents can read `llms.txt` straight from `node_modules/@saganta/stellar-appkit/llms.txt`.
 
