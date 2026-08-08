@@ -9,6 +9,7 @@ import {
   Networks,
   resolveNetworkPassphrase,
   SiwsConfig,
+  SiwsSession,
   type ConnectSession,
   type ConnectStatus,
   type ConnectStorage,
@@ -295,6 +296,44 @@ export class StellarAppKit {
   /** SIWS config from StellarAppKitConfig.siws — read by ui-web for auto sign-in. */
   readonly siwsConfig?: SiwsConfig;
 
+  /** The current SIWS session, or null if not authenticated. Set by the modal
+   *  after successful verify(), cleared on disconnect. Accessible via
+   *  `appkit.siwsSession` for app code to check auth status. */
+  private _siwsSession: SiwsSession | null = null;
+
+  /** Get the current SIWS session (null if not authenticated or expired). */
+  get siwsSession(): SiwsSession | null {
+    if (!this._siwsSession) return null;
+    // Check expiry
+    if (this._siwsSession.expiry && Date.now() > this._siwsSession.expiry) {
+      this._siwsSession = null;
+      return null;
+    }
+    return this._siwsSession;
+  }
+
+  /** Set the SIWS session (called by the modal after successful verify()). */
+  setSiwsSession(session: SiwsSession | null): void {
+    this._siwsSession = session;
+    this.emitter.emit('sessionsChanged', this.sessions);
+  }
+
+  /** Clear the SIWS session + call signout() if configured. Called on disconnect. */
+  async clearSiwsSession(): Promise<void> {
+    const wasAuthenticated = this._siwsSession !== null;
+    this._siwsSession = null;
+    if (wasAuthenticated && this.siwsConfig) {
+      const signoutOnDisconnect = this.siwsConfig.signoutOnDisconnect !== false;
+      if (signoutOnDisconnect) {
+        try {
+          await this.siwsConfig.signout();
+        } catch {
+          // Silently ignore — signout failure shouldn't block disconnect
+        }
+      }
+    }
+  }
+
   /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
   get pendingSignCount(): number {
     return this._pendingSignCount;
@@ -478,6 +517,9 @@ export class StellarAppKit {
   async disconnect(walletId?: string): Promise<void> {
     const targetId = walletId ?? this._activeWalletId;
     if (!targetId) return;
+
+    // Clear SIWS session + call signout() if configured (before disconnect)
+    await this.clearSiwsSession();
 
     const connector = this.registry.get(targetId);
     await connector?.disconnect().catch(() => void 0);

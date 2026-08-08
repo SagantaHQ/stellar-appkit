@@ -719,11 +719,13 @@ export class SagantaAppKitModal extends ModalBase {
    * Triggered after wallet connect succeeds (or after account picker) when
    * `siwsConfig` is set on the StellarAppKit instance. The flow is:
    *
+   * 0. Check `session()` for existing valid session → skip if address+network match
    * 1. Show "Fetching nonce…" → call `siwsConfig.nonce()`
    * 2. Show "Sign in your wallet" → call `signIn({ statement, nonce })`
-   * 3. Show "Verifying…" → call `siwsConfig.verify(result, nonce)`
-   * 4. If verify returns `true` → connected view (success), siwsPending = false
-   * 5. If any step fails → show SIWS error view with "Try again" button.
+   * 3. Show "Verifying…" → call `siwsConfig.verify(result, nonce)` → returns SiwsSession
+   * 4. Validate returned session: address must match wallet, network must match, expiry in future
+   * 5. Store session on client → connected view (success), siwsPending = false
+   * 6. If any step fails → show SIWS error view with "Try again" button.
    *    The wallet is NOT disconnected immediately — it stays connected so
    *    the user can retry. The wallet is only disconnected when the user
    *    closes the modal (via close()) if `disconnectOnFail` is true and
@@ -732,6 +734,7 @@ export class SagantaAppKitModal extends ModalBase {
   private async triggerSiwsFlow(): Promise<void> {
     if (!this._client?.siwsConfig) return;
     const siws = this._client.siwsConfig;
+    const session = this._client.session;
     this.siwsPending = true; // SIWS is required but hasn't succeeded yet
 
     // Helper: extract a human-readable message from any error type
@@ -747,26 +750,43 @@ export class SagantaAppKitModal extends ModalBase {
     };
 
     // Helper: handle SIWS failure — show error + retry, do NOT disconnect
-    // immediately. The wallet is only disconnected when the user closes the
-    // modal (via close()) if disconnectOnFail is true and siwsPending is
-    // still true (meaning SIWS never succeeded).
     const handleSiwsFailure = async (err: unknown) => {
       const msg = extractErrorMessage(err);
-      this.siwsPending = true; // SIWS hasn't succeeded — close() will check this
+      this.siwsPending = true;
       this.connectingError = msg;
       this.view = 'siws-error';
       this.render();
-      // Haptic feedback on error (Android — no-op on iOS)
       if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
         navigator.vibrate([30, 50, 30]);
       }
     };
 
     try {
-      // Step 1: Fetch nonce
+      // Step 0: Check for existing session
       this.view = 'siws-nonce';
       this.connectingError = null;
       this.render();
+
+      const existingSession = await siws.session();
+
+      if (existingSession && session) {
+        // Validate: address matches, network matches, not expired
+        const addressMatches = existingSession.address === session.address;
+        const networkMatches = existingSession.network === session.network;
+        const notExpired = !existingSession.expiry || existingSession.expiry > Date.now();
+
+        if (addressMatches && networkMatches && notExpired) {
+          // Existing session is valid — skip sign-in
+          this._client.setSiwsSession(existingSession);
+          this.siwsPending = false;
+          this.view = 'connected';
+          this.render();
+          return;
+        }
+      }
+
+      // Step 1: Fetch nonce
+      this.render(); // re-render to show "Fetching nonce…"
 
       const nonce = await siws.nonce();
 
@@ -779,25 +799,42 @@ export class SagantaAppKitModal extends ModalBase {
         nonce,
       });
 
-      // Step 3: Verify the sign-in result
+      // Step 3: Verify the sign-in result → returns SiwsSession
       this.view = 'siws-verifying';
       this.render();
 
-      const verified = await siws.verify(signInResult, nonce);
+      const siwsSession = await siws.verify(signInResult, nonce);
 
-      if (verified) {
-        // Success — SIWS completed, clear the pending flag
-        this.siwsPending = false;
-        this.view = 'connected';
-        this.connectingError = null;
-        this.render();
-        // Haptic feedback on success (Android — no-op on iOS)
-        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-          navigator.vibrate(15);
-        }
-      } else {
-        // Verify returned false — treat as failure
+      if (!siwsSession) {
+        // verify returned null/undefined — failure
         await handleSiwsFailure('Sign-in verification failed.');
+        return;
+      }
+
+      // Step 4: Validate the returned session
+      if (session) {
+        const addressMatches = siwsSession.address === session.address;
+        const networkMatches = siwsSession.network === session.network;
+        const notExpired = !siwsSession.expiry || siwsSession.expiry > Date.now();
+
+        if (!addressMatches || !networkMatches || !notExpired) {
+          const reason = !addressMatches ? 'Session address does not match connected wallet'
+            : !networkMatches ? 'Session network does not match connected wallet'
+            : 'Session has expired';
+          await handleSiwsFailure(reason);
+          return;
+        }
+      }
+
+      // Step 5: Store session on client + success
+      this._client.setSiwsSession(siwsSession);
+      this.siwsPending = false;
+      this.view = 'connected';
+      this.connectingError = null;
+      this.render();
+      // Haptic feedback on success (Android — no-op on iOS)
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(15);
       }
     } catch (err) {
       await handleSiwsFailure(err);

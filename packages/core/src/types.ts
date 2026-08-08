@@ -304,6 +304,22 @@ export interface StellarAppKitEvents {
 }
 
 /**
+ * SIWS session — the authenticated session returned by the server after
+ * successful sign-in verification. Stored locally and accessible via
+ * `appkit.siwsSession`.
+ */
+export interface SiwsSession {
+  /** Network name (e.g. 'TESTNET', 'PUBLIC'). Must match the connected wallet's network. */
+  network: string;
+  /** The connected wallet's address. Must match the connected wallet's address. */
+  address: string;
+  /** Session expiry timestamp (epoch ms). If in the past, session is expired. */
+  expiry: number;
+  /** Extra metadata from the server (username, avatar, roles, etc.). */
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * SIWS (Sign-In With Stellar) configuration for automatic authentication.
  *
  * When set on the `StellarAppKit` config, the modal automatically triggers
@@ -311,43 +327,74 @@ export interface StellarAppKitEvents {
  * the wallet UI. The flow is:
  *
  * 1. User connects wallet (extension popup or WC QR)
- * 2. Modal shows "Fetching nonce…" → calls `nonce()`
- * 3. Modal shows "Sign in your wallet" → calls `signIn()` (wallet prompts)
- * 4. Modal shows "Verifying…" → calls `verify(result, nonce)`
- * 5. If verify returns `true` → connected view (success)
- * 6. If verify returns `false` or any step fails:
+ * 2. Modal calls `session()` to check for an existing valid session
+ *    - If session exists, not expired, and matches the wallet's address +
+ *      network → skip sign-in, go straight to connected view
+ *    - If session is null/expired/mismatch → proceed to step 3
+ * 3. Modal shows "Fetching nonce…" → calls `nonce()`
+ * 4. Modal shows "Sign in your wallet" → calls `signIn()` (wallet prompts)
+ * 5. Modal shows "Verifying…" → calls `verify(result, nonce)`
+ *    - `verify` must return a `SiwsSession` on success, `null`/`undefined` on failure
+ *    - The returned session's `address` and `network` are validated against
+ *      the connected wallet before accepting it
+ * 6. If verify returns a valid session → store it, go to connected view
+ * 7. If any step fails:
  *    - Shows the error message + "Try again" button (wallet stays connected)
- *    - The wallet is NOT disconnected immediately — the user can retry
  *    - If `disconnectOnFail` is `true` (default): when the user closes the
- *      modal (X button, drag-to-dismiss, Escape, overlay click) and SIWS
- *      hasn't succeeded, the wallet is disconnected
- *    - If `disconnectOnFail` is `false`: the wallet stays connected even
- *      if the user closes the modal without completing SIWS
+ *      modal and SIWS hasn't succeeded, the wallet is disconnected
  *
- * Error messages are extracted from any error type (Error, string, object
- * with `message` property, ConnectError) so the user always sees a
- * meaningful message.
+ * On wallet disconnect:
+ * - If `signoutOnDisconnect` is `true` (default): calls `signout()` before
+ *   disconnecting the wallet, clearing the server session
+ * - The local SIWS session is always cleared on disconnect
  */
 export interface SiwsConfig {
   /** Human-readable statement shown in the SIWS message (e.g. "Sign in to My App"). */
   statement: string;
+
+  /**
+   * When `true` (default): calls `signout()` before disconnecting the wallet,
+   * clearing the server-side session. The local SIWS session is also cleared.
+   * When `false`: the wallet is disconnected without calling `signout()` —
+   * the server session stays alive (useful for multi-device sessions).
+   */
+  signoutOnDisconnect?: boolean;
+
   /**
    * Controls when the wallet is disconnected on SIWS failure:
    *
    * - `true` (default): The wallet stays connected while the user sees the
    *   error + "Try again" button. Only when the user **closes the modal**
-   *   (X button, drag-to-dismiss, Escape, overlay click) and SIWS hasn't
-   *   succeeded, the wallet is disconnected. This ensures the auth flow
-   *   was completed before the wallet session is kept.
+   *   and SIWS hasn't succeeded, the wallet is disconnected.
    *
    * - `false`: The wallet is never disconnected, even if SIWS fails and the
    *   user closes the modal. The wallet stays connected without auth.
    */
   disconnectOnFail?: boolean;
+
   /**
-   * Async function that fetches a server-issued nonce. Called after the
-   * wallet connects but before `signIn()`. The modal shows a loading
-   * spinner while this is in flight.
+   * Async function that checks for an existing session. Called immediately
+   * after the wallet connects, BEFORE the sign-in flow.
+   *
+   * - Return a `SiwsSession` if a valid session exists → the SDK checks
+   *   that `address` matches the connected wallet and `expiry` is in the
+   *   future. If both match, sign-in is skipped.
+   * - Return `null` or `undefined` if no session → proceeds with sign-in.
+   *
+   * Example:
+   * ```ts
+   * session: async () => {
+   *   const res = await fetch('/api/siws/session');
+   *   if (!res.ok) return null;
+   *   return res.json();
+   * }
+   * ```
+   */
+  session: () => Promise<SiwsSession | null | undefined>;
+
+  /**
+   * Async function that fetches a server-issued nonce. Called after
+   * `session()` returns null/expired, but before `signIn()`.
    *
    * Example:
    * ```ts
@@ -358,14 +405,15 @@ export interface SiwsConfig {
    * ```
    */
   nonce: () => Promise<string>;
+
   /**
    * Async function that verifies the SIWS result after the wallet signs.
-   * Called with the `SignInResult` and the nonce from `nonce()`. The
-   * modal shows a "Verifying…" spinner while this is in flight.
+   * Called with the `SignInResult` and the nonce from `nonce()`.
    *
-   * Must return `true` for success, `false` for failure (or throw an
-   * Error with a message). If it returns `false` without throwing, the
-   * user sees "Sign-in verification failed."
+   * Must return a `SiwsSession` on success (the SDK validates the returned
+   * session's `address` and `network` against the connected wallet).
+   * Return `null` or `undefined` on failure, or throw an Error with a
+   * message for the user.
    *
    * Example:
    * ```ts
@@ -374,9 +422,28 @@ export interface SiwsConfig {
    *     method: 'POST',
    *     body: JSON.stringify({ ...data, nonce }),
    *   });
+   *   if (!res.ok) return null;
+   *   return res.json(); // → SiwsSession
+   * }
+   * ```
+   */
+  verify: (data: { message: string; signedMessage: string; signerAddress: string; signedData?: string; issuedAt: string; expirationTime: string }, nonce: string) => Promise<SiwsSession | null | undefined>;
+
+  /**
+   * Function that logs the user out from the server. Called before wallet
+   * disconnect when `signoutOnDisconnect` is `true` (default).
+   *
+   * Should clear the server-side session (e.g. delete the session cookie
+   * or token). Return `true` on success, `false` on failure. Errors are
+   * silently ignored — the wallet is disconnected regardless.
+   *
+   * Example:
+   * ```ts
+   * signout: async () => {
+   *   const res = await fetch('/api/siws/logout', { method: 'POST' });
    *   return res.ok;
    * }
    * ```
    */
-  verify: (data: { message: string; signedMessage: string; signerAddress: string; signedData?: string; issuedAt: string; expirationTime: string }, nonce: string) => Promise<boolean>;
+  signout: () => Promise<boolean> | boolean;
 }
