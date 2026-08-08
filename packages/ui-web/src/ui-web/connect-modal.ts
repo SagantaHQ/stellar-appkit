@@ -1885,15 +1885,31 @@ export class SagantaAppKitModal extends ModalBase {
    * element the gesture was bound to. wireEvents() calls this automatically.
    */
   private setupBottomSheetGestures() {
-    // Attach listeners to the ShadowRoot (this.root) instead of the panel
-    // element — this way the listeners survive full re-renders that replace
-    // the panel element entirely (this.root.innerHTML = ...). Event
-    // delegation: we check e.target in each handler.
-    const root = this.root;
+    // Drag-to-dismiss gesture for the bottom-sheet, inspired by PlainSheet's
+    // approach (@plainsheet/core). Key design decisions learned from studying
+    // their source:
+    //
+    // 1. Use BOTH touch events AND mouse events (not pointer events).
+    //    Pointer events can be unreliable on some mobile browsers (especially
+    //    iOS Safari) — PlainSheet uses dual touch+mouse listeners instead.
+    //
+    // 2. Do NOT use setPointerCapture. It can fail silently and break the
+    //    drag. Instead, for mouse events, attach mousemove/mouseup to
+    //    document (so the drag continues even if the cursor leaves the panel).
+    //    For touch events, the touch is implicitly captured to the element
+    //    that received touchstart.
+    //
+    // 3. Use requestAnimationFrame to batch transform updates during drag
+    //    move. Setting style.transform on every touchmove/mousemove event
+    //    can fire faster than the browser can paint — rAF coalesces them
+    //    into one update per frame for smooth 60fps dragging.
+    //
+    // 4. Attach touchstart to the ShadowRoot (event delegation — survives
+    //    panel element replacement during re-renders). Attach mousemove/
+    //    mouseup to document (so mouse drag continues outside the panel).
 
-    // Note: we do NOT clean up a previous gesture handler here —
-    // this method is now only called once (guarded by `!this.gestureDestroyer`
-    // in wireEvents()). Cleanup happens in finishClose().
+    const root = this.root;
+    const doc = typeof document !== 'undefined' ? document : null;
 
     let startY = 0;
     let currentY = 0;
@@ -1903,82 +1919,85 @@ export class SagantaAppKitModal extends ModalBase {
     let sheetHeight = 0;
     let dragging = false;
     let rafId = 0;
-    let capturedPointerId: number | null = null;
+    let pendingY = 0; // The Y position we want to apply on the next animation frame
 
     const getPanel = (): HTMLElement | null =>
       root.querySelector<HTMLElement>('.panel');
 
-    const onPointerDown = (e: Event) => {
-      const pe = e as PointerEvent;
-      // Only respond to primary button (touch or left-click)
-      if (pe.button !== 0 && pe.pointerType === 'mouse') return;
-      // Don't start drag when the user is interacting with a button, link,
-      // or any element marked with [data-action].
-      const target = pe.target as HTMLElement | null;
-      if (target?.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return;
+    /** Returns true if the target is in a drag zone (handle, header, footer, loading/error views). */
+    const isInDragZone = (target: HTMLElement | null): boolean => {
+      if (!target) return false;
+      // Don't start drag on interactive elements
+      if (target.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return false;
+      // Only drag from handle, header, footer, or full-screen loading/error views
+      return !!target.closest('.drag-handle, .header, .footer, .connecting-view, .signing-view, .error-state');
+    };
 
-      // Only start dragging from the drag handle, the header area, or the
-      // footer area — NOT from the body content (which may contain scrollable
-      // lists, preview content, etc. where the user expects to scroll, not
-      // drag the sheet).
-      const isInDragZone = target?.closest('.drag-handle, .header, .footer, .connecting-view, .signing-view, .error-state');
-      if (!isInDragZone) return;
-
+    /** Common drag-start logic for both touch and mouse. */
+    const startDrag = (clientY: number) => {
       const panel = getPanel();
       if (!panel) return;
-
       dragging = true;
-      capturedPointerId = pe.pointerId;
-      startY = pe.clientY;
-      lastY = pe.clientY;
+      startY = clientY;
+      lastY = clientY;
       lastTime = performance.now();
       velocity = 0;
       sheetHeight = panel.offsetHeight;
       panel.style.transition = 'none';
       panel.style.willChange = 'transform';
-      // Use setPointerCapture on the panel so pointermove/pointerup fire
-      // even if the pointer leaves the panel bounds.
-      try { panel.setPointerCapture(pe.pointerId); } catch { /* may fail if pointerId invalid */ }
       cancelAnimationFrame(rafId);
     };
 
-    const onPointerMove = (e: Event) => {
+    /** Common drag-move logic. Uses rAF to batch transform updates. */
+    const moveDrag = (clientY: number) => {
       if (!dragging) return;
-      const pe = e as PointerEvent;
-      const panel = getPanel();
-      if (!panel) return;
-      const dy = pe.clientY - startY;
+      const dy = clientY - startY;
       currentY = Math.max(0, dy);
-      panel.style.transform = `translate3d(0, ${currentY}px, 0)`;
-
-      // Fade the overlay as the sheet moves down
-      const overlay = root.querySelector<HTMLElement>('.overlay');
-      if (overlay && sheetHeight > 0) {
-        const progress = currentY / sheetHeight;
-        overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
-      }
+      pendingY = currentY;
 
       // Track velocity (px/ms)
       const now = performance.now();
       const dt = now - lastTime;
       if (dt > 0) {
-        velocity = (pe.clientY - lastY) / dt;
-        lastY = pe.clientY;
+        velocity = (clientY - lastY) / dt;
+        lastY = clientY;
         lastTime = now;
+      }
+
+      // Batch the transform update via requestAnimationFrame — setting
+      // style.transform on every touchmove event can fire faster than the
+      // browser can paint, causing jank. rAF coalesces into one update/frame.
+      if (rafId === 0) {
+        rafId = requestAnimationFrame(() => {
+          rafId = 0;
+          const panel = getPanel();
+          if (panel && dragging) {
+            panel.style.transform = `translate3d(0, ${pendingY}px, 0)`;
+            // Fade the overlay as the sheet moves down
+            const overlay = root.querySelector<HTMLElement>('.overlay');
+            if (overlay && sheetHeight > 0) {
+              const progress = pendingY / sheetHeight;
+              overlay.style.opacity = String(Math.max(0, 1 - progress * 0.7));
+            }
+          }
+        });
       }
     };
 
-    const onPointerUp = (e: Event) => {
+    /** Common drag-end logic. */
+    const endDrag = () => {
       if (!dragging) return;
       dragging = false;
+      // Ensure the last rAF callback fires so the final position is applied
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+
       const panel = getPanel();
       if (panel) {
-        if (capturedPointerId !== null) {
-          try { panel.releasePointerCapture(capturedPointerId); } catch { /* already released */ }
-        }
+        // Apply the final position immediately (don't wait for rAF)
+        panel.style.transform = `translate3d(0, ${currentY}px, 0)`;
         panel.style.willChange = 'auto';
       }
-      capturedPointerId = null;
 
       // Velocity-aware dismiss: a quick flick (velocity > 0.4 px/ms) dismisses
       // even from a short drag. Distance threshold (40% of sheet height) is
@@ -1991,10 +2010,6 @@ export class SagantaAppKitModal extends ModalBase {
       }
 
       if (shouldClose) {
-        // Animate to closed position. The spring carries the panel all the
-        // way off-screen, so when close() runs we pass skipAnimation=true
-        // — otherwise the WAAPI exit animation would jump the panel back to
-        // translateY(0) and slide it down again (visible flash).
         if (panel) {
           this.springTo(panel, currentY, sheetHeight + 100, velocity, 0.25, () => {
             this.close(true);
@@ -2025,19 +2040,75 @@ export class SagantaAppKitModal extends ModalBase {
       }
     };
 
-    // Attach to the ShadowRoot — survives panel element replacement
-    root.addEventListener('pointerdown', onPointerDown);
-    root.addEventListener('pointermove', onPointerMove);
-    root.addEventListener('pointerup', onPointerUp);
-    root.addEventListener('pointercancel', onPointerUp);
+    // --- Touch event handlers (for mobile) ---
+    const onTouchStart = (e: Event) => {
+      const te = e as TouchEvent;
+      if (te.touches.length !== 1) return; // single-finger only
+      const target = te.target as HTMLElement | null;
+      if (!isInDragZone(target)) return;
+      const touch = te.touches[0];
+      if (!touch) return;
+      startDrag(touch.clientY);
+    };
+    const onTouchMove = (e: Event) => {
+      const te = e as TouchEvent;
+      if (!dragging || te.touches.length !== 1) return;
+      const touch = te.touches[0];
+      if (!touch) return;
+      moveDrag(touch.clientY);
+    };
+    const onTouchEnd = () => {
+      endDrag();
+    };
+
+    // --- Mouse event handlers (for desktop) ---
+    // mousedown is on the ShadowRoot (event delegation). mousemove and
+    // mouseup are on document so the drag continues even if the cursor
+    // leaves the panel — same behavior as native drag.
+    const onMouseDown = (e: Event) => {
+      const me = e as MouseEvent;
+      if (me.button !== 0) return; // left click only
+      const target = me.target as HTMLElement | null;
+      if (!isInDragZone(target)) return;
+      startDrag(me.clientY);
+    };
+    const onMouseMove = (e: Event) => {
+      if (!dragging) return;
+      const me = e as MouseEvent;
+      moveDrag(me.clientY);
+    };
+    const onMouseUp = () => {
+      endDrag();
+    };
+
+    // Attach touch listeners to ShadowRoot (passive: true for touchstart
+    // since we don't need preventDefault — touch-action: none on the panel
+    // CSS handles scrolling suppression)
+    root.addEventListener('touchstart', onTouchStart, { passive: true });
+    root.addEventListener('touchmove', onTouchMove, { passive: true });
+    root.addEventListener('touchend', onTouchEnd, { passive: true });
+    root.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+    // Attach mousedown to ShadowRoot, mousemove/mouseup to document
+    root.addEventListener('mousedown', onMouseDown);
+    if (doc) {
+      doc.addEventListener('mousemove', onMouseMove);
+      doc.addEventListener('mouseup', onMouseUp);
+    }
 
     this.gestureDestroyer = {
       destroy: () => {
         cancelAnimationFrame(rafId);
-        root.removeEventListener('pointerdown', onPointerDown);
-        root.removeEventListener('pointermove', onPointerMove);
-        root.removeEventListener('pointerup', onPointerUp);
-        root.removeEventListener('pointercancel', onPointerUp);
+        rafId = 0;
+        root.removeEventListener('touchstart', onTouchStart);
+        root.removeEventListener('touchmove', onTouchMove);
+        root.removeEventListener('touchend', onTouchEnd);
+        root.removeEventListener('touchcancel', onTouchEnd);
+        root.removeEventListener('mousedown', onMouseDown);
+        if (doc) {
+          doc.removeEventListener('mousemove', onMouseMove);
+          doc.removeEventListener('mouseup', onMouseUp);
+        }
       },
     };
   }
