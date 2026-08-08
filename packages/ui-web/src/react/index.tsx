@@ -276,6 +276,28 @@ export function usePendingSignCount(): number {
   );
 }
 
+/**
+ * Reactive SIWS session — returns `SiwsSession | null`. Re-renders when the
+ * session is set, cleared, or expires. Use this to check if the user is
+ * authenticated.
+ */
+export function useSiwsSession() {
+  const client = useAppKitContext();
+  return useClientSlice(
+    client,
+    (handler) => client.on('siwsSessionChange', handler),
+    () => client.siwsSession
+  );
+}
+
+/**
+ * Convenience: `true` when the user has a valid (non-expired) SIWS session.
+ * Re-renders when authentication state changes.
+ */
+export function useIsAuthenticated(): boolean {
+  return useSiwsSession() !== null;
+}
+
 // ---------------------------------------------------------------------------
 // Connect / disconnect
 // ---------------------------------------------------------------------------

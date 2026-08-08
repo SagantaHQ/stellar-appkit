@@ -295,6 +295,8 @@ export interface StellarAppKitEvents {
   accountChange: WalletAccount;
   /** The app switched which connected wallet/account is active — distinct from accountChange, which is the wallet changing under us. */
   accountSwitch: { walletId: string; address: string };
+  /** Fires whenever the SIWS session changes (set, cleared, expired). Payload is `SiwsSession | null`. */
+  siwsSessionChange: SiwsSession | null;
   /** Fires whenever the full set of connected sessions changes (connect, disconnect, or switch) — convenient for an account-switcher UI to subscribe to once instead of three separate events. */
   sessionsChanged: ConnectSession[];
   networkChange: GetNetworkResult;
@@ -427,23 +429,53 @@ export interface SiwsConfig {
    * }
    * ```
    */
-  verify: (data: { message: string; signedMessage: string; signerAddress: string; signedData?: string; issuedAt: string; expirationTime: string }, nonce: string) => Promise<SiwsSession | null | undefined>;
+  verify: (data: { message: string; signedMessage: string; signerAddress: string; signedData?: string; issuedAt: string; expirationTime: string }, nonce: string, context: { address: string; network: string }) => Promise<SiwsSession | null | undefined>;
 
   /**
    * Function that logs the user out from the server. Called before wallet
-   * disconnect when `signoutOnDisconnect` is `true` (default).
+   * disconnect when `signoutOnDisconnect` is `true` (default), and when
+   * `appkit.signOut()` is called manually.
    *
    * Should clear the server-side session (e.g. delete the session cookie
    * or token). Return `true` on success, `false` on failure. Errors are
    * silently ignored — the wallet is disconnected regardless.
-   *
-   * Example:
-   * ```ts
-   * signout: async () => {
-   *   const res = await fetch('/api/siws/logout', { method: 'POST' });
-   *   return res.ok;
-   * }
-   * ```
    */
   signout: () => Promise<boolean> | boolean;
+
+  /**
+   * Optional: refresh the session before it expires. Called periodically
+   * (or when the user calls `appkit.validateSession()`) to get a fresh
+   * session from the server without requiring a new sign-in.
+   *
+   * If omitted, `validateSession()` falls back to calling `session()`.
+   */
+  refresh?: () => Promise<SiwsSession | null | undefined>;
+
+  /** Max retry attempts on SIWS failure (default 3). After this, the user sees "Too many attempts." */
+  maxRetries?: number;
+
+  /** Timeout in ms for nonce() and verify() calls (default 15000). */
+  timeoutMs?: number;
+}
+
+/** Error types for SIWS failures — used for programmatic error handling. */
+export type SiwsErrorType =
+  | 'session-check-failed'
+  | 'nonce-fetch-failed'
+  | 'sign-rejected'
+  | 'verify-failed'
+  | 'session-mismatch'
+  | 'session-expired'
+  | 'timeout'
+  | 'max-retries-exceeded'
+  | 'cancelled';
+
+/** Error thrown by SIWS flow with a discriminated type. */
+export class SiwsError extends Error {
+  readonly type: SiwsErrorType;
+  constructor(type: SiwsErrorType, message: string) {
+    super(message);
+    this.name = 'SiwsError';
+    this.type = type;
+  }
 }

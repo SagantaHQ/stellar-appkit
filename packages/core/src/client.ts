@@ -9,6 +9,8 @@ import {
   Networks,
   resolveNetworkPassphrase,
   SiwsConfig,
+  SiwsError,
+  SiwsErrorType,
   SiwsSession,
   type ConnectSession,
   type ConnectStatus,
@@ -215,6 +217,7 @@ interface StoredSessionsV1 {
 
 const DEFAULT_RETRY_INTERVAL_MS = 1500;
 const DEFAULT_RETRY_TIMEOUT_MS = 30_000;
+const SIWS_SESSION_STORAGE_KEY = 'saganta-appkit:siws-session';
 
 /**
  * The single object app code talks to. Wraps the connector registry, owns
@@ -315,6 +318,13 @@ export class StellarAppKit {
   /** Set the SIWS session (called by the modal after successful verify()). */
   setSiwsSession(session: SiwsSession | null): void {
     this._siwsSession = session;
+    // Persist to storage so it survives page reloads
+    if (session) {
+      void this.storage.setItem(SIWS_SESSION_STORAGE_KEY, JSON.stringify(session));
+    } else {
+      void this.storage.removeItem(SIWS_SESSION_STORAGE_KEY);
+    }
+    this.emitter.emit('siwsSessionChange', session);
     this.emitter.emit('sessionsChanged', this.sessions);
   }
 
@@ -322,6 +332,10 @@ export class StellarAppKit {
   async clearSiwsSession(): Promise<void> {
     const wasAuthenticated = this._siwsSession !== null;
     this._siwsSession = null;
+    void this.storage.removeItem(SIWS_SESSION_STORAGE_KEY);
+    if (wasAuthenticated) {
+      this.emitter.emit('siwsSessionChange', null);
+    }
     if (wasAuthenticated && this.siwsConfig) {
       const signoutOnDisconnect = this.siwsConfig.signoutOnDisconnect !== false;
       if (signoutOnDisconnect) {
@@ -331,6 +345,111 @@ export class StellarAppKit {
           // Silently ignore — signout failure shouldn't block disconnect
         }
       }
+    }
+  }
+
+  /**
+   * Manually sign out — clears the SIWS session, calls `signout()`, and
+   * disconnects the wallet. Use this for "Log out" buttons in your app.
+   */
+  async signOut(): Promise<void> {
+    await this.clearSiwsSession();
+    if (this._activeWalletId) {
+      await this.disconnect();
+    }
+  }
+
+  /**
+   * Throws if not authenticated. Use to guard actions that require auth.
+   * ```ts
+   * await appkit.requireAuth();
+   * await appkit.signTransaction(xdr);
+   * ```
+   */
+  requireAuth(): void {
+    if (!this.siwsSession) {
+      throw ConnectError.invalidRequest(
+        'Authentication required. Call signIn() or connect with SIWS configured.'
+      );
+    }
+  }
+
+  /**
+   * Validate the current session against the server. Calls `refresh()` (or
+   * `session()` if `refresh` is not configured) to get a fresh session from
+   * the server. If the session is invalid/expired/mismatched, triggers a
+   * new SIWS sign-in flow.
+   *
+   * Returns the validated session, or null if not authenticated.
+   */
+  async validateSession(): Promise<SiwsSession | null> {
+    if (!this.siwsConfig || !this.session) return null;
+
+    const checkFn = this.siwsConfig.refresh ?? this.siwsConfig.session;
+    let serverSession: SiwsSession | null | undefined = null;
+
+    try {
+      serverSession = await checkFn();
+    } catch {
+      serverSession = null;
+    }
+
+    if (!serverSession) {
+      // Session invalid — clear and trigger re-auth
+      this.setSiwsSession(null);
+      return null;
+    }
+
+    // Validate address + network + expiry
+    const session = this.session;
+    if (session) {
+      const addressMatches = serverSession.address === session.address;
+      const networkMatches = serverSession.network === session.network;
+      const notExpired = !serverSession.expiry || serverSession.expiry > Date.now();
+
+      if (!addressMatches || !networkMatches || !notExpired) {
+        this.setSiwsSession(null);
+        return null;
+      }
+    }
+
+    this.setSiwsSession(serverSession);
+    return serverSession;
+  }
+
+  /**
+   * Force re-authentication — clears the current session and triggers a
+   * fresh SIWS sign-in flow. Useful for privilege escalation (e.g.,
+   * "Confirm it's you to complete this transaction").
+   *
+   * The modal (if attached) will show the SIWS flow automatically.
+   * Returns a promise that resolves when the SIWS flow completes.
+   */
+  async reauthenticate(): Promise<void> {
+    this.setSiwsSession(null);
+    // The modal listens to siwsSessionChange — if we set it to null,
+    // it should trigger the SIWS flow. But for programmatic use without
+    // the modal, we emit a special event.
+    this.emitter.emit('siwsSessionChange', null);
+  }
+
+  /** Restore persisted SIWS session from storage (called on app init). */
+  private async restoreSiwsSession(): Promise<void> {
+    try {
+      const stored = await this.storage.getItem(SIWS_SESSION_STORAGE_KEY);
+      if (stored) {
+        const session = JSON.parse(stored) as SiwsSession;
+        // Check expiry
+        if (!session.expiry || session.expiry > Date.now()) {
+          this._siwsSession = session;
+          this.emitter.emit('siwsSessionChange', session);
+        } else {
+          // Expired — clear it
+          void this.storage.removeItem(SIWS_SESSION_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // Corrupted storage — ignore
     }
   }
 
@@ -400,6 +519,11 @@ export class StellarAppKit {
       this.setStatus('connected');
       restored.forEach((session) => this.emitter.emit('connect', session));
       this.emitter.emit('sessionsChanged', this.sessions);
+
+      // Restore persisted SIWS session (if any)
+      if (this.siwsConfig) {
+        await this.restoreSiwsSession();
+      }
     }
 
     await this.persist();

@@ -15,7 +15,7 @@ import {
 
 export type PresentationMode = 'auto' | 'modal' | 'bottomsheet' | 'bottom-sheet' | 'inline';
 type EffectiveMode = 'modal' | 'bottomsheet' | 'inline';
-type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'signing' | 'error' | 'siws-nonce' | 'siws-signing' | 'siws-verifying' | 'siws-error';
+type ViewState = 'wallet-list' | 'connecting' | 'account-picker' | 'connected' | 'network-mismatch' | 'transaction-preview' | 'signing' | 'error' | 'siws-checking' | 'siws-nonce' | 'siws-signing' | 'siws-verifying' | 'siws-error';
 
 const MOBILE_BREAKPOINT_PX = 640;
 
@@ -731,11 +731,27 @@ export class SagantaAppKitModal extends ModalBase {
    *    closes the modal (via close()) if `disconnectOnFail` is true and
    *    `siwsPending` is still true (meaning SIWS never succeeded).
    */
+  private siwsRetryCount = 0;
+  private siwsCancelled = false;
+
   private async triggerSiwsFlow(): Promise<void> {
     if (!this._client?.siwsConfig) return;
     const siws = this._client.siwsConfig;
     const session = this._client.session;
-    this.siwsPending = true; // SIWS is required but hasn't succeeded yet
+    const maxRetries = siws.maxRetries ?? 3;
+    const timeoutMs = siws.timeoutMs ?? 15000;
+    this.siwsPending = true;
+    this.siwsCancelled = false;
+
+    // Helper: timeout wrapper
+    const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error('Request timed out. Please try again.')), ms)
+        ),
+      ]);
+    };
 
     // Helper: extract a human-readable message from any error type
     const extractErrorMessage = (err: unknown): string => {
@@ -751,9 +767,16 @@ export class SagantaAppKitModal extends ModalBase {
 
     // Helper: handle SIWS failure — show error + retry, do NOT disconnect
     const handleSiwsFailure = async (err: unknown) => {
+      if (this.siwsCancelled) return; // User cancelled — don't show error
       const msg = extractErrorMessage(err);
+      this.siwsRetryCount++;
       this.siwsPending = true;
-      this.connectingError = msg;
+
+      if (this.siwsRetryCount >= maxRetries) {
+        this.connectingError = `Too many failed attempts (${maxRetries}). Please try again later.`;
+      } else {
+        this.connectingError = msg;
+      }
       this.view = 'siws-error';
       this.render();
       if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -763,14 +786,13 @@ export class SagantaAppKitModal extends ModalBase {
 
     try {
       // Step 0: Check for existing session
-      this.view = 'siws-nonce';
+      this.view = 'siws-checking';
       this.connectingError = null;
       this.render();
 
-      const existingSession = await siws.session();
+      const existingSession = await withTimeout(siws.session(), timeoutMs);
 
       if (existingSession && session) {
-        // Validate: address matches, network matches, not expired
         const addressMatches = existingSession.address === session.address;
         const networkMatches = existingSession.network === session.network;
         const notExpired = !existingSession.expiry || existingSession.expiry > Date.now();
@@ -779,6 +801,7 @@ export class SagantaAppKitModal extends ModalBase {
           // Existing session is valid — skip sign-in
           this._client.setSiwsSession(existingSession);
           this.siwsPending = false;
+          this.siwsRetryCount = 0;
           this.view = 'connected';
           this.render();
           return;
@@ -786,9 +809,10 @@ export class SagantaAppKitModal extends ModalBase {
       }
 
       // Step 1: Fetch nonce
-      this.render(); // re-render to show "Fetching nonce…"
+      this.view = 'siws-nonce';
+      this.render();
 
-      const nonce = await siws.nonce();
+      const nonce = await withTimeout(siws.nonce(), timeoutMs);
 
       // Step 2: Sign in with the wallet
       this.view = 'siws-signing';
@@ -803,10 +827,15 @@ export class SagantaAppKitModal extends ModalBase {
       this.view = 'siws-verifying';
       this.render();
 
-      const siwsSession = await siws.verify(signInResult, nonce);
+      const siwsSession = await withTimeout(
+        siws.verify(signInResult, nonce, {
+          address: session?.address ?? signInResult.signerAddress,
+          network: session?.network ?? 'UNKNOWN',
+        }),
+        timeoutMs
+      );
 
       if (!siwsSession) {
-        // verify returned null/undefined — failure
         await handleSiwsFailure('Sign-in verification failed.');
         return;
       }
@@ -829,10 +858,10 @@ export class SagantaAppKitModal extends ModalBase {
       // Step 5: Store session on client + success
       this._client.setSiwsSession(siwsSession);
       this.siwsPending = false;
+      this.siwsRetryCount = 0;
       this.view = 'connected';
       this.connectingError = null;
       this.render();
-      // Haptic feedback on success (Android — no-op on iOS)
       if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
         navigator.vibrate(15);
       }
@@ -1220,6 +1249,7 @@ export class SagantaAppKitModal extends ModalBase {
         return this.renderError();
       case 'connecting':
         return this.renderConnecting();
+      case 'siws-checking':
       case 'siws-nonce':
       case 'siws-signing':
       case 'siws-verifying':
@@ -1710,7 +1740,8 @@ export class SagantaAppKitModal extends ModalBase {
       : `this.style.display='none';`;
 
     const subtitle =
-      this.view === 'siws-nonce' ? 'Fetching secure nonce…'
+      this.view === 'siws-checking' ? 'Checking session…'
+      : this.view === 'siws-nonce' ? 'Fetching secure nonce…'
       : this.view === 'siws-signing' ? `Approve the sign-in request in ${escapeHtml(walletName)}`
       : 'Verifying your signature…';
 
@@ -1727,6 +1758,7 @@ export class SagantaAppKitModal extends ModalBase {
         </div>
         <h2 class="connecting-view__title">Sign-In With Stellar</h2>
         <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
+        <button class="connecting-view__cancel" data-action="cancel-siws">Cancel</button>
       </div>
     `;
   }
@@ -2041,14 +2073,29 @@ export class SagantaAppKitModal extends ModalBase {
     // If wallet was disconnected (disconnectOnFail), go back to wallet list.
     this.root.querySelector('[data-action="retry-siws"]')?.addEventListener('click', () => {
       this.connectingError = null;
+      this.siwsRetryCount = 0; // Reset retry count on manual retry
       if (this._client?.session) {
-        // Wallet still connected — re-trigger SIWS flow
         void this.triggerSiwsFlow();
       } else {
-        // Wallet was disconnected — go back to wallet list
         this.view = 'wallet-list';
         this.render();
       }
+    });
+
+    // Cancel SIWS flow — sets siwsCancelled flag so handleSiwsFailure is a no-op
+    this.root.querySelector('[data-action="cancel-siws"]')?.addEventListener('click', () => {
+      this.siwsCancelled = true;
+      this.siwsPending = false;
+      this.siwsRetryCount = 0;
+      this.connectingError = null;
+      if (this._client?.siwsConfig) {
+        const disconnectOnFail = this._client.siwsConfig.disconnectOnFail !== false;
+        if (disconnectOnFail && this._client.session) {
+          void this._client.disconnect();
+        }
+      }
+      this.view = 'wallet-list';
+      this.render();
     });
 
     this.root.querySelectorAll<HTMLElement>('[data-action="pick-account"]').forEach((el) => {
