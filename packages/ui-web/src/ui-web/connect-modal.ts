@@ -13,6 +13,7 @@ import {
   type AnimationPresetName,
 } from './animations/motion-animator.js';
 import { BottomsheetMotionDragController } from './animations/motion-drag-controller.js';
+import { ModalSwipeController } from './animations/modal-swipe-controller.js';
 
 // Re-export for backward compatibility
 export type { AnimationPresetName };
@@ -95,6 +96,7 @@ export class SagantaAppKitModal extends ModalBase {
   private modalAnimator = new ModalMotionAnimator();
   private bottomsheetAnimator = new BottomsheetMotionAnimator();
   private dragController: BottomsheetMotionDragController | null = null;
+  private swipeController: ModalSwipeController | null = null;
   private mediaQuery = typeof window !== 'undefined' ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`) : null;
   /** Cache of avatar URLs keyed by address — avoids re-fetching on every render. */
   private avatarCache: Map<string, string | null> = new Map();
@@ -126,6 +128,8 @@ export class SagantaAppKitModal extends ModalBase {
     this.releaseFocusTrap?.();
     this.dragController?.destroy();
     this.dragController = null;
+    this.swipeController?.destroy();
+    this.swipeController = null;
     this.modalAnimator.destroy();
     this.bottomsheetAnimator.destroy();
     this.clientUnsubscribers.forEach((unsub) => unsub());
@@ -391,9 +395,11 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
-      // Clean up the drag controller so it gets recreated fresh on next open()
+      // Clean up the drag + swipe controllers so they get recreated fresh on next open()
       this.dragController?.destroy();
       this.dragController = null;
+      this.swipeController?.destroy();
+      this.swipeController = null;
       // Clear any inline styles left over from drag/animation
       if (panel) {
         panel.style.transform = '';
@@ -1802,6 +1808,15 @@ export class SagantaAppKitModal extends ModalBase {
         onDismiss: () => this.close(true),
       });
       this.dragController.attach(this.root);
+    }
+
+    // Set up the swipe-to-close controller for modal mode.
+    // Allows the user to swipe in any direction to dismiss the modal.
+    if (effectiveMode === 'modal' && !this.swipeController) {
+      this.swipeController = new ModalSwipeController({
+        onDismiss: () => this.close(true),
+      });
+      this.swipeController.attach(this.root);
     }
 
     this.root.querySelectorAll<HTMLElement>('[data-action="select-wallet"]').forEach((el) => {

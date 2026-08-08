@@ -130,11 +130,9 @@ export class BottomsheetMotionDragController {
 
     const dy = pe.clientY - this.startY;
 
-    // Rubber-band physics:
-    // - Downward drag (dy > 0): move 1:1 (follows finger)
-    // - Upward drag (dy < 0): move at 35% resistance (damped, feels like a spring)
-    const RESISTANCE = 0.35;
-    this.currentY = dy < 0 ? dy * RESISTANCE : dy;
+    // Clamp at 0 — when the sheet is fully open, it cannot go up.
+    // No rubber-band, no bounce. Only downward drag moves the sheet.
+    this.currentY = Math.max(0, dy);
     this.pendingY = this.currentY;
 
     // Track velocity (px/ms)
