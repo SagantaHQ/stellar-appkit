@@ -238,6 +238,35 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
     return 'Test SDF Network ; September 2015';
   }
 
+  /**
+   * Converts a Stellar network name to the WalletConnect chain ID format.
+   * WC Stellar namespace uses `stellar:<network>` where <network> is the
+   * lowercase network name: `pubnet`, `testnet`, `futurenet`.
+   *
+   * This is DIFFERENT from the network passphrase — the passphrase is a
+   * long string like "Test SDF Network ; September 2015", but the WC chain
+   * ID is just `stellar:testnet`.
+   *
+   * Freighter Mobile and other WC-compatible wallets reject sessions with
+   * invalid chain IDs, so this mapping is critical for mobile connectivity.
+   */
+  function resolveWcChainId(): string {
+    const network = (appkitNetwork ?? 'TESTNET').toUpperCase();
+    switch (network) {
+      case 'PUBLIC':
+        return 'stellar:pubnet';
+      case 'TESTNET':
+        return 'stellar:testnet';
+      case 'FUTURENET':
+        return 'stellar:futurenet';
+      case 'STANDALONE':
+        // Standalone doesn't have a WC chain ID — fall back to testnet
+        return 'stellar:testnet';
+      default:
+        return 'stellar:testnet';
+    }
+  }
+
   const meta: WalletMeta = {
     id: 'walletconnect',
     name: 'WalletConnect',
@@ -249,7 +278,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
   const capabilities: WalletCapabilities = {
     signTransaction: true,
-    signAuthEntry: false, // WC Stellar namespace doesn't expose auth-entry signing
+    signAuthEntry: true, // Freighter Mobile + other WC wallets support stellar_signAuthEntry
     signMessage: true,
     submit: false, // we use stellar_signXDR (sign only), not stellar_signAndSubmitXDR
   };
@@ -546,9 +575,14 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             wc.connect({
               requiredNamespaces: {
                 stellar: {
-                  chains: [`stellar:${opts.networkPassphrase}`],
-                  methods: ['stellar_signXDR', 'stellar_signMessage', 'stellar_getAddress', 'stellar_getNetwork'],
-                  events: [],
+                  chains: [resolveWcChainId()],
+                  methods: [
+                    'stellar_signXDR',
+                    'stellar_signAndSubmitXDR',
+                    'stellar_signMessage',
+                    'stellar_signAuthEntry',
+                  ],
+                  events: ['accountsChanged'],
                 },
               },
             }),
@@ -757,12 +791,41 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       });
     },
 
-    async signAuthEntry(): Promise<SignAuthEntryResult> {
-      throw ConnectError.invalidRequest(
-        'WalletConnect does not support signing Soroban auth entries via the Stellar WC namespace.',
-        undefined,
-        meta.id
-      );
+    async signAuthEntry(authEntryXdr: string, signOpts?: SignOptions): Promise<SignAuthEntryResult> {
+      return withNormalizedError(meta.id, async () => {
+        if (!client || !sessionTopic) {
+          throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+        }
+
+        // stellar_signAuthEntry — supported by Freighter Mobile and other
+        // WC-compatible Stellar wallets (SEP-43). The wallet signs the
+        // SHA-256 hash of the SorobanAuthorizationEntry preimage.
+        //
+        // Request params: { entryXdr } — base64-encoded HashIdPreimage XDR
+        // Response: { signedAuthEntry, signerAddress }
+        const result = await client.request({
+          topic: sessionTopic,
+          request: {
+            method: 'stellar_signAuthEntry',
+            params: {
+              entryXdr: authEntryXdr,
+              publicKey: signOpts?.address ?? cachedAddress ?? undefined,
+            },
+          },
+        }) as { signedAuthEntry?: string; signerAddress?: string; error?: string };
+
+        if (result.error) {
+          throw ConnectError.internal(`WalletConnect signAuthEntry error: ${result.error}`, undefined, meta.id);
+        }
+        if (!result.signedAuthEntry) {
+          throw ConnectError.internal('WalletConnect returned no signed auth entry.', undefined, meta.id);
+        }
+
+        return {
+          signedAuthEntry: result.signedAuthEntry,
+          signerAddress: result.signerAddress ?? cachedAddress!,
+        };
+      });
     },
 
     async signMessage(message: string, _signOpts?: SignOptions): Promise<SignMessageResult> {
@@ -771,7 +834,12 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
         }
 
-        // Try stellar_signMessage first (not all wallets support it)
+        // stellar_signMessage — supported by Freighter Mobile, Hana, and other
+        // WC-compatible Stellar wallets. The response field name varies by
+        // wallet implementation:
+        //   - Freighter Mobile: returns { signature } (per Freighter Mobile WC docs)
+        //   - Hana/Lobstr: returns { signedMessage } (older WC Stellar namespace)
+        // We check both to support all wallets.
         try {
           const result = await client.request({
             topic: sessionTopic,
@@ -782,13 +850,16 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
                 publicKey: cachedAddress ?? undefined,
               },
             },
-          }) as { signedMessage?: string; error?: string };
+          }) as { signature?: string; signedMessage?: string; error?: string };
 
           if (result.error) throw new Error(result.error);
-          if (!result.signedMessage) throw new Error('No signedMessage in response');
+
+          // Freighter Mobile returns `signature`, other wallets return `signedMessage`
+          const signature = result.signature ?? result.signedMessage;
+          if (!signature) throw new Error('No signature or signedMessage in response');
 
           return {
-            signedMessage: result.signedMessage,
+            signedMessage: signature,
             signerAddress: cachedAddress!,
             // WalletConnect wallets that support stellar_signMessage should
             // sign the raw UTF-8 bytes of the message — same as Freighter.
