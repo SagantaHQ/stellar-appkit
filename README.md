@@ -6,6 +6,17 @@ Built by [Saganta](https://github.com/saganta) as the wallet-connection layer of
 
 ---
 
+## 📖 Official Docs  ·  🎮 Official Demos
+
+| | Link | Description |
+|---|---|---|
+| **📖 Official Docs** | **[stellar-appkit.saganta.com](https://stellar-appkit.saganta.com)** | Full documentation — installation, quick start, API reference, guides, wallet docs, changelog |
+| **🎮 Official Demos** | **[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** | 18 live, copy-pasteable Next.js demos — wallet connection, signing, Soroban, SIWS, theming, i18n |
+| **📦 npm** | **[npmjs.com/package/@saganta/stellar-appkit](https://www.npmjs.com/package/@saganta/stellar-appkit)** | `@saganta/stellar-appkit` · `@saganta/stellar-appkit-ui-web` · `@saganta/stellar-appkit-siws-verify` |
+| **💻 GitHub** | **[github.com/sagantaHQ/stellar-appkit](https://github.com/sagantaHQ/stellar-appkit)** | Source code, issues, discussions, releases |
+
+---
+
 ## Why this exists
 
 Stellar already has solid wallet-connection plumbing — [SEP-43](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0043.md) is an emerging standard interface several wallets are converging on, and [`@creit-tech/stellar-wallets-kit`](https://github.com/Creit-Tech/Stellar-Wallets-Kit) is a mature, headless connector library covering most of the ecosystem. Neither ships what this does:

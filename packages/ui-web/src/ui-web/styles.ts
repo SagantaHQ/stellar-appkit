@@ -75,6 +75,12 @@ export function buildStyles(theme: ConnectTheme): string {
       cursor: grab;
       touch-action: none;
       transition: background 0.15s ease;
+      /* Make the grab area larger than the visible handle — users expect
+         to grab a ~24px tall area, not just the 5px visual. The extra
+         padding is transparent but receives pointer events. */
+      padding: 10px 0;
+      box-sizing: content-box;
+      margin-top: 0;
     }
     .drag-handle:active {
       cursor: grabbing;

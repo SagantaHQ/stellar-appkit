@@ -324,6 +324,11 @@ export class SagantaAppKitModal extends ModalBase {
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
     if (panel) {
+      // Disable the CSS transition on the panel so it doesn't fight the WAAPI
+      // enter animation. The CSS transition (transform 320ms) would try to
+      // animate the panel from translateY(100%) to translateY(0) at the same
+      // time the WAAPI animation is running its own keyframes — they conflict.
+      panel.style.transition = 'none';
       // Set the initial state explicitly so the panel doesn't flash at its
       // final position before the WAAPI animation kicks in.
       panel.style.opacity = '0';
@@ -334,19 +339,28 @@ export class SagantaAppKitModal extends ModalBase {
         anim.onfinish = () => {
           this.activeAnimation = null;
           panel.style.opacity = '';
+          panel.style.transition = '';
         };
-        anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
+        anim.oncancel = () => {
+          this.activeAnimation = null;
+          panel.style.opacity = '';
+          panel.style.transition = '';
+        };
         // Safety fallback: if the animation doesn't complete within 600ms,
-        // force-clear the opacity. This fixes a mobile issue where WAAPI
-        // animations sometimes don't fire onfinish on some Android browsers.
+        // force-clear the opacity + transition. This fixes a mobile issue where
+        // WAAPI animations sometimes don't fire onfinish on some Android browsers.
         setTimeout(() => {
           if (panel.style.opacity === '0') {
             panel.style.opacity = '';
+          }
+          if (panel.style.transition === 'none') {
+            panel.style.transition = '';
           }
         }, 600);
       } else {
         // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
         panel.style.opacity = '';
+        panel.style.transition = '';
       }
     }
     // Animate overlay opacity separately
@@ -388,15 +402,26 @@ export class SagantaAppKitModal extends ModalBase {
     // Cancel any ongoing enter animation
     this.cancelActiveAnimation();
 
-    // Set data-open="false" to trigger the CSS exit transition as a fallback.
-    const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
-    if (overlayEl) {
-      overlayEl.setAttribute('data-open', 'false');
-    }
-
-    // Play the exit animation via WAAPI, then clean up.
+    // Get the panel + overlay elements.
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
+
+    // Disable the CSS transition on the panel BEFORE playing the WAAPI exit
+    // animation. Without this, the CSS transition (transform 320ms) fights
+    // the WAAPI animation — the CSS transition tries to animate transform
+    // back to translateY(100%) when data-open flips to false, which conflicts
+    // with the WAAPI keyframes. The WAAPI animation should be the sole driver.
+    if (panel) {
+      panel.style.transition = 'none';
+    }
+
+    // Set data-open="false" — this is used by CSS for the overlay opacity
+    // transition (which is CSS-based, not WAAPI) and for accessibility state.
+    // The panel's CSS transition is disabled above so it doesn't fight WAAPI.
+    if (overlay) {
+      overlay.setAttribute('data-open', 'false');
+    }
+
     const { close } = this.getResolvedAnimations();
 
     const finishClose = () => {
@@ -405,9 +430,15 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
-      // Clear any inline styles left over from drag/spring so the next open() starts clean
-      if (panel) panel.style.transform = '';
-      if (panel) panel.style.opacity = '';
+      // Clear any inline styles left over from drag/spring/animation so the
+      // next open() starts clean. This includes the transition: none we set
+      // above — restore it so the next open() can use the CSS transition.
+      if (panel) {
+        panel.style.transform = '';
+        panel.style.opacity = '';
+        panel.style.transition = '';
+        panel.style.filter = '';
+      }
       if (overlay) overlay.style.opacity = '';
 
       // SIWS disconnect-on-close logic:
@@ -1875,6 +1906,15 @@ export class SagantaAppKitModal extends ModalBase {
       // X icon doesn't close the modal.
       const target = e.target as HTMLElement | null;
       if (target?.closest('button, a, [data-action], input, select, textarea, [contenteditable="true"]')) return;
+
+      // Only start dragging from the drag handle, the header area, or the
+      // footer area — NOT from the body content (which may contain scrollable
+      // lists, preview content, etc. where the user expects to scroll, not
+      // drag the sheet). The drag handle is the primary grab target; the
+      // header is a secondary grab target (common in native bottom sheets).
+      const isInDragZone = target?.closest('.drag-handle, .header, .footer, .connecting-view, .signing-view, .error-state');
+      if (!isInDragZone) return;
+
       dragging = true;
       startY = e.clientY;
       lastY = e.clientY;
