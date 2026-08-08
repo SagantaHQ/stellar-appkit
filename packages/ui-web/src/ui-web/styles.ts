@@ -539,16 +539,16 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+      /* Background image set via inline style on the element.
+         Using background-image instead of <img> prevents the flash
+         on re-render — the browser caches the decoded image and
+         applies it instantly via CSS, no DOM element to destroy/recreate. */
+      background-size: 28px 28px;
+      background-position: center;
+      background-repeat: no-repeat;
     }
     /* Wallet tile icon scales up subtly on row hover — feels responsive. */
     .wallet-row:hover .wallet-tile { transform: scale(1.08); }
-    .wallet-tile img {
-      width: 28px;
-      height: 28px;
-      object-fit: contain;
-      border-radius: 7px;
-      padding: 0;
-    }
     .wallet-name { font-size: 14px; font-weight: 500; flex: 1; text-align: left; }
     .wallet-sub { font-size: 12px; color: ${v('colorTextMuted', theme)}; }
     /* "Installed" badge — outline variant.

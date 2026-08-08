@@ -293,48 +293,56 @@ export class SagantaAppKitModal extends ModalBase {
     document.addEventListener('keydown', this.handleGlobalKeydown);
 
     // Render IMMEDIATELY with whatever walletList data we have.
-    // render() sets data-open="false" because hasEnteredOpenState is false.
     this.render();
 
-    // CRITICAL: Set data-open="true" IMMEDIATELY after render().
-    // This triggers the CSS transition:
+    // Set data-open="true" IMMEDIATELY after render().
+    // This triggers the CSS transition as a FALLBACK:
     //   .overlay[data-open="true"] .panel { transform: translateY(0); opacity: 1; }
-    // The CSS transition is the PRIMARY animation mechanism — it's reliable on
-    // all browsers including mobile. The WAAPI animation below is a progressive
-    // enhancement for custom presets (implode, slide-left, etc.).
-    //
-    // Previous bug: data-open stayed "false" because hasEnteredOpenState was
-    // set AFTER the WAAPI animation setup. On mobile where WAAPI doesn't fire
-    // reliably, the panel stayed at translateY(100%) (off-screen) forever.
+    // The WAAPI animation below is the PRIMARY mechanism (smoother, supports
+    // custom presets). But on mobile where WAAPI doesn't fire reliably, the
+    // CSS transition ensures the panel is always visible.
     this.hasEnteredOpenState = true;
     const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
     if (overlayEl) {
       overlayEl.setAttribute('data-open', 'true');
     }
 
-    // WAAPI animation — progressive enhancement for custom presets.
-    // Only runs when the user explicitly sets animation/animation-open attributes
-    // or modal.animation config. For the default animations (scale-blur, slide-up),
-    // the CSS transition handles everything — no WAAPI needed, no risk of
-    // onfinish not firing on mobile.
-    const animAttr = this.getAttribute('animation');
-    const openAnimAttr = this.getAttribute('animation-open');
-    const closeAnimAttr = this.getAttribute('animation-close');
-    const hasCustomAnimation = !!(animAttr || openAnimAttr || closeAnimAttr || this._client?.modalConfig?.animation);
-
+    // WAAPI animation — primary mechanism for smooth custom presets.
     const panel = this.root.querySelector<HTMLElement>('.panel');
-    if (panel && hasCustomAnimation) {
+    const overlay = this.root.querySelector<HTMLElement>('.overlay');
+    if (panel) {
+      // Set the initial state explicitly so the panel doesn't flash at its
+      // final position before the WAAPI animation kicks in.
+      panel.style.opacity = '0';
       const { open } = this.getResolvedAnimations();
       const anim = open.enter(panel);
       if (anim) {
         this.activeAnimation = anim;
-        anim.onfinish = () => { this.activeAnimation = null; };
-        anim.oncancel = () => { this.activeAnimation = null; };
+        anim.onfinish = () => {
+          this.activeAnimation = null;
+          panel.style.opacity = '';
+        };
+        anim.oncancel = () => { this.activeAnimation = null; panel.style.opacity = ''; };
+        // Safety fallback: if the animation doesn't complete within 600ms,
+        // force-clear the opacity. This fixes a mobile issue where WAAPI
+        // animations sometimes don't fire onfinish on some Android browsers.
+        setTimeout(() => {
+          if (panel.style.opacity === '0') {
+            panel.style.opacity = '';
+          }
+        }, 600);
+      } else {
+        // Animation was null (e.g. `none` preset or prefers-reduced-motion) — clear immediately
+        panel.style.opacity = '';
       }
     }
+    // Animate overlay opacity separately
+    if (overlay) {
+      overlay.style.opacity = '0';
+      overlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease', fill: 'forwards' })
+        .onfinish = () => { overlay.style.opacity = ''; };
+    }
 
-    // Overlay fade-in via CSS transition (data-open="true" triggers it).
-    // No WAAPI needed — the CSS transition on .overlay handles the opacity.
     this.releaseFocusTrap = trapFocus(this.root, () => this.root.querySelector<HTMLElement>('.panel'));
 
     // Fetch wallet reachability in the background — re-renders when done.
@@ -367,8 +375,16 @@ export class SagantaAppKitModal extends ModalBase {
     // Cancel any ongoing enter animation
     this.cancelActiveAnimation();
 
+    // Set data-open="false" to trigger the CSS exit transition as a fallback.
+    const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
+    if (overlayEl) {
+      overlayEl.setAttribute('data-open', 'false');
+    }
+
+    // Play the exit animation via WAAPI, then clean up.
     const panel = this.root.querySelector<HTMLElement>('.panel');
     const overlay = this.root.querySelector<HTMLElement>('.overlay');
+    const { close } = this.getResolvedAnimations();
 
     const finishClose = () => {
       document.removeEventListener('keydown', this.handleGlobalKeydown);
@@ -388,37 +404,26 @@ export class SagantaAppKitModal extends ModalBase {
       return;
     }
 
-    // Set data-open="false" to trigger the CSS exit transition.
-    // The CSS transition animates:
-    //   .panel { transform: translateY(100%) / scale(0.94); opacity: 0; }
-    //   .overlay { opacity: 0; }
-    // This is the PRIMARY animation mechanism — reliable on all browsers.
-    if (overlay) {
-      overlay.setAttribute('data-open', 'false');
-    }
-
-    // Check if a custom WAAPI animation is set — if so, use it instead
-    const animAttr = this.getAttribute('animation');
-    const openAnimAttr = this.getAttribute('animation-open');
-    const closeAnimAttr = this.getAttribute('animation-close');
-    const hasCustomAnimation = !!(animAttr || openAnimAttr || closeAnimAttr || this._client?.modalConfig?.animation);
-
-    if (hasCustomAnimation && panel) {
-      const { close } = this.getResolvedAnimations();
+    if (panel) {
       const anim = close.exit(panel);
       if (anim) {
         this.activeAnimation = anim;
         anim.onfinish = () => { this.activeAnimation = null; finishClose(); };
         anim.oncancel = () => { this.activeAnimation = null; };
+        // Safety timeout in case animation doesn't fire onfinish
         setTimeout(() => { if (this.activeAnimation === anim) finishClose(); }, 500);
-        return;
+      } else {
+        finishClose();
       }
+    } else {
+      finishClose();
     }
 
-    // Default: wait for CSS transition to finish, then clean up.
-    // Transitions are 320ms for the panel + 220ms for the overlay.
-    // 350ms gives enough time for both to complete.
-    setTimeout(finishClose, 350);
+    // Animate overlay opacity separately (only when not skipping — drag-dismiss
+    // fades the overlay via the spring itself)
+    if (overlay) {
+      overlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease', fill: 'forwards' });
+    }
   }
 
   /** Cancel any active WAAPI animation (interruption handling). */
@@ -1214,9 +1219,7 @@ export class SagantaAppKitModal extends ModalBase {
         if (notInstalled) {
           return `
             <button class="wallet-row wallet-row--not-installed" data-action="select-wallet" data-wallet-id="${connector.id}">
-              <span class="wallet-tile">
-                <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="${onerrorHandler}" />
-                ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
+              <span class="wallet-tile" style="background-image: url('${escapeAttr(connector.meta.icon)}')">
               </span>
               <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
               <span class="wallet-sub">Not installed</span>
@@ -1242,9 +1245,7 @@ export class SagantaAppKitModal extends ModalBase {
 
         return `
           <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability !== 'available'}" ${disabled ? 'disabled' : ''}>
-            <span class="wallet-tile ${isConnecting ? 'connecting' : ''}">
-              <img src="${escapeAttr(connector.meta.icon)}" alt="" onerror="${onerrorHandler}" />
-              ${fallbackIcon ? '' : `<span style="display:none; width:18px; height:18px;">${genericWalletIcon}</span>`}
+            <span class="wallet-tile ${isConnecting ? 'connecting' : ''}" style="background-image: url('${escapeAttr(connector.meta.icon)}')">
             </span>
             <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>
             <span class="${subLabelClass}">${subLabel}</span>
