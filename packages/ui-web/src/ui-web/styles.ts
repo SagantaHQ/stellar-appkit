@@ -26,6 +26,8 @@ export function buildStyles(theme: ConnectTheme): string {
     .overlay {
       position: fixed;
       inset: 0;
+      max-width: 100vw;
+      overflow-x: clip;
       background: ${v('overlayColor', theme)};
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
@@ -43,7 +45,7 @@ export function buildStyles(theme: ConnectTheme): string {
     .overlay[data-mode="modal"] { align-items: center; justify-content: center; padding: 24px; }
     .overlay[data-mode="modal"] .panel {
       width: 100%;
-      max-width: 380px;
+      max-width: min(380px, 100vw);
       border-radius: ${v('radiusLg', theme)};
       transform: scale(0.94) translateY(8px);
       opacity: 0;
@@ -55,7 +57,7 @@ export function buildStyles(theme: ConnectTheme): string {
     .overlay[data-mode="bottomsheet"] { align-items: flex-end; justify-content: center; padding: 0; }
     .overlay[data-mode="bottomsheet"] .panel {
       width: 100%;
-      max-width: 560px;
+      max-width: min(560px, 100vw);
       border-radius: ${v('radiusLg', theme)} ${v('radiusLg', theme)} 0 0;
       padding-bottom: env(safe-area-inset-bottom, 0px);
       transform: translateY(100%);
