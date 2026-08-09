@@ -45,7 +45,7 @@ const th: LocaleMessages = {
       "locked": "ล็อค",
       "unavailable": "ไม่พร้อมใช้งาน",
       "installed": "ติดตั้งแล้ว",
-      "scan_qr": "สแกน QR Code"
+      "scan_qr": "สแกน QRCode"
     }
   },
   "connecting": {
