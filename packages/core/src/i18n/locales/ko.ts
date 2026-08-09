@@ -44,7 +44,8 @@ const ko: LocaleMessages = {
       "connecting": "연결 중…",
       "locked": "잠김",
       "unavailable": "사용 불가",
-      "installed": "설치됨"
+      "installed": "설치됨",
+      "scan_qr": "QR 코드 스캔"
     }
   },
   "connecting": {

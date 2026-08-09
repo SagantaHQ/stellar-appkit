@@ -44,7 +44,8 @@ const fa: LocaleMessages = {
       "connecting": "در حال اتصال…",
       "locked": "قفل شده",
       "unavailable": "غیرفعال",
-      "installed": "نصب شده"
+      "installed": "نصب شده",
+      "scan_qr": "اسکن کد QR"
     }
   },
   "connecting": {

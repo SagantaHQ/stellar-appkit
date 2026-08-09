@@ -44,7 +44,8 @@ const cs: LocaleMessages = {
       "connecting": "Připojování…",
       "locked": "Uzamčeno",
       "unavailable": "Nedostupné",
-      "installed": "Nainstalováno"
+      "installed": "Nainstalováno",
+      "scan_qr": "Naskenovat QR kód"
     }
   },
   "connecting": {

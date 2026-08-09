@@ -47,10 +47,20 @@ export class ConnectorRegistry {
         }
       })
     );
-    return entries.map((connector, i) => ({
+    const result = entries.map((connector, i) => ({
       connector,
       reachability: reachability[i] ?? 'unavailable',
       available: reachability[i] === 'available',
     }));
+    // Pin WalletConnect to the top of the list when present. It's the only
+    // "always-available" connector (it's a relay, not a browser extension),
+    // and surfacing it first tells users they can pair a mobile wallet even
+    // if no extension is installed. Other connectors keep their registration
+    // order.
+    return result.sort((a, b) => {
+      if (a.connector.id === 'walletconnect' && b.connector.id !== 'walletconnect') return -1;
+      if (b.connector.id === 'walletconnect' && a.connector.id !== 'walletconnect') return 1;
+      return 0;
+    });
   }
 }

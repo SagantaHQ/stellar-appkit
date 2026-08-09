@@ -1408,10 +1408,16 @@ export class SagantaAppKitModal extends ModalBase {
         // The "Installed" label makes it visually obvious which wallets are
         // ready to use vs. which need to be installed first (those show an
         // "Install" button instead of a subLabel — see the not-installed branch above).
+        //
+        // WalletConnect is special — it's never "installed" in the browser-extension
+        // sense (it's a cloud relay). Showing "Installed" there is misleading, so
+        // we swap the label to "Scan QR Code" to hint at the actual pairing flow.
+        const isWalletConnect = connector.id === 'walletconnect';
         const subLabel =
           isConnecting ? t('wallet_list.status.connecting')
           : reachability === 'locked' ? t('wallet_list.status.locked')
           : reachability === 'unavailable' ? t('wallet_list.status.unavailable')
+          : isWalletConnect ? t('wallet_list.status.scan_qr')
           : t('wallet_list.status.installed');
         const subLabelClass =
           isConnecting || reachability === 'locked' || reachability === 'unavailable'

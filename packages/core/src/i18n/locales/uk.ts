@@ -44,7 +44,8 @@ const uk: LocaleMessages = {
       "connecting": "Підключення…",
       "locked": "Заблоковано",
       "unavailable": "Недоступний",
-      "installed": "Встановлено"
+      "installed": "Встановлено",
+      "scan_qr": "Сканувати QR-код"
     }
   },
   "connecting": {

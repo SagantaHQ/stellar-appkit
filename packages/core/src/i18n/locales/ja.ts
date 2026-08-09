@@ -44,7 +44,8 @@ const ja: LocaleMessages = {
       "connecting": "接続中…",
       "locked": "ロック中",
       "unavailable": "利用不可",
-      "installed": "インストール済み"
+      "installed": "インストール済み",
+      "scan_qr": "QRコードをスキャン"
     }
   },
   "connecting": {

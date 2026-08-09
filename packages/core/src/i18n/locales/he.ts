@@ -44,7 +44,8 @@ const he: LocaleMessages = {
       "connecting": "מתחבר…",
       "locked": "נעול",
       "unavailable": "לא זמין",
-      "installed": "מותקן"
+      "installed": "מותקן",
+      "scan_qr": "סרוק קוד QR"
     }
   },
   "connecting": {

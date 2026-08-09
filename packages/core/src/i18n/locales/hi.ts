@@ -44,7 +44,8 @@ const hi: LocaleMessages = {
       "connecting": "कनेक्ट हो रहा है…",
       "locked": "लॉक्ड",
       "unavailable": "अनुपलब्ध",
-      "installed": "स्थापित"
+      "installed": "स्थापित",
+      "scan_qr": "QR कोड स्कैन करें"
     }
   },
   "connecting": {

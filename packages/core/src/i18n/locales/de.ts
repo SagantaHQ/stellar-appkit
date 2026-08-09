@@ -44,7 +44,8 @@ const de: LocaleMessages = {
       "connecting": "Verbinde…",
       "locked": "Gesperrt",
       "unavailable": "Nicht verfügbar",
-      "installed": "Installiert"
+      "installed": "Installiert",
+      "scan_qr": "QR-Code scannen"
     }
   },
   "connecting": {

@@ -44,7 +44,8 @@ const zh_TW: LocaleMessages = {
       "connecting": "連接中…",
       "locked": "已鎖定",
       "unavailable": "不可用",
-      "installed": "已安裝"
+      "installed": "已安裝",
+      "scan_qr": "掃描 QR Code"
     }
   },
   "connecting": {

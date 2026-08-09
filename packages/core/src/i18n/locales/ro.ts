@@ -44,7 +44,8 @@ const ro: LocaleMessages = {
       "connecting": "Se conectează…",
       "locked": "Blocat",
       "unavailable": "Indisponibil",
-      "installed": "Instalat"
+      "installed": "Instalat",
+      "scan_qr": "Scanează codul QR"
     }
   },
   "connecting": {

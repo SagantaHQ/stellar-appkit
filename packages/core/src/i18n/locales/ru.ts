@@ -44,7 +44,8 @@ const ru: LocaleMessages = {
       "connecting": "Подключение…",
       "locked": "Заблокирован",
       "unavailable": "Недоступен",
-      "installed": "Установлен"
+      "installed": "Установлен",
+      "scan_qr": "Сканировать QR-код"
     }
   },
   "connecting": {

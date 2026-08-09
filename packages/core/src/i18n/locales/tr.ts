@@ -44,7 +44,8 @@ const tr: LocaleMessages = {
       "connecting": "Bağlanıyor…",
       "locked": "Kilitli",
       "unavailable": "Kullanılamaz",
-      "installed": "Yüklü"
+      "installed": "Yüklü",
+      "scan_qr": "QR kod tara"
     }
   },
   "connecting": {

@@ -44,7 +44,8 @@ const zh_CN: LocaleMessages = {
       "connecting": "连接中…",
       "locked": "已锁定",
       "unavailable": "不可用",
-      "installed": "已安装"
+      "installed": "已安装",
+      "scan_qr": "扫描二维码"
     }
   },
   "connecting": {

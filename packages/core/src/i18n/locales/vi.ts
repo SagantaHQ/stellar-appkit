@@ -44,7 +44,8 @@ const vi: LocaleMessages = {
       "connecting": "Đang kết nối…",
       "locked": "Đã khóa",
       "unavailable": "Không khả dụng",
-      "installed": "Đã cài đặt"
+      "installed": "Đã cài đặt",
+      "scan_qr": "Quét mã QR"
     }
   },
   "connecting": {

@@ -44,7 +44,8 @@ const ar: LocaleMessages = {
       "connecting": "جارٍ التوصيل…",
       "locked": "مقفل",
       "unavailable": "غير متاح",
-      "installed": "مثبت"
+      "installed": "مثبت",
+      "scan_qr": "امسح رمز QR"
     }
   },
   "connecting": {

@@ -44,7 +44,8 @@ const pt_BR: LocaleMessages = {
       "connecting": "Conectando…",
       "locked": "Bloqueada",
       "unavailable": "Indisponível",
-      "installed": "Instalada"
+      "installed": "Instalada",
+      "scan_qr": "Escanear QR Code"
     }
   },
   "connecting": {

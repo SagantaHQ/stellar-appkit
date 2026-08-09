@@ -44,7 +44,8 @@ const sv: LocaleMessages = {
       "connecting": "Ansluter…",
       "locked": "Låst",
       "unavailable": "Otillgänglig",
-      "installed": "Installerad"
+      "installed": "Installerad",
+      "scan_qr": "Skanna QR-kod"
     }
   },
   "connecting": {

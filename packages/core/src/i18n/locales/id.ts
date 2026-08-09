@@ -44,7 +44,8 @@ const id: LocaleMessages = {
       "connecting": "Menghubungkan…",
       "locked": "Terkunci",
       "unavailable": "Tidak tersedia",
-      "installed": "Terpasang"
+      "installed": "Terpasang",
+      "scan_qr": "Pindai kode QR"
     }
   },
   "connecting": {
