@@ -61,7 +61,7 @@ export const en = {
       installed: 'Installed',
       // Shown for WalletConnect — it's never "installed" in the browser-extension
       // sense; the user scans a QR code with a mobile wallet to pair.
-      scan_qr: 'Scan QRCode',
+      scan_qr: 'Scan QR Code',
     },
   },
 
@@ -79,7 +79,7 @@ export const en = {
     open_in_wallet: 'Open in wallet app',
     copy_uri: 'Copy URI',
     copied: 'Copied!',
-    generating_code: 'Generating QRCode…',
+    generating_code: 'Generating QR Code…',
     qr_failed: 'QR generation failed. Use the copy button below.',
   },
 

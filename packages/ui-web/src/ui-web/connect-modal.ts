@@ -101,6 +101,8 @@ export class SagantaAppKitModal extends ModalBase {
   private fundsRequested = false;
   /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
   private _pendingSignCount = 0;
+  /** Interval ID for the balance + tx history polling (every 15s while connected). */
+  private balancePollInterval: ReturnType<typeof setInterval> | null = null;
   private cachedTxHistory: Array<{ hash: string; type: string; amount: string; asset: string; date: string; success: boolean }> = [];
   private pendingAccountPicker: { connector: WalletConnector; accounts: WalletAccountOption[] } | null = null;
   private pendingPreview: { preview: TransactionPreview; resolve: (approved: boolean) => void; wasAlreadyOpen: boolean } | null = null;
@@ -146,6 +148,7 @@ export class SagantaAppKitModal extends ModalBase {
     this.swipeController = null;
     this.modalAnimator.destroy();
     this.bottomsheetAnimator.destroy();
+    this.stopBalancePolling();
     this.clientUnsubscribers.forEach((unsub) => unsub());
     this.localeUnsubscriber?.();
   }
@@ -178,6 +181,10 @@ export class SagantaAppKitModal extends ModalBase {
       client.on('disconnect', ({ walletId }) => {
         this.dispatchEvent(new CustomEvent('sc-disconnect', { detail: { walletId }, bubbles: true, composed: true }));
         this.view = client.sessions.length > 0 ? 'connected' : 'wallet-list';
+        // Stop polling when no sessions remain
+        if (client.sessions.length === 0) {
+          this.stopBalancePolling();
+        }
         this.render();
       }),
       client.on('accountSwitch', () => {
@@ -186,6 +193,12 @@ export class SagantaAppKitModal extends ModalBase {
       }),
       client.on('sessionsChanged', () => {
         this.refreshAccountData();
+        // Start polling when a session exists, stop when none remain
+        if (client.session) {
+          this.startBalancePolling();
+        } else {
+          this.stopBalancePolling();
+        }
       }),
       client.on('signQueueChange', () => {
         // When the sign queue empties during signing, check if there was
@@ -503,6 +516,29 @@ export class SagantaAppKitModal extends ModalBase {
     if (!this._client) return;
     this.walletList = await this._client.registry.listReachability();
     this.render();
+  }
+
+  /**
+   * Starts polling the balance + tx history every 15 seconds while connected.
+   * 15s is a good interval — frequent enough to feel live, not so frequent
+   * that it hammers Horizon's API or causes unnecessary re-renders.
+   * Cleared on disconnect or when the modal is destroyed.
+   */
+  private startBalancePolling() {
+    if (this.balancePollInterval) return; // already polling
+    this.balancePollInterval = setInterval(() => {
+      // Only poll if we're still connected + the modal is open
+      if (this._client?.session && this.isOpen) {
+        void this.refreshAccountData();
+      }
+    }, 15_000);
+  }
+
+  private stopBalancePolling() {
+    if (this.balancePollInterval) {
+      clearInterval(this.balancePollInterval);
+      this.balancePollInterval = null;
+    }
   }
 
   /**
