@@ -325,13 +325,15 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-frame {
       width: 256px;
       height: 256px;
-      border-radius: 16px;
+      /* Reown-style: generous rounded corners + thick border for a premium,
+         scannable QR frame. The border defines the QR boundary clearly. */
+      border-radius: 24px;
       overflow: hidden;
       background: #fff;
-      /* No padding — the canvas fills the entire frame so the QR covers
-         the whole surface. The qr-creator background option paints the
-         white quiet zone into the canvas itself. */
+      /* The QR image (generated with margin: 2) includes its own white quiet
+         zone, so no padding needed here — the image fills the frame. */
       padding: 0;
+      /* Soft elevation shadow — premium floating look */
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
       display: flex;
       align-items: center;
@@ -348,11 +350,13 @@ export function buildStyles(theme: ConnectTheme): string {
       display: flex !important;
     }
     .wc-qr-img {
-      /* QR image fills the entire frame — covers the whole surface */
+      /* QR image fills the entire frame — the margin: 2 in the QR generation
+         provides the quiet zone, and object-fit: contain ensures the QR is
+         not distorted (cover would crop the quiet zone). */
       width: 100%;
       height: 100%;
       display: block;
-      object-fit: cover;
+      object-fit: contain;
     }
     /* WalletConnect logo overlay in the center of the QR.
        Premium squircle icon with soft drop shadow — matches the wallet-tile

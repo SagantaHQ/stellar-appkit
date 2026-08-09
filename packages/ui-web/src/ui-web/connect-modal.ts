@@ -613,16 +613,21 @@ export class SagantaAppKitModal extends ModalBase {
         this.wcPairingUri = uri;
         this.wcQrDataUri = null; // reset any previous QR data URI
         // Pre-render the QR code as a data URI using the `qrcode` library.
-        // ecLevel 'H' (30% redundancy) because the modal overlays a 44px
-        // wallet logo in the center of the QR — 'H' gives enough fault
-        // tolerance for scanners to read the code even with the center
-        // obscured. margin: 0 because the .wc-qr-frame provides the white
-        // padding via its own background.
+        // Config follows Reown/AppKit's proven scannable approach:
+        // - errorCorrectionLevel 'M' (15% redundancy) — the qrcode library
+        //   default, dense enough for scanners but not overly dense like 'H'.
+        //   Reown uses this level; 'H' (30%) makes the QR harder to scan
+        //   because the modules are more tightly packed.
+        // - margin: 2 — the quiet zone (white padding) that scanners need to
+        //   detect the QR boundary. margin: 0 caused scanning failures.
+        // - scale: 8 — generates the QR at its natural module size × 8 (not
+        //   forcing an arbitrary pixel width). The container's CSS handles
+        //   the displayed size, avoiding distortion.
         QRCode.toDataURL(uri, {
-          margin: 0,
-          width: 256,
+          margin: 2,
+          scale: 8,
           color: { dark: '#000000', light: '#ffffff' },
-          errorCorrectionLevel: 'H',
+          errorCorrectionLevel: 'M',
         }).then((dataUri: string) => {
           this.wcQrDataUri = dataUri;
           this.render();
