@@ -687,6 +687,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           try {
             const networkResult = await wc.request({
               topic: sessionTopic,
+              chainId: resolveWcChainId(),
               request: { method: 'stellar_getNetwork', params: {} },
             }) as { network?: string; networkPassphrase?: string };
             if (networkResult?.networkPassphrase) {
@@ -765,6 +766,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         }
         const result = await client.request({
           topic: sessionTopic,
+          chainId: resolveWcChainId(),
           request: {
             method: 'stellar_signXDR',
             params: {
@@ -803,6 +805,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // Response: { signedAuthEntry, signerAddress }
         const result = await client.request({
           topic: sessionTopic,
+          chainId: resolveWcChainId(),
           request: {
             method: 'stellar_signAuthEntry',
             params: {
@@ -841,6 +844,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         try {
           const result = await client.request({
             topic: sessionTopic,
+            chainId: resolveWcChainId(),
             request: {
               method: 'stellar_signMessage',
               params: {
@@ -866,11 +870,12 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             signedData: Buffer.from(message, 'utf-8').toString('base64'),
           };
         } catch (err) {
-          // If stellar_signMessage isn't supported, fall back to signing
-          // the message as a transaction (wrap it in an invokeHostFunction
-          // op). This is a last resort — not all wallets will accept it.
+          // stellar_signMessage may not be supported by all wallets (it's
+          // in optionalNamespaces). Provide a clear error message that
+          // helps the user understand what went wrong.
+          const errMsg = err instanceof Error ? err.message : String(err);
           throw ConnectError.invalidRequest(
-            `WalletConnect wallet does not support stellar_signMessage: ${err instanceof Error ? err.message : String(err)}`,
+            `WalletConnect wallet does not support stellar_signMessage (this method is optional — the wallet may not implement it). Error: ${errMsg}`,
             undefined,
             meta.id
           );

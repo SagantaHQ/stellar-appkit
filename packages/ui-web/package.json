@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit-ui-web",
-  "version": "1.9.11",
+  "version": "1.9.12",
   "description": "Web UI for @saganta/stellar-appkit — Shadow DOM modal, framework wrappers for React, Vue, Solid, and Svelte.",
   "type": "module",
   "sideEffects": [
