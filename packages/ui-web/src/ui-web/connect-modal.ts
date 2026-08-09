@@ -1181,10 +1181,16 @@ export class SagantaAppKitModal extends ModalBase {
     const title = this.getAttribute('title') ?? this.defaultTitle();
     const logoSrc = this.getAttribute('logo-src');
 
-    // When connecting, show the wallet name centered with a back arrow on the left
-    // (back cancels the connecting state and returns to the wallet list).
-    if (this.view === 'connecting' && this.connectingWalletId) {
-      const connector = this._client?.registry.get(this.connectingWalletId);
+    // When connecting or in an error state, show the wallet name centered
+    // with a back arrow on the left (back cancels the connecting state and
+    // returns to the wallet list so the user can try another wallet).
+    const isErrorView = this.view === 'connecting' || this.view === 'error' ||
+      this.view === 'network-mismatch' || this.view === 'siws-error' ||
+      (this.view === 'signing' && this.connectingError);
+    if (isErrorView && (this.connectingWalletId || this.connectingError)) {
+      const connector = this.connectingWalletId
+        ? this._client?.registry.get(this.connectingWalletId)
+        : this._client?.activeConnector;
       const walletName = connector?.meta.name ?? t('wallet.fallback_name');
       return `
         <div class="header header--connecting">
