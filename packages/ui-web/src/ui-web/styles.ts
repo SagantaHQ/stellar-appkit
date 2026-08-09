@@ -359,15 +359,18 @@ export function buildStyles(theme: ConnectTheme): string {
       object-fit: contain;
     }
     /* WalletConnect logo overlay in the center of the QR.
-       Premium squircle icon with soft drop shadow — matches the wallet-tile
-       aesthetic so the QR logo looks consistent with the wallet list.
-       Uses overflow: hidden to clip the background-image into the rounded corners. */
+       Larger + grayscale like Reown's QR logo — the desaturated logo sits
+       prominently in the center without competing with the QR modules for
+       visual attention. Uses overflow: hidden to clip the background-image
+       into the rounded corners. */
     .wc-qr-logo {
       position: absolute;
-      width: 44px;
-      height: 44px;
+      /* Larger than before (56px vs 44px) — ~22% of the 256px QR,
+         matching Reown's center logo proportions (~20-25%). */
+      width: 56px;
+      height: 56px;
       /* Squircle radius matching wallet-tile */
-      border-radius: 18px;
+      border-radius: 22px;
       background: #fff;
       /* No padding — logo fills the container edge-to-edge (cover) */
       padding: 0;
@@ -389,6 +392,10 @@ export function buildStyles(theme: ConnectTheme): string {
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
+      /* Grayscale — desaturates the wallet logo so it doesn't compete
+         with the black/white QR modules for visual attention. Reown does
+         the same: the center logo is monochrome. */
+      filter: grayscale(100%);
       display: block;
     }
     .wc-actions {
