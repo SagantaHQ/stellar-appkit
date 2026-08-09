@@ -302,17 +302,17 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
   /**
    * Aborts an in-flight connect() attempt. Set when the user cancels, when
-   * the 60s timeout fires, or when a fatal relay error is detected.
+   * or when a fatal relay error is detected.
    * connect() checks this after every await and bails out if set.
    */
   let connectAborted: boolean = false;
-  let connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  // No connect timeout — the user can take as long as they need to scan
+  // the QR and approve in their wallet. We only abort on fatal relay errors.
   /** When a fatal relay error fires, we store the message here so connect()
    *  can include it in the thrown ConnectError. */
   let fatalErrorMessage: string | null = null;
 
   /** Timeout for waiting for the wallet to approve the pairing — 60s. */
-  const CONNECT_TIMEOUT_MS = 60_000;
 
   /**
    * Tears down the WC client's WebSocket relay and clears the singleton.
@@ -441,11 +441,6 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
           // Tear down the client to stop the retry loop
           teardownClient();
-          // Clear any pending timeout
-          if (connectTimeoutTimer) {
-            clearTimeout(connectTimeoutTimer);
-            connectTimeoutTimer = null;
-          }
         }
       };
 
@@ -619,25 +614,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // Uses the late-bound handler (may have been overwritten by the modal).
         if (uri && onUriHandler) onUriHandler(uri);
 
-        // Wait for the wallet to approve with a 60-second timeout.
-        // If the relay is down (e.g. invalid projectId → "Project not found"),
-        // the approval() promise would hang forever without this timeout.
-        // We race approval() against:
-        //   1. A 60s timeout
-        //   2. An abort promise that rejects immediately when connectAborted
-        //      is set (by the fatal relay error handler)
-        // This ensures the user sees the error within seconds, not 60s.
-        let timeoutFired = false;
-        connectTimeoutTimer = setTimeout(() => {
-          timeoutFired = true;
-          connectAborted = true;
-          teardownClient();
-        }, CONNECT_TIMEOUT_MS);
-
-        // Reuse the abortPromise created earlier (before wc.connect()).
-        // It rejects as soon as connectAborted becomes true (checked every 200ms).
-        try {
-          const session = await Promise.race([
+        // Wait for the wallet to approve — NO TIMEOUT.
+        // The user may take as long as they need to scan the QR code and
+        // approve in their wallet. We only abort if:
+        //   1. A fatal relay error fires (e.g. invalid projectId → "Project
+        //      not found", relay unreachable, etc.)
+        //   2. The user cancels (connectAborted is set by the caller)
+        // The abort promise rejects immediately when connectAborted becomes
+        // true (checked every 200ms by the polling loop).
+        const session = await Promise.race([
             approval() as Promise<{
               topic: string;
               namespaces: Record<string, {
@@ -651,21 +636,16 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             if (err instanceof Error && err.message === '__WC_ABORTED__') {
               const reason = fatalErrorMessage
                 ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
-                : timeoutFired
-                  ? 'WalletConnect connection timed out after 60 seconds. The relay may be unreachable or your projectId may be invalid. Check your projectId at cloud.walletconnect.com and try again.'
-                  : 'WalletConnect connection aborted — relay error (check your projectId).';
+                : 'WalletConnect connection aborted — relay error (check your projectId).';
               throw ConnectError.invalidRequest(reason, undefined, meta.id);
             }
             throw err;
           });
 
-          if (timeoutFired || connectAborted) {
-            // Distinguish between timeout and fatal relay error in the message
+          if (connectAborted) {
             const reason = fatalErrorMessage
               ? `WalletConnect relay error: ${fatalErrorMessage}. Check your projectId at cloud.walletconnect.com.`
-              : timeoutFired
-                ? 'WalletConnect connection timed out after 60 seconds. The relay may be unreachable or your projectId may be invalid. Check your projectId at cloud.walletconnect.com and try again.'
-                : 'WalletConnect connection aborted — relay error (check your projectId).';
+              : 'WalletConnect connection aborted — relay error (check your projectId).';
             throw ConnectError.invalidRequest(reason, undefined, meta.id);
           }
 
@@ -714,13 +694,6 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           }
 
           return { address: cachedAddress!, walletId: meta.id };
-        } finally {
-          // Clear the timeout regardless of success/failure
-          if (connectTimeoutTimer) {
-            clearTimeout(connectTimeoutTimer);
-            connectTimeoutTimer = null;
-          }
-        }
       });
     },
 
