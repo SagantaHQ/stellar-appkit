@@ -359,25 +359,19 @@ export function buildStyles(theme: ConnectTheme): string {
       object-fit: contain;
     }
     /* WalletConnect logo overlay in the center of the QR.
-       Black & white logo on dark gray background — premium monochrome
-       aesthetic that matches the QR's black/white module scheme.
-       Uses overflow: hidden to clip the background-image into the rounded
-       corners. */
+       No filter, no border-radius on the image — just the raw logo with
+       enough padding/margin around it inside the container. */
     .wc-qr-logo {
       position: absolute;
-      /* Larger than before (56px vs 44px) — ~22% of the 256px QR,
-         matching Reown's center logo proportions (~20-25%). */
       width: 56px;
       height: 56px;
       /* Squircle radius matching wallet-tile */
       border-radius: 22px;
-      /* Deep gray background — the logo image is converted to monochrome
-         (pure black & white) via the filter below. The deep gray provides
-         contrast for the white parts of the logo while the black parts
-         blend into the background, creating a clean monochrome look. */
+      /* Deep gray background */
       background: #1b1a1c;
-      /* No padding — logo fills the container edge-to-edge (cover) */
-      padding: 0;
+      /* Padding gives the logo image a margin/breathing room inside the
+         container — the image doesn't touch the edges. */
+      padding: 10px;
       /* Soft drop shadow — premium floating look, matches wallet-tile */
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
       z-index: 1;
@@ -391,21 +385,11 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-logo__img {
       width: 100%;
       height: 100%;
-      /* cover (not contain) — logo fills the entire container edge-to-edge,
-         matching the premium app-icon aesthetic */
-      background-size: cover;
+      /* contain (not cover) — the logo fits inside the padded container
+         without touching the edges. No filter, no border-radius. */
+      background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
-      /* border-radius on the image itself — clips the background-image into
-         rounded corners inside the container. */
-      border-radius: 12px;
-      /* Pure black & white — not just grayscale. grayscale(100%) desaturates
-         but keeps mid-tones; contrast(1000%) forces every pixel to either
-         pure black or pure white, creating a true B&W logo that matches
-         the QR's monochrome aesthetic. The white parts of the logo stay
-         white (visible against the deep gray background), the colored/dark
-         parts become black. */
-      filter: grayscale(100%) contrast(1000%);
       display: block;
     }
     .wc-actions {
