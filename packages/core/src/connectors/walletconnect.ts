@@ -677,7 +677,13 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           const parts = accountStr.split(':');
           cachedAddress = parts[parts.length - 1] ?? null; // last segment is the address
 
-          // Try to get the network from the wallet
+          // Try to get the network from the wallet. Many WC wallets don't
+          // support stellar_getNetwork (it's not part of the core WC Stellar
+          // namespace) — in that case, fall back to the app's configured
+          // network. This prevents a false "network mismatch" error when
+          // the wallet simply doesn't expose its network via WC.
+          const configuredPassphrase = resolveNetworkPassphrase();
+          const configuredNetwork = appkitNetwork ?? 'TESTNET';
           try {
             const networkResult = await wc.request({
               topic: sessionTopic,
@@ -685,15 +691,22 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             }) as { network?: string; networkPassphrase?: string };
             if (networkResult?.networkPassphrase) {
               cachedNetwork = {
-                network: networkResult.network ?? 'UNKNOWN',
+                network: networkResult.network ?? configuredNetwork,
                 networkPassphrase: networkResult.networkPassphrase,
+              };
+            } else {
+              // Wallet responded but didn't include networkPassphrase
+              cachedNetwork = {
+                network: configuredNetwork,
+                networkPassphrase: configuredPassphrase,
               };
             }
           } catch {
-            // Wallet doesn't support stellar_getNetwork — use the configured passphrase
+            // Wallet doesn't support stellar_getNetwork — use the app's
+            // configured network. This is the most common case.
             cachedNetwork = {
-              network: 'UNKNOWN',
-              networkPassphrase: resolveNetworkPassphrase(),
+              network: configuredNetwork,
+              networkPassphrase: configuredPassphrase,
             };
           }
 
