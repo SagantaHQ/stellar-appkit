@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "1.9.16",
+  "version": "1.9.17",
   "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK (no UI).",
   "type": "module",
   "sideEffects": false,
@@ -35,8 +35,6 @@
     "@ledgerhq/hw-transport-webusb": "^6.35.0",
     "@stellar/freighter-api": "^4.1.0",
     "@stellar/stellar-sdk": "^13.0.0",
-    "@trezor/connect-plugin-stellar": "^9.2.6",
-    "@trezor/connect-web": "^9.7.3",
     "@walletconnect/sign-client": "^2.0.0",
     "intl-messageformat": "^11.2.13"
   },
@@ -49,5 +47,9 @@
   },
   "bugs": {
     "url": "https://github.com/sagantaHQ/stellar-appkit/issues"
+  },
+  "optionalDependencies": {
+    "@trezor/connect-web": "^9.7.3",
+    "@trezor/connect-plugin-stellar": "^9.2.6"
   }
 }
