@@ -775,17 +775,23 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
               network: signOpts?.networkPassphrase ?? opts.networkPassphrase,
             },
           },
-        }) as { signedXDR?: string; error?: string };
+        }) as Record<string, unknown>;
 
-        if (result.error) {
-          throw ConnectError.internal(`WalletConnect sign error: ${result.error}`, undefined, meta.id);
+        // WC errors can be objects { code, message } or strings
+        if (result && typeof result === 'object' && 'error' in result) {
+          const err = result.error;
+          const errMsg = typeof err === 'string'
+            ? err
+            : (err as { message?: string })?.message ?? JSON.stringify(err);
+          throw ConnectError.internal(`WalletConnect sign error: ${errMsg}`, undefined, meta.id);
         }
-        if (!result.signedXDR) {
+        const signedXDR = result.signedXDR as string | undefined;
+        if (!signedXDR) {
           throw ConnectError.internal('WalletConnect returned no signed XDR.', undefined, meta.id);
         }
 
         return {
-          signedTxXdr: result.signedXDR,
+          signedTxXdr: signedXDR,
           signerAddress: cachedAddress!,
         };
       });
@@ -813,18 +819,24 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
               publicKey: signOpts?.address ?? cachedAddress ?? undefined,
             },
           },
-        }) as { signedAuthEntry?: string; signerAddress?: string; error?: string };
+        }) as Record<string, unknown>;
 
-        if (result.error) {
-          throw ConnectError.internal(`WalletConnect signAuthEntry error: ${result.error}`, undefined, meta.id);
+        // WC errors can be objects { code, message } or strings
+        if (result && typeof result === 'object' && 'error' in result) {
+          const err = result.error;
+          const errMsg = typeof err === 'string'
+            ? err
+            : (err as { message?: string })?.message ?? JSON.stringify(err);
+          throw ConnectError.internal(`WalletConnect signAuthEntry error: ${errMsg}`, undefined, meta.id);
         }
-        if (!result.signedAuthEntry) {
+        const signedAuthEntry = result.signedAuthEntry as string | undefined;
+        if (!signedAuthEntry) {
           throw ConnectError.internal('WalletConnect returned no signed auth entry.', undefined, meta.id);
         }
 
         return {
-          signedAuthEntry: result.signedAuthEntry,
-          signerAddress: result.signerAddress ?? cachedAddress!,
+          signedAuthEntry,
+          signerAddress: (result.signerAddress as string) ?? cachedAddress!,
         };
       });
     },
@@ -835,12 +847,13 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
         }
 
-        // stellar_signMessage — supported by Freighter Mobile, Hana, and other
-        // WC-compatible Stellar wallets. The response field name varies by
-        // wallet implementation:
+        // stellar_signMessage — supported by Freighter Mobile, Hana, Lobstr,
+        // and other WC-compatible Stellar wallets. The response field name
+        // varies by wallet implementation:
         //   - Freighter Mobile: returns { signature } (per Freighter Mobile WC docs)
         //   - Hana/Lobstr: returns { signedMessage } (older WC Stellar namespace)
-        // We check both to support all wallets.
+        //   - Some wallets: return { signedMsg } or { sig }
+        // We check all known field names to support all wallets.
         try {
           const result = await client.request({
             topic: sessionTopic,
@@ -852,13 +865,30 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
                 publicKey: cachedAddress ?? undefined,
               },
             },
-          }) as { signature?: string; signedMessage?: string; error?: string };
+          }) as Record<string, unknown>;
 
-          if (result.error) throw new Error(result.error);
+          // WC errors can be objects { code, message } or strings — handle both
+          if (result && typeof result === 'object' && 'error' in result) {
+            const err = result.error;
+            const errMsg = typeof err === 'string'
+              ? err
+              : (err as { message?: string })?.message
+                ? (err as { message: string }).message
+                : JSON.stringify(err);
+            throw new Error(errMsg);
+          }
 
-          // Freighter Mobile returns `signature`, other wallets return `signedMessage`
-          const signature = result.signature ?? result.signedMessage;
-          if (!signature) throw new Error('No signature or signedMessage in response');
+          // Check all known response field names
+          const signature =
+            (result.signature as string) ??
+            (result.signedMessage as string) ??
+            (result.signedMsg as string) ??
+            (result.sig as string);
+          if (!signature) {
+            throw new Error(
+              `No signature in response. Response keys: ${Object.keys(result).join(', ')}`
+            );
+          }
 
           return {
             signedMessage: signature,
@@ -870,10 +900,19 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             signedData: Buffer.from(message, 'utf-8').toString('base64'),
           };
         } catch (err) {
-          // stellar_signMessage may not be supported by all wallets (it's
-          // in optionalNamespaces). Provide a clear error message that
-          // helps the user understand what went wrong.
-          const errMsg = err instanceof Error ? err.message : String(err);
+          // Parse the error properly — WC SDK throws objects, not just Errors
+          let errMsg: string;
+          if (err instanceof Error) {
+            errMsg = err.message;
+          } else if (typeof err === 'string') {
+            errMsg = err;
+          } else if (err && typeof err === 'object') {
+            const e = err as { message?: string; reason?: string; code?: number };
+            errMsg = e.message ?? e.reason ?? `WC error (code: ${e.code ?? 'unknown'})`;
+          } else {
+            errMsg = String(err);
+          }
+
           throw ConnectError.invalidRequest(
             `WalletConnect wallet does not support stellar_signMessage (this method is optional — the wallet may not implement it). Error: ${errMsg}`,
             undefined,
