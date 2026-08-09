@@ -211,6 +211,11 @@ export class SagantaAppKitModal extends ModalBase {
             this.lastApprovedPreview = null;
             this.view = client.session ? 'connected' : 'wallet-list';
             this.render();
+            // After a tx is signed, refresh balance + tx history to show the
+            // new transaction. Small delay to let Horizon index the tx.
+            if (client.session) {
+              setTimeout(() => void this.refreshAccountData(true), 2000);
+            }
           }
           // If connectingError IS set, the error handler already re-rendered
           // the signing view with the error + retry/cancel buttons. We do
@@ -346,6 +351,12 @@ export class SagantaAppKitModal extends ModalBase {
     // Render IMMEDIATELY with whatever walletList data we have.
     this.render();
 
+    // If connected, fetch balance + tx history immediately, then start polling.
+    if (this._client.session) {
+      void this.refreshAccountData();
+      this.startBalancePolling();
+    }
+
     // Set data-open="true" for CSS state + accessibility
     this.hasEnteredOpenState = true;
     const overlayEl = this.root.querySelector<HTMLElement>('.overlay');
@@ -422,6 +433,8 @@ export class SagantaAppKitModal extends ModalBase {
       this.releaseFocusTrap = null;
       this.isOpen = false;
       this.hasEnteredOpenState = false;
+      // Stop polling when the modal closes — avoid wasting resources
+      this.stopBalancePolling();
       // Clean up the drag + swipe controllers so they get recreated fresh on next open()
       this.dragController?.destroy();
       this.dragController = null;
@@ -519,19 +532,19 @@ export class SagantaAppKitModal extends ModalBase {
   }
 
   /**
-   * Starts polling the balance + tx history every 15 seconds while connected.
-   * 15s is a good interval — frequent enough to feel live, not so frequent
-   * that it hammers Horizon's API or causes unnecessary re-renders.
-   * Cleared on disconnect or when the modal is destroyed.
+   * Starts polling the balance + tx history every 10 seconds while connected.
+   * 10s is a good interval — frequent enough to feel live, not so frequent
+   * that it hammers Horizon's API. Uses silent mode (no skeleton loading).
+   * Only polls when the modal is open. Cleared on close/disconnect/destroy.
    */
   private startBalancePolling() {
     if (this.balancePollInterval) return; // already polling
     this.balancePollInterval = setInterval(() => {
       // Only poll if we're still connected + the modal is open
       if (this._client?.session && this.isOpen) {
-        void this.refreshAccountData();
+        void this.refreshAccountData(true); // silent — no loading flash
       }
-    }, 15_000);
+    }, 10_000);
   }
 
   private stopBalancePolling() {
@@ -543,15 +556,26 @@ export class SagantaAppKitModal extends ModalBase {
 
   /**
    * Fetches avatars + balance + transaction history for the connected
-   * account, then re-renders. Called on connect and sessionsChanged.
+   * account, then re-renders. Called on connect, sessionsChanged, and
+   * by the balance poller.
+   *
+   * @param silent If true, doesn't show the skeleton loading state —
+   *   keeps the existing cached values visible until the fetch completes,
+   *   then updates them. Used for background polling so the user doesn't
+   *   see a flash of loading state every 10 seconds.
    */
-  private async refreshAccountData() {
+  private async refreshAccountData(silent = false) {
     if (!this._client) return;
     const session = this._client.session;
     if (!session) {
       this.cachedBalance = null;
       this.cachedTxHistory = [];
       return;
+    }
+
+    // Only show skeleton loading on the initial fetch (not silent polls)
+    if (!silent && !this.cachedBalance) {
+      this.render(); // shows the skeleton shimmer
     }
 
     // Fetch avatar
@@ -579,7 +603,7 @@ export class SagantaAppKitModal extends ModalBase {
           this.cachedBalance = '0.00';
         }
       } catch {
-        this.cachedBalance = '0.00';
+        if (!silent) this.cachedBalance = '0.00';
       }
 
       // Transaction history (latest 5)
@@ -617,12 +641,14 @@ export class SagantaAppKitModal extends ModalBase {
 
         this.cachedTxHistory = history;
       } catch {
-        this.cachedTxHistory = [];
+        if (!silent) this.cachedTxHistory = [];
       }
     } catch {
       // stellar-sdk not available or network error — show without balance/history
-      this.cachedBalance = null;
-      this.cachedTxHistory = [];
+      if (!silent) {
+        this.cachedBalance = null;
+        this.cachedTxHistory = [];
+      }
     }
 
     this.render();
