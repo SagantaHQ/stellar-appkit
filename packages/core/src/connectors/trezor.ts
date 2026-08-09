@@ -22,6 +22,18 @@ import { withNormalizedError } from './error-utils.js';
  * Uses `@trezor/connect-web` + `@trezor/connect-plugin-stellar` to communicate
  * with a Trezor device via WebUSB/WebHID.
  *
+ * **Requires manual install of peer deps.** As of v1.9.19, the Trezor packages
+ * are declared as *optional* peer dependencies — they are NOT installed
+ * automatically by `npm install @saganta/stellar-appkit`. This is because
+ * `@trezor/utils` (a transitive dep of `@trezor/connect-web`) has an
+ * inconsistent `exports` map that breaks strict bundlers (webpack 5, Rollup,
+ * esbuild strict mode, bundlephobia) — see GitHub issue. Apps that want Trezor
+ * support must install the packages themselves:
+ *
+ * ```bash
+ * npm install @trezor/connect-web @trezor/connect-plugin-stellar
+ * ```
+ *
  * **Requires constructor params** — Trezor Connect mandates a manifest
  * (appName, appUrl, email). Not included in `defaultConnectors()` — create
  * explicitly:
