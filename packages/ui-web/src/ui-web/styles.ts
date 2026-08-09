@@ -538,9 +538,9 @@ export function buildStyles(theme: ConnectTheme): string {
     .wallet-row[data-unavailable="true"] { opacity: 0.55; }
     .wallet-tile {
       position: relative;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
       background: ${v('colorBg', theme)};
       border: 1px solid ${v('colorBorder', theme)};
       display: flex;
@@ -549,15 +549,16 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      /* Background image fills the tile completely — 100% 100% stretches
-         the icon to fill edge-to-edge with NO padding/gap between the icon
-         and the tile border. Using cover left gaps on icons that had
-         transparent padding baked into the image data (Freighter, xBull,
-         WalletConnect, Ledger). 100% 100% ensures the image fills the
-         tile completely regardless of the icon's internal aspect ratio. */
-      background-size: 100% 100%;
+      /* iOS-style icon: the icon fills most of the tile but leaves a small
+         padding (~3px on each side) so the icon doesn't touch the border.
+         This creates a clean, premium look similar to iOS home screen icons.
+         The background-size is set to 82% so the icon is slightly inset
+         from the tile edges. */
+      background-size: 82%;
       background-position: center;
       background-repeat: no-repeat;
+      padding: 3px;
+      box-sizing: border-box;
     }
     /* Wallet tile icon scales up subtly on row hover — feels responsive. */
     .wallet-row:hover .wallet-tile { transform: scale(1.08); }
@@ -670,13 +671,15 @@ export function buildStyles(theme: ConnectTheme): string {
       padding: 6px 10px 14px;
     }
 
-    /* Header wallet icon in panel header */
+    /* Header wallet icon in panel header — iOS-style with padding */
     .header-wallet-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 5px;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
       display: block;
-      object-fit: fill;
+      object-fit: contain;
+      padding: 2px;
+      box-sizing: border-box;
     }
 
     /* Account header — avatar + address (clickable) + network pill + overflow */

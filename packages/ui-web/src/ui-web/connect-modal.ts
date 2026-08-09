@@ -1,7 +1,7 @@
 import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
 import { t, onLocaleChange } from '@saganta/stellar-appkit';
-import { toSvg } from 'better-qr';
+import QRCode from 'qrcode';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
@@ -65,6 +65,10 @@ export class SagantaAppKitModal extends ModalBase {
   private view: ViewState = 'wallet-list';
   private walletList: { connector: WalletConnector; reachability: WalletReachability }[] = [];
   private connectingWalletId: string | null = null;
+  /** Pre-rendered QR code SVG for the WC pairing URI. Generated when the URI
+   *  arrives (async) so the synchronous renderConnecting() can just inject it. */
+  private wcQrSvg = '';
+
   /** WalletConnect pairing URI — set via the connector's setOnUri() hook
    *  before connect() is called. When non-null, the connecting view renders
    *  a QR code + deep link instead of the generic spinner. */
@@ -591,7 +595,7 @@ export class SagantaAppKitModal extends ModalBase {
 
     this.connectingWalletId = connector.id;
     this.connectingError = null;
-    this.wcPairingUri = null; // reset any previous WC URI
+    this.wcPairingUri = null; this.wcQrSvg = ""; // reset any previous WC URI
     this.view = 'connecting';
     this.render();
 
@@ -605,7 +609,21 @@ export class SagantaAppKitModal extends ModalBase {
     if (typeof wcConnector.setOnUri === 'function') {
       wcConnector.setOnUri((uri: string) => {
         this.wcPairingUri = uri;
-        this.render();
+        // Pre-render the QR code SVG asynchronously so the synchronous
+        // renderConnecting() can just inject the pre-built string.
+        QRCode.toString(uri, {
+          type: 'svg',
+          margin: 4,
+          width: 240,
+          color: { dark: '#000000', light: '#ffffff' },
+          errorCorrectionLevel: 'M',
+        }).then((svg: string) => {
+          this.wcQrSvg = svg;
+          this.render();
+        }).catch(() => {
+          this.wcQrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
+          this.render();
+        });
       });
     }
 
@@ -645,7 +663,7 @@ export class SagantaAppKitModal extends ModalBase {
       // (e.g. network mismatch which switches to a different view).
       if (this.view === 'connecting' && !this.connectingError) {
         this.connectingWalletId = null;
-      this.wcPairingUri = null;
+      this.wcPairingUri = null; this.wcQrSvg = "";
         this.view = 'wallet-list';
         this.render();
       }
@@ -656,7 +674,7 @@ export class SagantaAppKitModal extends ModalBase {
       // shows the wallet name.
       if (this.view !== 'connecting') {
         this.connectingWalletId = null;
-      this.wcPairingUri = null;
+      this.wcPairingUri = null; this.wcQrSvg = "";
       }
     }
   }
@@ -1270,23 +1288,9 @@ export class SagantaAppKitModal extends ModalBase {
 
     if (hasQrUri) {
       const uri = this.wcPairingUri!;
-      // Render the QR code as an inline SVG using better-qr (zero network
-      // dependency — no external API calls, works offline, no privacy leak).
-      // The SVG is embedded directly in the shadow DOM, so it inherits the
-      // modal's styling and scales crisply at any size.
-      let qrSvg = '';
-      try {
-        qrSvg = toSvg(uri, {
-          moduleSize: 6,
-          margin: 4, // QR spec requires ≥4 modules of quiet zone for reliable scanning
-          foreground: '#000000',
-          background: '#ffffff',
-          errorCorrectionLevel: 'M',
-        });
-      } catch {
-        // If QR generation fails (e.g. URI too long), fall back to copy-only
-        qrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
-      }
+      // Use the pre-rendered QR SVG (generated async when the URI arrived).
+      // If it's not ready yet, show a loading state — it'll re-render when done.
+      const qrSvg = this.wcQrSvg || `<div style="padding: 40px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">Generating QR…</div>`;
 
       return `
         <div class="connecting-view connecting-view--wc">
@@ -1833,7 +1837,7 @@ export class SagantaAppKitModal extends ModalBase {
     // navigated away by then).
     this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
       this.connectingWalletId = null;
-      this.wcPairingUri = null;
+      this.wcPairingUri = null; this.wcQrSvg = "";
       this.connectingError = null;
       this.view = 'wallet-list';
       this.render();
