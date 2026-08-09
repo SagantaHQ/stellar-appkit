@@ -549,15 +549,14 @@ export function buildStyles(theme: ConnectTheme): string {
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      /* iOS-style icon: the icon fills most of the tile but leaves a small
-         padding (~3px on each side) so the icon doesn't touch the border.
-         This creates a clean, premium look similar to iOS home screen icons.
-         The background-size is set to 82% so the icon is slightly inset
-         from the tile edges. */
-      background-size: 82%;
+      /* iOS-style: icon fills most of the tile with a small 2px padding.
+         The background image gets its own border-radius so the icon itself
+         is rounded (like iOS app icons) while the tile container is also
+         rounded — creating a double-radius effect. */
+      background-size: calc(100% - 4px);
       background-position: center;
       background-repeat: no-repeat;
-      padding: 3px;
+      padding: 2px;
       box-sizing: border-box;
     }
     /* Wallet tile icon scales up subtly on row hover — feels responsive. */

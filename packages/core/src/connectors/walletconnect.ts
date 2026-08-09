@@ -571,8 +571,20 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
               requiredNamespaces: {
                 stellar: {
                   chains: [resolveWcChainId()],
+                  // Only require the base signing method — wallets that
+                  // strictly advertise stellar_signXDR won't reject the
+                  // pairing. Other methods are proposed as optional.
+                  methods: ['stellar_signXDR'],
+                  events: ['accountsChanged'],
+                },
+              },
+              optionalNamespaces: {
+                stellar: {
+                  chains: [resolveWcChainId()],
+                  // These are nice-to-have — the wallet may or may not
+                  // support them. If it does, we can use them; if not,
+                  // we fall back to stellar_signXDR or throw a clear error.
                   methods: [
-                    'stellar_signXDR',
                     'stellar_signAndSubmitXDR',
                     'stellar_signMessage',
                     'stellar_signAuthEntry',

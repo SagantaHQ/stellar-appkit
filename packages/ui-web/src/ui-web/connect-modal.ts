@@ -609,16 +609,19 @@ export class SagantaAppKitModal extends ModalBase {
     if (typeof wcConnector.setOnUri === 'function') {
       wcConnector.setOnUri((uri: string) => {
         this.wcPairingUri = uri;
-        // Pre-render the QR code SVG asynchronously so the synchronous
-        // renderConnecting() can just inject the pre-built string.
-        QRCode.toString(uri, {
-          type: 'svg',
+        // Pre-render the QR code as a data URI <img> so it scales correctly
+        // inside the 204px .wc-qr-frame container without clipping the
+        // quiet zone. Using errorCorrectionLevel 'H' (30% redundancy)
+        // because the modal overlays a 40x40px wallet logo in the center
+        // of the QR — 'H' gives enough fault tolerance for scanners to
+        // read the code even with the center obscured.
+        QRCode.toDataURL(uri, {
           margin: 4,
           width: 240,
           color: { dark: '#000000', light: '#ffffff' },
-          errorCorrectionLevel: 'M',
-        }).then((svg: string) => {
-          this.wcQrSvg = svg;
+          errorCorrectionLevel: 'H',
+        }).then((dataUri: string) => {
+          this.wcQrSvg = `<img src="${dataUri}" class="wc-qr-img" alt="WalletConnect QR" style="width: 100%; height: 100%; display: block;" />`;
           this.render();
         }).catch(() => {
           this.wcQrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
