@@ -501,31 +501,7 @@ export class SagantaAppKitModal extends ModalBase {
 
   private async refreshWalletList() {
     if (!this._client) return;
-    // Show the wallet list immediately with a placeholder reachability
-    // ('unavailable') so the user sees the wallets right away — don't
-    // wait for all getReachability() calls to complete. Then update
-    // each wallet's status as the reachability checks resolve.
-    const entries = this._client.registry.list();
-    this.walletList = entries.map((connector) => ({
-      connector,
-      reachability: 'unavailable' as WalletReachability,
-    }));
-    this.render();
-
-    // Now fetch the real reachability in the background.
-    const reachability = await Promise.all(
-      entries.map(async (connector) => {
-        try {
-          return await connector.getReachability();
-        } catch {
-          return 'unavailable' as const;
-        }
-      })
-    );
-    this.walletList = entries.map((connector, i) => ({
-      connector,
-      reachability: reachability[i] ?? 'unavailable',
-    }));
+    this.walletList = await this._client.registry.listReachability();
     this.render();
   }
 
@@ -1430,7 +1406,7 @@ export class SagantaAppKitModal extends ModalBase {
     if (this.walletList.length === 0) {
       // If we have a client, the list is loading (reachability checks in flight).
       if (this._client) {
-        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">${t('wallet_list.loading')}</div>`;
+        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>${t('wallet_list.loading')}</div>`;
       }
       return `<div style="padding: 24px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">${t('wallet_list.empty')}</div>`;
     }
