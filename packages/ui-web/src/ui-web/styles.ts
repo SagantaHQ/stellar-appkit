@@ -308,20 +308,23 @@ export function buildStyles(theme: ConnectTheme): string {
     }
     .wc-qr-wrap {
       position: relative;
-      width: 220px;
-      height: 220px;
+      width: 256px;
+      height: 256px;
       margin-bottom: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .wc-qr-frame {
-      width: 220px;
-      height: 220px;
+      width: 256px;
+      height: 256px;
       border-radius: 16px;
       overflow: hidden;
       background: #fff;
-      padding: 8px;
+      /* No padding — the canvas fills the entire frame so the QR covers
+         the whole surface. The qr-creator background option paints the
+         white quiet zone into the canvas itself. */
+      padding: 0;
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
       display: flex;
       align-items: center;
@@ -337,21 +340,40 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-frame--error .wc-qr-fallback {
       display: flex !important;
     }
-    .wc-qr-img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      border-radius: 8px;
+    .wc-qr-canvas {
+      /* Canvas fills the entire frame — QR covers the whole surface */
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      border-radius: 16px;
     }
+    /* WalletConnect logo overlay in the center of the QR.
+       Uses a nested <span> pattern to avoid the browser <img> border-radius
+       clipping bug where the image overflows the rounded corners:
+         .wc-qr-logo        — outer: rounded corners + padding + white bg + shadow
+         .wc-qr-logo__img   — inner: background-image with background-size: cover + rounded */
     .wc-qr-logo {
       position: absolute;
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
       background: #fff;
-      padding: 4px;
+      padding: 6px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
       z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    .wc-qr-logo__img {
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      border-radius: 6px;
+      display: block;
     }
     .wc-actions {
       display: flex;

@@ -1,7 +1,7 @@
 import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
 import { t, onLocaleChange } from '@saganta/stellar-appkit';
-import QRCode from 'qrcode';
+import QrCreator from '@konnorr/qr-creator';
 import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
@@ -65,9 +65,6 @@ export class SagantaAppKitModal extends ModalBase {
   private view: ViewState = 'wallet-list';
   private walletList: { connector: WalletConnector; reachability: WalletReachability }[] = [];
   private connectingWalletId: string | null = null;
-  /** Pre-rendered QR code SVG for the WC pairing URI. Generated when the URI
-   *  arrives (async) so the synchronous renderConnecting() can just inject it. */
-  private wcQrSvg = '';
 
   /** WalletConnect pairing URI — set via the connector's setOnUri() hook
    *  before connect() is called. When non-null, the connecting view renders
@@ -597,7 +594,7 @@ export class SagantaAppKitModal extends ModalBase {
 
     this.connectingWalletId = connector.id;
     this.connectingError = null;
-    this.wcPairingUri = null; this.wcQrSvg = ""; // reset any previous WC URI
+    this.wcPairingUri = null;
     this.view = 'connecting';
     this.render();
 
@@ -611,24 +608,12 @@ export class SagantaAppKitModal extends ModalBase {
     if (typeof wcConnector.setOnUri === 'function') {
       wcConnector.setOnUri((uri: string) => {
         this.wcPairingUri = uri;
-        // Pre-render the QR code as a data URI <img> so it scales correctly
-        // inside the 204px .wc-qr-frame container without clipping the
-        // quiet zone. Using errorCorrectionLevel 'H' (30% redundancy)
-        // because the modal overlays a 40x40px wallet logo in the center
-        // of the QR — 'H' gives enough fault tolerance for scanners to
-        // read the code even with the center obscured.
-        QRCode.toDataURL(uri, {
-          margin: 4,
-          width: 240,
-          color: { dark: '#000000', light: '#ffffff' },
-          errorCorrectionLevel: 'H',
-        }).then((dataUri: string) => {
-          this.wcQrSvg = `<img src="${dataUri}" class="wc-qr-img" alt="WalletConnect QR" style="width: 100%; height: 100%; display: block;" />`;
-          this.render();
-        }).catch(() => {
-          this.wcQrSvg = `<div style="padding: 24px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
-          this.render();
-        });
+        // The QR canvas is rendered in wireEvents() after the DOM is updated,
+        // using @konnorr/qr-creator. We use ecLevel 'H' (30% redundancy)
+        // because the modal overlays a 44px wallet logo in the center of the
+        // QR — 'H' gives enough fault tolerance for scanners to read the code
+        // even with the center obscured.
+        this.render();
       });
     }
 
@@ -668,7 +653,7 @@ export class SagantaAppKitModal extends ModalBase {
       // (e.g. network mismatch which switches to a different view).
       if (this.view === 'connecting' && !this.connectingError) {
         this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrSvg = "";
+      this.wcPairingUri = null;
         this.view = 'wallet-list';
         this.render();
       }
@@ -679,7 +664,7 @@ export class SagantaAppKitModal extends ModalBase {
       // shows the wallet name.
       if (this.view !== 'connecting') {
         this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrSvg = "";
+      this.wcPairingUri = null;
       }
     }
   }
@@ -1299,18 +1284,22 @@ export class SagantaAppKitModal extends ModalBase {
 
     if (hasQrUri) {
       const uri = this.wcPairingUri!;
-      // Use the pre-rendered QR SVG (generated async when the URI arrived).
-      // If it's not ready yet, show a loading state — it'll re-render when done.
-      const qrSvg = this.wcQrSvg || `<div style="padding: 40px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">Generating QR…</div>`;
+      // The QR code is rendered into the <canvas> by QrCreator in wireEvents()
+      // after the DOM is updated. The nested <span> pattern for the logo:
+      //   outer span: rounded corners + padding + white background
+      //   inner span: background-image with background-size: cover + rounded
+      // This avoids the browser's <img> border-radius clipping bug where
+      // the image overflows the rounded corners.
 
       return `
         <div class="connecting-view connecting-view--wc">
           <div class="wc-qr-wrap">
             <div class="wc-qr-frame">
-              ${qrSvg}
+              <canvas class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}"></canvas>
             </div>
-            <img src="${escapeAttr(iconUrl)}" alt="" class="wc-qr-logo"
-                 onerror="${onerrorHandler}" />
+            <span class="wc-qr-logo">
+              <span class="wc-qr-logo__img" style="background-image: url('${escapeAttr(iconUrl)}')"></span>
+            </span>
           </div>
           <h2 class="connecting-view__title">${t('wc.scan_with', { walletName: escapeHtml(walletName) })}</h2>
           <p class="connecting-view__subtitle">${t('wc.scan_instructions')}</p>
@@ -1869,7 +1858,7 @@ export class SagantaAppKitModal extends ModalBase {
     // navigated away by then).
     this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
       this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrSvg = "";
+      this.wcPairingUri = null;
       this.connectingError = null;
       this.view = 'wallet-list';
       this.render();
@@ -2046,6 +2035,35 @@ export class SagantaAppKitModal extends ModalBase {
         setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
       }
     });
+
+    // Render the WalletConnect QR code into the <canvas> using @konnorr/qr-creator.
+    // This runs after every render so the canvas stays in sync with the URI.
+    // The canvas fills the entire .wc-qr-frame (no padding/margin) so the QR
+    // covers the whole frame. ecLevel 'H' (30% redundancy) because the modal
+    // overlays a wallet logo in the center.
+    const wcCanvas = this.root.querySelector<HTMLCanvasElement>('.wc-qr-canvas');
+    if (wcCanvas) {
+      const uri = wcCanvas.dataset.wcUri;
+      if (uri) {
+        try {
+          QrCreator.render(
+            {
+              text: uri,
+              radius: 0.45,          // slightly rounded QR blocks (stylish)
+              ecLevel: 'H',           // 30% error correction — logo overlay tolerant
+              fill: '#000000',        // black QR modules
+              background: '#ffffff',  // white background fills the whole canvas
+              size: 256,              // rendered at 256px, CSS scales to fill frame
+              quiet: 0,               // no quiet zone padding — frame provides it
+            },
+            wcCanvas,
+          );
+        } catch {
+          // QR generation failed — show the fallback text
+          wcCanvas.replaceWith(document.createTextNode(t('wc.qr_failed')));
+        }
+      }
+    }
 
     // Copy-to-clipboard for any address displayed inline (account picker,
     // connected sessions, transaction preview source account). Each button
