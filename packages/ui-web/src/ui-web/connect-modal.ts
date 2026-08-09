@@ -1339,7 +1339,7 @@ export class SagantaAppKitModal extends ModalBase {
       // Use the pre-rendered QR data URI (generated async when the URI arrived).
       // If it's not ready yet, show a loading state — it'll re-render when done.
       const qrImg = this.wcQrDataUri
-        ? `<img src="${this.wcQrDataUri}" class="wc-qr-img" alt="WalletConnect QR" />`
+        ? `<img src="${this.wcQrDataUri}" class="wc-qr-img" alt="" />`
         : `<div style="padding: 40px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.generating_code')}</div>`;
 
       return `
@@ -1394,6 +1394,14 @@ export class SagantaAppKitModal extends ModalBase {
          </button>`
       : '';
 
+    // For WalletConnect, show "Generating QRCode…" as the title while waiting
+    // for the pairing URI to arrive (instead of the generic "Continue in
+    // WalletConnect"). Once the URI arrives, the QR view renders with its
+    // own "Scan with WalletConnect" title.
+    const titleKey = isWalletConnect && !hasQrUri
+      ? t('wc.generating_code')
+      : t('connecting.continue_in_wallet', { walletName: escapeHtml(walletName) });
+
     return `
       <div class="connecting-view ${hasError ? 'connecting-view--error' : ''}">
         <div class="connecting-view__logo-wrap">
@@ -1401,7 +1409,7 @@ export class SagantaAppKitModal extends ModalBase {
           <img src="${escapeAttr(iconUrl)}" alt="" class="connecting-view__logo"
                onerror="${onerrorHandler}" />
         </div>
-        <h2 class="connecting-view__title">${t('connecting.continue_in_wallet', { walletName: escapeHtml(walletName) })}</h2>
+        <h2 class="connecting-view__title">${titleKey}</h2>
         <p class="connecting-view__subtitle">${escapeHtml(subtitle)}</p>
         ${retryHtml}
       </div>

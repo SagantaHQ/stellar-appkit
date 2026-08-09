@@ -79,7 +79,7 @@ export const en = {
     open_in_wallet: 'Open in wallet app',
     copy_uri: 'Copy URI',
     copied: 'Copied!',
-    generating_code: 'Generating pairing code…',
+    generating_code: 'Generating QRCode…',
     qr_failed: 'QR generation failed. Use the copy button below.',
   },
 

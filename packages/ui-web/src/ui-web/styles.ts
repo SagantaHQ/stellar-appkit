@@ -371,11 +371,11 @@ export function buildStyles(theme: ConnectTheme): string {
       height: 56px;
       /* Squircle radius matching wallet-tile */
       border-radius: 22px;
-      /* Dark gray background — replaces the previous white. The logo image
-         is converted to pure black & white via the filter below, so the
-         dark gray provides contrast for the white parts of the logo while
-         the black parts blend into the background. */
-      background: #2A2D31;
+      /* Deep gray background — the logo image is converted to monochrome
+         (pure black & white) via the filter below. The deep gray provides
+         contrast for the white parts of the logo while the black parts
+         blend into the background, creating a clean monochrome look. */
+      background: #1b1a1c;
       /* No padding — logo fills the container edge-to-edge (cover) */
       padding: 0;
       /* Soft drop shadow — premium floating look, matches wallet-tile */
