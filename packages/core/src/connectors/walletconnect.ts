@@ -847,13 +847,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
         }
 
-        // stellar_signMessage — supported by Freighter Mobile, Hana, Lobstr,
-        // and other WC-compatible Stellar wallets. The response field name
-        // varies by wallet implementation:
-        //   - Freighter Mobile: returns { signature } (per Freighter Mobile WC docs)
-        //   - Hana/Lobstr: returns { signedMessage } (older WC Stellar namespace)
-        //   - Some wallets: return { signedMsg } or { sig }
-        // We check all known field names to support all wallets.
+        // stellar_signMessage — an optional WC method (not in the Reown-published
+        // spec, but supported by Freighter Mobile, Hana, Lobstr, etc.).
+        //
+        // Per SWK's implementation, params should be { message } only —
+        // no publicKey field. SWK sends exactly { message: string }.
+        // Response: { signature: string, signerAddress?: string }
+        //
+        // Some wallets (Hana/Lobstr) return { signedMessage } instead of
+        // { signature } — we check both field names.
         try {
           const result = await client.request({
             topic: sessionTopic,
@@ -862,7 +864,6 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
               method: 'stellar_signMessage',
               params: {
                 message,
-                publicKey: cachedAddress ?? undefined,
               },
             },
           }) as Record<string, unknown>;
@@ -913,11 +914,31 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             errMsg = String(err);
           }
 
-          throw ConnectError.invalidRequest(
-            `WalletConnect wallet does not support stellar_signMessage (this method is optional — the wallet may not implement it). Error: ${errMsg}`,
-            undefined,
-            meta.id
-          );
+          // Distinguish between "method not supported" (WC protocol error)
+          // and "wallet rejected the request" (user declined, domain
+          // mismatch, etc). Don't say "does not support" if the wallet
+          // actually processed the request but rejected it.
+          const isMethodNotSupported =
+            errMsg.toLowerCase().includes('method not found') ||
+            errMsg.toLowerCase().includes('not supported') ||
+            errMsg.toLowerCase().includes('not approved') === false &&
+            (errMsg.toLowerCase().includes('missing') && errMsg.toLowerCase().includes('method'));
+
+          if (isMethodNotSupported) {
+            throw ConnectError.invalidRequest(
+              `WalletConnect wallet does not support stellar_signMessage (this method is optional — the wallet may not implement it). Error: ${errMsg}`,
+              undefined,
+              meta.id
+            );
+          } else {
+            // The wallet DOES support stellar_signMessage but rejected the
+            // request (user declined, untrusted domain, network mismatch, etc.)
+            throw ConnectError.internal(
+              `WalletConnect signMessage rejected: ${errMsg}`,
+              undefined,
+              meta.id
+            );
+          }
         }
       });
     },
