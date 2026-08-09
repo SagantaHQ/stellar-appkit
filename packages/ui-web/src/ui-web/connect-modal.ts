@@ -1326,12 +1326,13 @@ export class SagantaAppKitModal extends ModalBase {
       const uri = this.wcPairingUri!;
       // The QR code is rendered into the .wc-qr-canvas container by
       // qr-code-styling in wireEvents() after the DOM is updated.
+      // Show a loading placeholder inside the frame until the SVG is appended.
 
       return `
         <div class="connecting-view connecting-view--wc">
           <div class="wc-qr-wrap">
             <div class="wc-qr-frame">
-              <div class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}"></div>
+              <div class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}">${t('wc.generating_code')}</div>
             </div>
             <span class="wc-qr-logo">
               <span class="wc-qr-logo__img" style="background-image: url('${WC_QR_LOGO_DATA_URI}')"></span>

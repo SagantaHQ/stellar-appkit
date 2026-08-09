@@ -356,12 +356,16 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-canvas {
       /* QR container fills the entire frame — the SVG from qr-code-styling
          is appended inside this div. width/height 100% so the SVG scales
-         to fill the frame. */
+         to fill the frame. Before the SVG is appended, shows a loading
+         text placeholder. */
       width: 100%;
       height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 13px;
+      color: #999;
+      text-align: center;
     }
     .wc-qr-canvas svg {
       width: 100% !important;
