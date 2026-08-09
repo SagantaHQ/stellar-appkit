@@ -263,6 +263,33 @@ export function buildStyles(theme: ConnectTheme): string {
       height: 14px;
     }
 
+    /* Cancel button — shown during SIWS flow (checking/nonce/signing/verifying).
+       Ghost/secondary style so it doesn't compete with the primary action. */
+    .connecting-view__cancel {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      border: 1px solid ${v('colorBorder', theme)};
+      background: transparent;
+      color: ${v('colorTextMuted', theme)};
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .connecting-view__cancel:hover {
+      background: ${v('colorSurfaceHover', theme)};
+      border-color: ${v('colorTextMuted', theme)};
+      color: ${v('colorText', theme)};
+    }
+    .connecting-view__cancel:active {
+      transform: scale(0.97);
+    }
+
     /* Error variant — the spinner arc is hidden, subtitle shows the error
        message, and the retry button is shown. The logo stays in place
        (no rotation) so the user sees which wallet failed. */
