@@ -359,10 +359,10 @@ export function buildStyles(theme: ConnectTheme): string {
       object-fit: contain;
     }
     /* WalletConnect logo overlay in the center of the QR.
-       Larger + grayscale like Reown's QR logo — the desaturated logo sits
-       prominently in the center without competing with the QR modules for
-       visual attention. Uses overflow: hidden to clip the background-image
-       into the rounded corners. */
+       Black & white logo on dark gray background — premium monochrome
+       aesthetic that matches the QR's black/white module scheme.
+       Uses overflow: hidden to clip the background-image into the rounded
+       corners. */
     .wc-qr-logo {
       position: absolute;
       /* Larger than before (56px vs 44px) — ~22% of the 256px QR,
@@ -371,7 +371,11 @@ export function buildStyles(theme: ConnectTheme): string {
       height: 56px;
       /* Squircle radius matching wallet-tile */
       border-radius: 22px;
-      background: #fff;
+      /* Dark gray background — replaces the previous white. The logo image
+         is converted to pure black & white via the filter below, so the
+         dark gray provides contrast for the white parts of the logo while
+         the black parts blend into the background. */
+      background: #2A2D31;
       /* No padding — logo fills the container edge-to-edge (cover) */
       padding: 0;
       /* Soft drop shadow — premium floating look, matches wallet-tile */
@@ -392,10 +396,13 @@ export function buildStyles(theme: ConnectTheme): string {
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
-      /* Grayscale — desaturates the wallet logo so it doesn't compete
-         with the black/white QR modules for visual attention. Reown does
-         the same: the center logo is monochrome. */
-      filter: grayscale(100%);
+      /* Pure black & white — not just grayscale. grayscale(100%) desaturates
+         but keeps mid-tones; contrast(1000%) forces every pixel to either
+         pure black or pure white, creating a true B&W logo that matches
+         the QR's monochrome aesthetic. The white parts of the logo stay
+         white (visible against the dark gray background), the colored/dark
+         parts become black. */
+      filter: grayscale(100%) contrast(1000%);
       display: block;
     }
     .wc-actions {
