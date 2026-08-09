@@ -83,7 +83,9 @@ const sv: LocaleMessages = {
     "balance_label": "XLM-saldo",
     "balance_unit": "XLM",
     "recent_activity": "Senaste aktivitet",
-    "no_transactions": "Inga senaste transaktioner"
+    "no_transactions": "Inga senaste transaktioner",
+    "get_testnet_funds": "Hämta Testnet-medel",
+    "funds_requested": "Finansiering begärd — saldot uppdateras strax"
   },
   "tx": {
     "default_type": "Transaktion",

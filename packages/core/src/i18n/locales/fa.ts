@@ -83,7 +83,9 @@ const fa: LocaleMessages = {
     "balance_label": "موجودی XLM",
     "balance_unit": "XLM",
     "recent_activity": "فعالیت اخیر",
-    "no_transactions": "تراکنش اخیری وجود ندارد"
+    "no_transactions": "تراکنش اخیری وجود ندارد",
+    "get_testnet_funds": "دریافت وجوه تستنت",
+    "funds_requested": "درخواست تأمین مالی ارسال شد — موجودی به‌زودی به‌روزرسانی می‌شود"
   },
   "tx": {
     "default_type": "تراکنش",

@@ -89,6 +89,8 @@ export class SagantaAppKitModal extends ModalBase {
   private copiedAddress: string | null = null;
   /** Cached XLM balance for the connected account (in lumens, e.g. "123.4567890"). */
   private cachedBalance: string | null = null;
+  /** True for ~3s after the user clicks "Get Testnet funds" — shows a confirmation banner. */
+  private fundsRequested = false;
   /** Number of sign requests currently queued, including the one in flight — see the signing queue notes on signTransaction(). */
   private _pendingSignCount = 0;
   private cachedTxHistory: Array<{ hash: string; type: string; amount: string; asset: string; date: string; success: boolean }> = [];
@@ -1486,6 +1488,19 @@ export class SagantaAppKitModal extends ModalBase {
       ? `<span class="balance-value">${escapeHtml(this.cachedBalance)}</span><span class="balance-unit">XLM</span>`
       : `<div class="balance-skeleton"></div>`;
 
+    // "Get Testnet funds" button — only rendered on Testnet. friendbot.stellar.org
+    // is a Testnet-only faucet (Futurenet has a separate faucet URL, Standalone has
+    // none), so we gate on the exact 'TESTNET' network rather than the broader
+    // isTestnet check (which would also match Futurenet / Standalone).
+    const friendbotButton = session.network === 'TESTNET'
+      ? `<button class="friendbot-btn" data-action="get-testnet-funds" title="Fund this address via friendbot.stellar.org">
+           ${t('connected.get_testnet_funds')}
+         </button>`
+      : '';
+    const fundsBanner = this.fundsRequested
+      ? `<div class="funds-banner">${t('connected.funds_requested')}</div>`
+      : '';
+
     // Pending signatures banner — only shows when pendingSignCount > 0
     const pendingBanner = pendingCount > 0
       ? `<div class="pending-banner">
@@ -1558,6 +1573,8 @@ export class SagantaAppKitModal extends ModalBase {
         <div class="balance-section">
           <div class="balance-label">${t('connected.balance_label')}</div>
           <div class="balance-amount">${balanceHtml}</div>
+          ${friendbotButton}
+          ${fundsBanner}
         </div>
 
         <!-- Transaction history -->
@@ -1920,6 +1937,43 @@ export class SagantaAppKitModal extends ModalBase {
       await this._client?.disconnect();
       this.cachedBalance = null;
       this.cachedTxHistory = [];
+    });
+
+    // "Get Testnet funds" — opens friendbot.stellar.org in a new tab to fund the
+    // connected address, then polls the balance a few times so the new XLM shows
+    // up without the user having to manually refresh. friendbot typically credits
+    // within 2-5 seconds, but Horizon's index can lag by another 1-2s, so we
+    // retry at 3s + 6s + 10s after the click.
+    this.root.querySelector('[data-action="get-testnet-funds"]')?.addEventListener('click', () => {
+      const session = this._client?.session;
+      if (!session || session.network !== 'TESTNET') return;
+
+      // Open the faucet URL in a new tab. friendbot responds with a JSON envelope
+      // (or HTML if the browser doesn't send Accept: application/json) — either
+      // way, the user sees a success/failure response in the new tab.
+      const url = `https://friendbot.stellar.org/?addr=${encodeURIComponent(session.address)}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+
+      // Show the "Funding requested…" banner for ~3.5s. Re-renders to reveal it.
+      this.fundsRequested = true;
+      this.render();
+      window.setTimeout(() => {
+        // Only clear if no other state change has happened in the meantime —
+        // but since we re-render on every state change, this is safe.
+        this.fundsRequested = false;
+        this.render();
+      }, 3500);
+
+      // Poll the balance a few times so the new XLM appears automatically.
+      // Each refreshAccountData() call sets cachedBalance and re-renders.
+      [3000, 6000, 10000].forEach((delay) => {
+        window.setTimeout(() => {
+          // Bail if the user has disconnected or switched wallets in the meantime.
+          const current = this._client?.session;
+          if (!current || current.address !== session.address) return;
+          void this.refreshAccountData();
+        }, delay);
+      });
     });
 
     // Overflow menu toggle

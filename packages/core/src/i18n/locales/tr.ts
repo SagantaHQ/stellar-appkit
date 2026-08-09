@@ -83,7 +83,9 @@ const tr: LocaleMessages = {
     "balance_label": "XLM Bakiyesi",
     "balance_unit": "XLM",
     "recent_activity": "Son etkinlik",
-    "no_transactions": "Son işlem yok"
+    "no_transactions": "Son işlem yok",
+    "get_testnet_funds": "Testnet fonları al",
+    "funds_requested": "Finansman istendi — bakiye kısa süre içinde güncellenecek"
   },
   "tx": {
     "default_type": "İşlem",

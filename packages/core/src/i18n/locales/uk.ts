@@ -83,7 +83,9 @@ const uk: LocaleMessages = {
     "balance_label": "Баланс XLM",
     "balance_unit": "XLM",
     "recent_activity": "Остання активність",
-    "no_transactions": "Немає останніх транзакцій"
+    "no_transactions": "Немає останніх транзакцій",
+    "get_testnet_funds": "Отримати Testnet-кошти",
+    "funds_requested": "Запит надіслано — баланс незабаром оновиться"
   },
   "tx": {
     "default_type": "Транзакція",

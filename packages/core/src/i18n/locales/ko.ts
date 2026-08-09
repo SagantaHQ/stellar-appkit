@@ -83,7 +83,9 @@ const ko: LocaleMessages = {
     "balance_label": "XLM 잔액",
     "balance_unit": "XLM",
     "recent_activity": "최근 활동",
-    "no_transactions": "최근 트랜잭션 없음"
+    "no_transactions": "최근 트랜잭션 없음",
+    "get_testnet_funds": "Testnet 자금 받기",
+    "funds_requested": "자금 요청됨 — 잔액이 곧 업데이트됩니다"
   },
   "tx": {
     "default_type": "트랜잭션",

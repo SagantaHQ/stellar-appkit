@@ -83,7 +83,9 @@ const ja: LocaleMessages = {
     "balance_label": "XLM 残高",
     "balance_unit": "XLM",
     "recent_activity": "最近のアクティビティ",
-    "no_transactions": "最近の取引はありません"
+    "no_transactions": "最近の取引はありません",
+    "get_testnet_funds": "Testnetファンドを取得",
+    "funds_requested": "資金要求を送信しました — 残高はまもなく更新されます"
   },
   "tx": {
     "default_type": "取引",

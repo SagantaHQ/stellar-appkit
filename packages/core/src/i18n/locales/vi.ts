@@ -83,7 +83,9 @@ const vi: LocaleMessages = {
     "balance_label": "Số dư XLM",
     "balance_unit": "XLM",
     "recent_activity": "Hoạt động gần đây",
-    "no_transactions": "Không có giao dịch gần đây"
+    "no_transactions": "Không có giao dịch gần đây",
+    "get_testnet_funds": "Nhận tiền Testnet",
+    "funds_requested": "Đã yêu cầu cấp vốn — số dư sẽ cập nhật ngay"
   },
   "tx": {
     "default_type": "Giao dịch",

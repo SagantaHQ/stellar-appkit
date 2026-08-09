@@ -83,7 +83,9 @@ const ar: LocaleMessages = {
     "balance_label": "رصيد XLM",
     "balance_unit": "XLM",
     "recent_activity": "النشاط الأخير",
-    "no_transactions": "لا توجد معاملات حديثة"
+    "no_transactions": "لا توجد معاملات حديثة",
+    "get_testnet_funds": "احصل على أموال Testnet",
+    "funds_requested": "تم طلب التمويل — سيتم تحديث الرصيد قريبًا"
   },
   "tx": {
     "default_type": "معاملة",

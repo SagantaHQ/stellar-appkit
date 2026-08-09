@@ -112,6 +112,13 @@ export const en = {
     balance_unit: 'XLM',
     recent_activity: 'Recent Activity',
     no_transactions: 'No recent transactions',
+    // "Get Testnet funds" button — only rendered when session.network === 'TESTNET'.
+    // Opens the friendbot faucet (friendbot.stellar.org) with the connected address
+    // and refreshes the balance after a short delay.
+    get_testnet_funds: 'Get Testnet funds',
+    // Banner shown for ~3s after the user clicks the button, confirming the
+    // funding request was sent (friendbot typically credits within a few seconds).
+    funds_requested: 'Funding requested — balance will update shortly',
   },
 
   /** Transaction history item defaults */

@@ -83,7 +83,9 @@ const th: LocaleMessages = {
     "balance_label": "ยอด XLM",
     "balance_unit": "XLM",
     "recent_activity": "กิจกรรมล่าสุด",
-    "no_transactions": "ไม่มีธุรกรรมล่าสุด"
+    "no_transactions": "ไม่มีธุรกรรมล่าสุด",
+    "get_testnet_funds": "รับเงิน Testnet",
+    "funds_requested": "ส่งคำขอเติมเงินแล้ว — ยอดคงเหลือจะอัปเดตในไม่ช้า"
   },
   "tx": {
     "default_type": "ธุรกรรม",

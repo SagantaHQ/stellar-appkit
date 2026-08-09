@@ -83,7 +83,9 @@ const ro: LocaleMessages = {
     "balance_label": "Sold XLM",
     "balance_unit": "XLM",
     "recent_activity": "Activitate recentă",
-    "no_transactions": "Nicio tranzacție recentă"
+    "no_transactions": "Nicio tranzacție recentă",
+    "get_testnet_funds": "Obține fonduri Testnet",
+    "funds_requested": "Finanțare solicitată — soldul va fi actualizat în scurt timp"
   },
   "tx": {
     "default_type": "Tranzacție",

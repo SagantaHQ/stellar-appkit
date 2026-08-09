@@ -83,7 +83,9 @@ const cs: LocaleMessages = {
     "balance_label": "Zůstatek XLM",
     "balance_unit": "XLM",
     "recent_activity": "Nedávná aktivita",
-    "no_transactions": "Žádné nedávné transakce"
+    "no_transactions": "Žádné nedávné transakce",
+    "get_testnet_funds": "Získat Testnet prostředky",
+    "funds_requested": "Financování vyžádáno — zůstatek se brzy aktualizuje"
   },
   "tx": {
     "default_type": "Transakce",

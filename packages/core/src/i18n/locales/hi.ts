@@ -83,7 +83,9 @@ const hi: LocaleMessages = {
     "balance_label": "XLM शेष",
     "balance_unit": "XLM",
     "recent_activity": "हाल की गतिविधि",
-    "no_transactions": "कोई हाल का लेन-देन नहीं"
+    "no_transactions": "कोई हाल का लेन-देन नहीं",
+    "get_testnet_funds": "Testnet फंड प्राप्त करें",
+    "funds_requested": "फंडिंग का अनुरोध किया गया — बैलेंस जल्द ही अपडेट होगा"
   },
   "tx": {
     "default_type": "लेन-देन",

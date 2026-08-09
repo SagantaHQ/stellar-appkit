@@ -83,7 +83,9 @@ const pt_BR: LocaleMessages = {
     "balance_label": "Saldo XLM",
     "balance_unit": "XLM",
     "recent_activity": "Atividade recente",
-    "no_transactions": "Sem transações recentes"
+    "no_transactions": "Sem transações recentes",
+    "get_testnet_funds": "Obter fundos de Testnet",
+    "funds_requested": "Financiamento solicitado — o saldo será atualizado em breve"
   },
   "tx": {
     "default_type": "Transação",

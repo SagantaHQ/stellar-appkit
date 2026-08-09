@@ -83,7 +83,9 @@ const de: LocaleMessages = {
     "balance_label": "XLM-Guthaben",
     "balance_unit": "XLM",
     "recent_activity": "Letzte Aktivität",
-    "no_transactions": "Keine letzten Transaktionen"
+    "no_transactions": "Keine letzten Transaktionen",
+    "get_testnet_funds": "Testnet-Guthaben abrufen",
+    "funds_requested": "Finanzierung angefordert — Guthaben wird in Kürze aktualisiert"
   },
   "tx": {
     "default_type": "Transaktion",

@@ -83,7 +83,9 @@ const he: LocaleMessages = {
     "balance_label": "יתרת XLM",
     "balance_unit": "XLM",
     "recent_activity": "פעילות אחרונה",
-    "no_transactions": "אין עסקאות אחרונות"
+    "no_transactions": "אין עסקאות אחרונות",
+    "get_testnet_funds": "קבל כספי Testnet",
+    "funds_requested": "המימון התבקש — היתרה תתעדכן בקרוב"
   },
   "tx": {
     "default_type": "עסקה",

@@ -83,7 +83,9 @@ const nl: LocaleMessages = {
     "balance_label": "XLM-saldo",
     "balance_unit": "XLM",
     "recent_activity": "Recente activiteit",
-    "no_transactions": "Geen recente transacties"
+    "no_transactions": "Geen recente transacties",
+    "get_testnet_funds": "Testnet-tegoed ophalen",
+    "funds_requested": "Financiering aangevraagd — saldo wordt zo bijgewerkt"
   },
   "tx": {
     "default_type": "Transactie",

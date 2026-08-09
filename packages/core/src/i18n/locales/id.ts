@@ -83,7 +83,9 @@ const id: LocaleMessages = {
     "balance_label": "Saldo XLM",
     "balance_unit": "XLM",
     "recent_activity": "Aktivitas terbaru",
-    "no_transactions": "Tidak ada transaksi terbaru"
+    "no_transactions": "Tidak ada transaksi terbaru",
+    "get_testnet_funds": "Dapatkan dana Testnet",
+    "funds_requested": "Pendanaan diminta — saldo akan diperbarui segera"
   },
   "tx": {
     "default_type": "Transaksi",

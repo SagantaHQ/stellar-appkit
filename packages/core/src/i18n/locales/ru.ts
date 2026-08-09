@@ -83,7 +83,9 @@ const ru: LocaleMessages = {
     "balance_label": "Баланс XLM",
     "balance_unit": "XLM",
     "recent_activity": "Недавняя активность",
-    "no_transactions": "Нет недавних транзакций"
+    "no_transactions": "Нет недавних транзакций",
+    "get_testnet_funds": "Получить Testnet-средства",
+    "funds_requested": "Запрос отправлен — баланс скоро обновится"
   },
   "tx": {
     "default_type": "Транзакция",

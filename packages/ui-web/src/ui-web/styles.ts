@@ -877,6 +877,47 @@ export function buildStyles(theme: ConnectTheme): string {
       100% { background-position: -200% 0; }
     }
 
+    /* "Get Testnet funds" button — sits below the balance amount, only on Testnet.
+       Tertiary/subtle style so it doesn't compete with the balance number. */
+    .friendbot-btn {
+      all: unset;
+      box-sizing: border-box;
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      font-family: ${v('fontDisplay', theme)};
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      margin-top: 8px;
+      border-radius: ${v('radiusSm', theme)};
+      cursor: pointer;
+      color: ${v('colorAccent', theme)};
+      background: color-mix(in srgb, ${v('colorAccent', theme)} 10%, transparent);
+      border: 1px solid color-mix(in srgb, ${v('colorAccent', theme)} 25%, transparent);
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .friendbot-btn:hover {
+      background: color-mix(in srgb, ${v('colorAccent', theme)} 16%, transparent);
+      border-color: color-mix(in srgb, ${v('colorAccent', theme)} 40%, transparent);
+    }
+    .friendbot-btn:focus-visible {
+      outline: 2px solid ${v('colorAccent', theme)};
+      outline-offset: 1px;
+    }
+    /* "Funding requested…" confirmation banner — replaces the button briefly
+       after the user clicks it, while friendbot credits the account. */
+    .funds-banner {
+      margin-top: 8px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: ${v('colorAccent', theme)};
+      background: color-mix(in srgb, ${v('colorAccent', theme)} 8%, transparent);
+      border-radius: ${v('radiusSm', theme)};
+      border-left: 2px solid ${v('colorAccent', theme)};
+      line-height: 1.4;
+    }
+
     /* Transaction history */
     .tx-history {
       display: flex;

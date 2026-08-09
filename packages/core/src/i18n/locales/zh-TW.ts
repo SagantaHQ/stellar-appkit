@@ -83,7 +83,9 @@ const zh_TW: LocaleMessages = {
     "balance_label": "XLM 餘額",
     "balance_unit": "XLM",
     "recent_activity": "最近活動",
-    "no_transactions": "暫無最近交易"
+    "no_transactions": "暫無最近交易",
+    "get_testnet_funds": "取得 Testnet 資金",
+    "funds_requested": "已請求注資 — 餘額即將更新"
   },
   "tx": {
     "default_type": "交易",
