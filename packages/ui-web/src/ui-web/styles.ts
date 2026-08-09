@@ -348,39 +348,36 @@ export function buildStyles(theme: ConnectTheme): string {
       border-radius: 16px;
     }
     /* WalletConnect logo overlay in the center of the QR.
-       Uses a nested <span> pattern with overflow: hidden on the outer span
-       to reliably clip the background-image into rounded corners across
-       all browsers:
-         .wc-qr-logo        — outer: rounded corners + padding + white bg + shadow + overflow: hidden
-         .wc-qr-logo__img   — inner: background-image with background-size: contain + rounded */
+       Premium squircle icon with soft drop shadow — matches the wallet-tile
+       aesthetic so the QR logo looks consistent with the wallet list.
+       Uses overflow: hidden to clip the background-image into the rounded corners. */
     .wc-qr-logo {
       position: absolute;
       width: 44px;
       height: 44px;
-      border-radius: 12px;
+      /* Squircle radius matching wallet-tile */
+      border-radius: 18px;
       background: #fff;
-      padding: 6px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      /* No padding — logo fills the container edge-to-edge (cover) */
+      padding: 0;
+      /* Soft drop shadow — premium floating look, matches wallet-tile */
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
       z-index: 1;
       display: flex;
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
-      /* overflow: hidden is the key — it clips the inner background-image
-         into the outer element's rounded corners. Without it, the image
-         overflows the border-radius. */
+      /* overflow: hidden clips the inner background-image into the squircle */
       overflow: hidden;
     }
     .wc-qr-logo__img {
       width: 100%;
       height: 100%;
-      /* contain (not cover) so the full logo is visible without cropping.
-         Wallet logos are often square or have padding built in — cover
-         would crop them. */
-      background-size: contain;
+      /* cover (not contain) — logo fills the entire container edge-to-edge,
+         matching the premium app-icon aesthetic */
+      background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
-      border-radius: 6px;
       display: block;
     }
     .wc-actions {
@@ -597,24 +594,31 @@ export function buildStyles(theme: ConnectTheme): string {
       position: relative;
       width: 40px;
       height: 40px;
-      border-radius: 12px;
+      /* Squircle-style radius (~40% of width) — matches iOS/premium app icon aesthetic.
+         Not a perfect circle, not a standard rounded square — the smooth curvature
+         gives a softer, more organic feel. */
+      border-radius: 16px;
       background: ${v('colorBg', theme)};
-      border: 1px solid ${v('colorBorder', theme)};
+      /* No border — the drop shadow provides the edge definition.
+         Borders make icons look flat; shadows make them look elevated/premium. */
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       overflow: hidden;
       transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
-      /* iOS-style: icon fills most of the tile with a small 2px padding.
-         The background image gets its own border-radius so the icon itself
-         is rounded (like iOS app icons) while the tile container is also
-         rounded — creating a double-radius effect. */
-      background-size: calc(100% - 4px);
+      /* Logo fills the entire tile (cover) — no padding.
+         This matches the premium app-icon aesthetic where the brand artwork
+         extends edge-to-edge. overflow: hidden clips it to the squircle. */
+      background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
-      padding: 2px;
       box-sizing: border-box;
+      /* Soft, diffuse drop shadow — the key to the premium "floating" look.
+         Low opacity, large blur radius, no directional offset.
+         Gives the icon depth without looking heavy. */
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
     }
     /* Wallet tile icon scales up subtly on row hover — feels responsive. */
     .wallet-row:hover .wallet-tile { transform: scale(1.08); }
