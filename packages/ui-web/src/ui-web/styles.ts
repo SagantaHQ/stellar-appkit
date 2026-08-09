@@ -359,27 +359,33 @@ export function buildStyles(theme: ConnectTheme): string {
       object-fit: contain;
     }
     /* WalletConnect logo overlay in the center of the QR.
+       Deep gray container with a white ring (halo) around it — creates
+       clean separation between the QR modules and the logo container.
        No filter, no border-radius on the image — just the raw logo with
-       enough padding/margin around it inside the container. */
+       padding inside the container. */
     .wc-qr-logo {
       position: absolute;
       width: 56px;
       height: 56px;
-      /* Squircle radius matching wallet-tile */
-      border-radius: 22px;
+      /* 12px border radius — smaller, tighter radius matching the reference */
+      border-radius: 12px;
       /* Deep gray background */
       background: #1b1a1c;
       /* Padding gives the logo image a margin/breathing room inside the
          container — the image doesn't touch the edges. */
       padding: 10px;
-      /* Soft drop shadow — premium floating look, matches wallet-tile */
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
+      /* White ring (halo) around the container — 0 0 0 6px #fff creates
+         a 6px solid white ring that separates the container from the QR
+         modules. This is the "white space around the container" from the
+         reference image. The drop shadows follow for the premium floating
+         look. */
+      box-shadow: 0 0 0 6px #fff, 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
       z-index: 1;
       display: flex;
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
-      /* overflow: hidden clips the inner background-image into the squircle */
+      /* overflow: hidden clips the inner background-image into the container */
       overflow: hidden;
     }
     .wc-qr-logo__img {
