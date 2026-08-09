@@ -1333,6 +1333,9 @@ export class SagantaAppKitModal extends ModalBase {
             <div class="wc-qr-frame">
               <div class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}"></div>
             </div>
+            <span class="wc-qr-logo">
+              <span class="wc-qr-logo__img" style="background-image: url('${WC_QR_LOGO_DATA_URI}')"></span>
+            </span>
           </div>
           <h2 class="connecting-view__title">${t('wc.scan_with', { walletName: escapeHtml(walletName) })}</h2>
           <p class="connecting-view__subtitle">${t('wc.scan_instructions')}</p>
@@ -1401,9 +1404,8 @@ export class SagantaAppKitModal extends ModalBase {
   private renderWalletList(): string {
     if (this.walletList.length === 0) {
       // If we have a client, the list is loading (reachability checks in flight).
-      // Show a sleek loading placeholder instead of "No wallets registered".
       if (this._client) {
-        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>${t('wallet_list.loading')}</div>`;
+        return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">${t('wallet_list.loading')}</div>`;
       }
       return `<div style="padding: 24px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);">${t('wallet_list.empty')}</div>`;
     }
@@ -2101,13 +2103,6 @@ export class SagantaAppKitModal extends ModalBase {
             cornersSquareOptions: { color: '#202020', type: 'extra-rounded' },
             cornersDotOptions: { color: '#202020', type: 'dot' },
             backgroundOptions: { color: '#ffffff' },
-            image: WC_QR_LOGO_DATA_URI,
-            imageOptions: {
-              hideBackgroundDots: true,
-              imageSize: 0.22,
-              margin: 8,
-              crossOrigin: 'anonymous',
-            },
           });
           wcCanvas.innerHTML = '';
           qr.append(wcCanvas);
