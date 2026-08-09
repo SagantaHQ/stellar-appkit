@@ -186,11 +186,18 @@ export function buildStyles(theme: ConnectTheme): string {
     .connecting-view__logo {
       width: 56px;
       height: 56px;
-      border-radius: 12px;
-      object-fit: contain;
+      /* Squircle radius matching wallet-tile (16px on 40px = 40%; 22px on 56px ≈ 40%) */
+      border-radius: 22px;
+      /* cover (not contain) — logo fills the entire container edge-to-edge,
+         matching the premium wallet-tile aesthetic */
+      object-fit: cover;
       position: relative;
       z-index: 1;
-      background: ${v('colorSurface', theme)};
+      background: ${v('colorBg', theme)};
+      /* No border — drop shadow provides edge definition, same as wallet-tile */
+      border: none;
+      /* Soft drop shadow matching wallet-tile — premium floating look */
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
       /* Subtle breathe — the logo gently scales up and down while
          waiting for the wallet to respond. Slow enough to feel calm,
          not anxious. */
@@ -340,12 +347,12 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-frame--error .wc-qr-fallback {
       display: flex !important;
     }
-    .wc-qr-canvas {
-      /* Canvas fills the entire frame — QR covers the whole surface */
-      width: 100% !important;
-      height: 100% !important;
+    .wc-qr-img {
+      /* QR image fills the entire frame — covers the whole surface */
+      width: 100%;
+      height: 100%;
       display: block;
-      border-radius: 16px;
+      object-fit: cover;
     }
     /* WalletConnect logo overlay in the center of the QR.
        Premium squircle icon with soft drop shadow — matches the wallet-tile
