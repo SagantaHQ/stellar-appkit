@@ -349,15 +349,19 @@ export function buildStyles(theme: ConnectTheme): string {
     .wc-qr-frame--error .wc-qr-fallback {
       display: flex !important;
     }
-    .wc-qr-img {
-      /* QR image fills the entire frame — object-fit: cover ensures the QR
-         extends to the frame's rounded corners, so the border-radius clips
-         the finder patterns slightly (matching Reown's aesthetic). The QR's
-         internal margin: 1 provides the minimal quiet zone for scanning. */
+    .wc-qr-canvas {
+      /* QR container fills the entire frame — the SVG from qr-code-styling
+         is appended inside this div. width/height 100% so the SVG scales
+         to fill the frame. */
       width: 100%;
       height: 100%;
-      display: block;
-      object-fit: cover;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wc-qr-canvas svg {
+      width: 100% !important;
+      height: 100% !important;
     }
     /* WalletConnect logo overlay in the center of the QR.
        Deep gray container with a white ring (halo) around it — creates

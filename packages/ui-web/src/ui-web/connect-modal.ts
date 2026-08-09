@@ -1,7 +1,7 @@
 import type { StellarAppKit, WalletAccountOption, WalletReachability, TransactionPreview, RiskFlag } from '@saganta/stellar-appkit';
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
 import { t, onLocaleChange } from '@saganta/stellar-appkit';
-import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
 import { THEME_REGISTRY, THEME_NAMES, minimalDark, themeToCssDeclarations, type ConnectTheme, type ThemeName } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
@@ -81,7 +81,6 @@ export class SagantaAppKitModal extends ModalBase {
   private wcPairingUri: string | null = null;
   /** Pre-rendered QR code data URI for the WC pairing URI. Generated when the
    *  URI arrives (async) so the synchronous renderConnecting() can just inject it. */
-  private wcQrDataUri: string | null = null;
   /** Error message from the last connect() or SIWS attempt — set when the
    *  client emits an 'error' event while view === 'connecting', or when
    *  the SIWS flow fails. Cleared on retry. */
@@ -606,7 +605,7 @@ export class SagantaAppKitModal extends ModalBase {
 
     this.connectingWalletId = connector.id;
     this.connectingError = null;
-    this.wcPairingUri = null; this.wcQrDataUri = null;
+    this.wcPairingUri = null;
     this.view = 'connecting';
     this.render();
 
@@ -620,31 +619,10 @@ export class SagantaAppKitModal extends ModalBase {
     if (typeof wcConnector.setOnUri === 'function') {
       wcConnector.setOnUri((uri: string) => {
         this.wcPairingUri = uri;
-        this.wcQrDataUri = null; // reset any previous QR data URI
-        // Pre-render the QR code as a data URI using the `qrcode` library.
-        // Config follows Reown/AppKit's proven scannable approach:
-        // - errorCorrectionLevel 'M' (15% redundancy) — the qrcode library
-        //   default, dense enough for scanners but not overly dense like 'H'.
-        // - margin: 1 — minimal quiet zone. The .wc-qr-frame provides the
-        //   visible white padding via its own background + border-radius,
-        //   so the QR's internal margin can be small. This lets the finder
-        //   patterns extend close to the frame's rounded corners, so the
-        //   rounding clips them slightly (matching Reown's aesthetic).
-        // - scale: 8 — generates the QR at its natural module size × 8 (not
-        //   forcing an arbitrary pixel width). The container's CSS handles
-        //   the displayed size, avoiding distortion.
-        QRCode.toDataURL(uri, {
-          margin: 1,
-          scale: 8,
-          color: { dark: '#000000', light: '#ffffff' },
-          errorCorrectionLevel: 'M',
-        }).then((dataUri: string) => {
-          this.wcQrDataUri = dataUri;
-          this.render();
-        }).catch(() => {
-          this.wcQrDataUri = null;
-          this.render();
-        });
+        // The QR code is rendered via qr-code-styling in wireEvents()
+        // after the DOM is updated. This library supports styled QR codes
+        // with rounded data modules, rounded finder pattern outer rings,
+        // and circular finder pattern inner dots — matching Reown's aesthetic.
         this.render();
       });
     }
@@ -685,7 +663,7 @@ export class SagantaAppKitModal extends ModalBase {
       // (e.g. network mismatch which switches to a different view).
       if (this.view === 'connecting' && !this.connectingError) {
         this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrDataUri = null;
+      this.wcPairingUri = null;
         this.view = 'wallet-list';
         this.render();
       }
@@ -696,7 +674,7 @@ export class SagantaAppKitModal extends ModalBase {
       // shows the wallet name.
       if (this.view !== 'connecting') {
         this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrDataUri = null;
+      this.wcPairingUri = null;
       }
     }
   }
@@ -1346,17 +1324,14 @@ export class SagantaAppKitModal extends ModalBase {
 
     if (hasQrUri) {
       const uri = this.wcPairingUri!;
-      // Use the pre-rendered QR data URI (generated async when the URI arrived).
-      // If it's not ready yet, show a loading state — it'll re-render when done.
-      const qrImg = this.wcQrDataUri
-        ? `<img src="${this.wcQrDataUri}" class="wc-qr-img" alt="" />`
-        : `<div style="padding: 40px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.generating_code')}</div>`;
+      // The QR code is rendered into the .wc-qr-canvas container by
+      // qr-code-styling in wireEvents() after the DOM is updated.
 
       return `
         <div class="connecting-view connecting-view--wc">
           <div class="wc-qr-wrap">
             <div class="wc-qr-frame">
-              ${qrImg}
+              <div class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}"></div>
             </div>
             <span class="wc-qr-logo">
               <span class="wc-qr-logo__img" style="background-image: url('${WC_QR_LOGO_DATA_URI}')"></span>
@@ -1927,7 +1902,7 @@ export class SagantaAppKitModal extends ModalBase {
     // navigated away by then).
     this.root.querySelector('[data-action="cancel-connecting"]')?.addEventListener('click', () => {
       this.connectingWalletId = null;
-      this.wcPairingUri = null; this.wcQrDataUri = null;
+      this.wcPairingUri = null;
       this.connectingError = null;
       this.view = 'wallet-list';
       this.render();
@@ -2104,6 +2079,37 @@ export class SagantaAppKitModal extends ModalBase {
         setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
       }
     });
+
+    // Render the WalletConnect QR code using qr-code-styling.
+    // This library supports styled QR codes with:
+    // - Rounded data modules (dotsOptions.type: 'rounded')
+    // - Extra-rounded finder pattern outer rings (cornersSquareOptions.type: 'extra-rounded')
+    // - Circular finder pattern inner dots (cornersDotOptions.type: 'dot')
+    // This matches Reown's QR aesthetic — perfect circles in the finder pattern centers.
+    const wcCanvas = this.root.querySelector<HTMLElement>('.wc-qr-canvas');
+    if (wcCanvas) {
+      const uri = wcCanvas.dataset.wcUri;
+      if (uri) {
+        try {
+          const qr = new QRCodeStyling({
+            width: 256,
+            height: 256,
+            type: 'svg',
+            data: uri,
+            margin: 0,
+            qrOptions: { errorCorrectionLevel: 'M' },
+            dotsOptions: { color: '#000000', type: 'rounded' },
+            cornersSquareOptions: { color: '#000000', type: 'extra-rounded' },
+            cornersDotOptions: { color: '#000000', type: 'dot' },
+            backgroundOptions: { color: '#ffffff' },
+          });
+          wcCanvas.innerHTML = '';
+          qr.append(wcCanvas);
+        } catch {
+          wcCanvas.innerHTML = `<div style="padding: 40px; color: var(--sak-color-text-muted); font-size: 12px; text-align: center;">${t('wc.qr_failed')}</div>`;
+        }
+      }
+    }
 
     // Copy-to-clipboard for any address displayed inline (account picker,
     // connected sessions, transaction preview source account). Each button

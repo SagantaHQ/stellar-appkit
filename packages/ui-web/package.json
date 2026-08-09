@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit-ui-web",
-  "version": "1.9.36",
+  "version": "1.9.37",
   "description": "Web UI for @saganta/stellar-appkit — Shadow DOM modal, framework wrappers for React, Vue, Solid, and Svelte.",
   "type": "module",
   "sideEffects": [
@@ -45,7 +45,7 @@
   "dependencies": {
     "@saganta/stellar-appkit": "^1.0.3",
     "motion": "^13.0.0",
-    "qrcode": "^1.5.4"
+    "qr-code-styling": "^1.9.2"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
@@ -77,7 +77,5 @@
   "bugs": {
     "url": "https://github.com/sagantaHQ/stellar-appkit/issues"
   },
-  "devDependencies": {
-    "@types/qrcode": "^1.5.6"
-  }
+  "devDependencies": {}
 }
