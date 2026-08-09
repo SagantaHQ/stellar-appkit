@@ -396,11 +396,14 @@ export function buildStyles(theme: ConnectTheme): string {
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
+      /* border-radius on the image itself — clips the background-image into
+         rounded corners inside the container. */
+      border-radius: 12px;
       /* Pure black & white — not just grayscale. grayscale(100%) desaturates
          but keeps mid-tones; contrast(1000%) forces every pixel to either
          pure black or pure white, creating a true B&W logo that matches
          the QR's monochrome aesthetic. The white parts of the logo stay
-         white (visible against the dark gray background), the colored/dark
+         white (visible against the deep gray background), the colored/dark
          parts become black. */
       filter: grayscale(100%) contrast(1000%);
       display: block;
