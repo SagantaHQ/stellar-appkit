@@ -501,7 +501,31 @@ export class SagantaAppKitModal extends ModalBase {
 
   private async refreshWalletList() {
     if (!this._client) return;
-    this.walletList = await this._client.registry.listReachability();
+    // Show the wallet list immediately with a placeholder reachability
+    // ('unavailable') so the user sees the wallets right away — don't
+    // wait for all getReachability() calls to complete. Then update
+    // each wallet's status as the reachability checks resolve.
+    const entries = this._client.registry.list();
+    this.walletList = entries.map((connector) => ({
+      connector,
+      reachability: 'unavailable' as WalletReachability,
+    }));
+    this.render();
+
+    // Now fetch the real reachability in the background.
+    const reachability = await Promise.all(
+      entries.map(async (connector) => {
+        try {
+          return await connector.getReachability();
+        } catch {
+          return 'unavailable' as const;
+        }
+      })
+    );
+    this.walletList = entries.map((connector, i) => ({
+      connector,
+      reachability: reachability[i] ?? 'unavailable',
+    }));
     this.render();
   }
 
