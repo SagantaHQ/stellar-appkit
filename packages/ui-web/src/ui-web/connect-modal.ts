@@ -1333,9 +1333,6 @@ export class SagantaAppKitModal extends ModalBase {
             <div class="wc-qr-frame">
               <div class="wc-qr-canvas" data-wc-uri="${escapeAttr(uri)}"></div>
             </div>
-            <span class="wc-qr-logo">
-              <span class="wc-qr-logo__img" style="background-image: url('${WC_QR_LOGO_DATA_URI}')"></span>
-            </span>
           </div>
           <h2 class="connecting-view__title">${t('wc.scan_with', { walletName: escapeHtml(walletName) })}</h2>
           <p class="connecting-view__subtitle">${t('wc.scan_instructions')}</p>
@@ -2086,6 +2083,8 @@ export class SagantaAppKitModal extends ModalBase {
     // - Extra-rounded finder pattern outer rings (cornersSquareOptions.type: 'extra-rounded')
     // - Circular finder pattern inner dots (cornersDotOptions.type: 'dot')
     // This matches Reown's QR aesthetic — perfect circles in the finder pattern centers.
+    // The center logo is embedded directly via the library's 'image' option with
+    // hideBackgroundDots: true, which removes QR modules behind the logo.
     const wcCanvas = this.root.querySelector<HTMLElement>('.wc-qr-canvas');
     if (wcCanvas) {
       const uri = wcCanvas.dataset.wcUri;
@@ -2096,12 +2095,19 @@ export class SagantaAppKitModal extends ModalBase {
             height: 256,
             type: 'svg',
             data: uri,
-            margin: 0,
-            qrOptions: { errorCorrectionLevel: 'M' },
-            dotsOptions: { color: '#000000', type: 'rounded' },
-            cornersSquareOptions: { color: '#000000', type: 'extra-rounded' },
-            cornersDotOptions: { color: '#000000', type: 'dot' },
+            margin: 8,
+            qrOptions: { errorCorrectionLevel: 'H' },
+            dotsOptions: { color: '#202020', type: 'rounded' },
+            cornersSquareOptions: { color: '#202020', type: 'extra-rounded' },
+            cornersDotOptions: { color: '#202020', type: 'dot' },
             backgroundOptions: { color: '#ffffff' },
+            image: WC_QR_LOGO_DATA_URI,
+            imageOptions: {
+              hideBackgroundDots: true,
+              imageSize: 0.22,
+              margin: 8,
+              crossOrigin: 'anonymous',
+            },
           });
           wcCanvas.innerHTML = '';
           qr.append(wcCanvas);
