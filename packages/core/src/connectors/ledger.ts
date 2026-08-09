@@ -62,11 +62,8 @@ export function createLedgerConnector(options: LedgerConnectorOptions = {}): Wal
   const meta: WalletMeta = {
     id: 'ledger',
     name: 'Ledger',
-    // Simple "L" wordmark on white — matches the Ledger brand's clean geometric
-    // sans-serif aesthetic (their wordmark uses "Mier"; we use a system font
-    // stack that prioritizes Inter / Helvetica Neue which are geometrically
-    // similar). Pre-encoded base64 for browser safety (no Buffer dependency).
-    icon: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSI2NCIgeT0iNjQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJjZW50cmFsIiBmb250LWZhbWlseT0iSW50ZXIsICdIZWx2ZXRpY2EgTmV1ZScsIEhlbHZldGljYSwgQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iODQiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9IiMwMDAwMDAiPkw8L3RleHQ+PC9zdmc+',
+    // Ledger brand icon (PNG, 128x128, pre-encoded base64 for instant load)
+    icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AAAAWlBMVEX///8AAAD8/PweHh7l5eUCAgIiIiLAwMAoKCgQEBAUFBTJycn+/v7U1NR3d3cYGBjQ0NDg4ODExMR/f3/29vYKCgqXl5fr6+tHR0c1NTVfX1+4uLhvb2/Y2Ni7WoUcAAACEklEQVR42u3bbZOaMBSG4ZwEMGDWoAV50f3/f7NIndbZSDgRNtj2uXdmPyaX8YOj4Yh3yMiQhDcZkrnvLzbL/PpXJSFJ7wEkIVWjQIoPCqmZPjIjqo4C2gl5B+g6Z1bMAFpSOTP9AFDELZ0FFMQsewBklN4WZ1TPAixnHRcwlK4ESF8FFIpTOgfQaj77DJATr8QLIF61C7B0LvecqknAkGStUV4odwAZfYpoJWQdgKJSSE5m+WeBOE4BRJQAAAAAAAAAAAAAAHhHgNoaoK3VXIAxRg5/CwFaqY5OvwFjMU/g6+8D3RAXIKtbchnAtl3XjidwSzZjzDXPbd/37XnZGVQLXsWVbh3EmpkxwetAutD0Y/GO7pZsgCLFAHACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+bgD/acN/8QRyas/Pc58y+hYA1TRRLADV2ZM0tZEAE9VbA/JIgKyeyEYBXMlT9wJAimN/GOo/eZdWTeKLs4QRyXXcsbzfmpVvcG2nMv61nTcuQGfDjqcNr24LIvXlicr/+/YcAAAAAAAAAAAAAIA7INLA43NARh8iQr4xn0tzXGHgkbHGMdlT4QAojTnwmJID4PZd84ZDecHIzgIyxiq5C0hXm7i0r5yAWvEtyImZegB0mp2dAaTstf58Oy4ppERID4BCuoxLGdFcdgH5Bx73J367RJh3GP3efvh9234CAmNONTaSskoAAAAASUVORK5CYII=',
     platforms: ['hardware'],
   };
 
