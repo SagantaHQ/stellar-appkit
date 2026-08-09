@@ -47,37 +47,37 @@ const BASE_TOKENS = {
 } as const;
 
 /**
- * Base palette for DARK variants — shared surface/bg/border/text colors.
- * Each dark theme only overrides the accent.
+ * Base palette for DARK variants — neutral zinc grays (Apple/Linear/Vercel style).
+ * Shared by all dark themes; each theme only overrides the accent.
  */
 const DARK_BASE = {
   ...BASE_TOKENS,
-  colorBg: '#0B0D0E',
-  colorSurface: '#14171A',
-  colorSurfaceHover: '#1B1F23',
-  colorBorder: 'rgba(255, 255, 255, 0.08)',
-  colorText: '#F5F6F7',
-  colorTextMuted: '#9AA0A6',
-  colorDanger: '#F0997B',
-  shadowElevated: '0 20px 60px rgba(0, 0, 0, 0.45)',
-  overlayColor: 'rgba(6, 7, 8, 0.6)',
+  colorBg: '#09090B',
+  colorSurface: '#18181B',
+  colorSurfaceHover: '#27272A',
+  colorBorder: '#27272A',
+  colorText: '#FAFAFA',
+  colorTextMuted: '#A1A1AA',
+  colorDanger: '#DC2626',
+  shadowElevated: '0 20px 60px rgba(0, 0, 0, 0.65)',
+  overlayColor: 'rgba(0, 0, 0, 0.65)',
 } as const;
 
 /**
- * Base palette for LIGHT variants — shared surface/bg/border/text colors.
- * Each light theme only overrides the accent.
+ * Base palette for LIGHT variants — neutral zinc grays (Apple/Linear/Vercel style).
+ * Shared by all light themes; each theme only overrides the accent.
  */
 const LIGHT_BASE = {
   ...BASE_TOKENS,
   colorBg: '#FFFFFF',
-  colorSurface: '#F6F6F4',
-  colorSurfaceHover: '#EEEEEB',
-  colorBorder: 'rgba(11, 13, 14, 0.09)',
-  colorText: '#14171A',
-  colorTextMuted: '#6B7075',
-  colorDanger: '#B23A1B',
-  shadowElevated: '0 20px 60px rgba(11, 13, 14, 0.14)',
-  overlayColor: 'rgba(20, 23, 26, 0.35)',
+  colorSurface: '#F8F8F8',
+  colorSurfaceHover: '#F1F1F1',
+  colorBorder: '#E4E4E7',
+  colorText: '#18181B',
+  colorTextMuted: '#71717A',
+  colorDanger: '#DC2626',
+  shadowElevated: '0 20px 60px rgba(0, 0, 0, 0.14)',
+  overlayColor: 'rgba(0, 0, 0, 0.45)',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -86,27 +86,28 @@ const LIGHT_BASE = {
 // is inherited from DARK_BASE / LIGHT_BASE.
 //
 // Theme names are simple and evocative:
-//   minimal  — neutral blue (default, fits all projects)
+//   minimal  — neutral (near-black/near-white accent). DEFAULT. Fits any project.
+//   stellar  — Stellar green (#6EE7B7). The Stellar brand theme.
 //   sky      — light sky blue
 //   ocean    — deep ocean blue
-//   forest   — earthy green
-//   sunset   — warm orange/pink
+//   sunset   — warm coral/pink
 // ---------------------------------------------------------------------------
 
 /** The accent for each named theme. */
 const ACCENTS = {
-  // minimal — default. Neutral blue that fits any project (Reown/WalletConnect style).
-  // Works on both dark + light, high contrast, not brand-specific.
-  minimal:  { dark: '#3B82F6', light: '#2563EB' },
+  // minimal — default. Neutral near-black/near-white accent that blends into
+  // any host website. Inspired by Apple/Linear/Vercel's neutral UI language.
+  // No brand color — the component looks native wherever it's embedded.
+  minimal:  { dark: '#FAFAFA', light: '#18181B' },
+
+  // stellar — the Stellar brand green. For apps that want the Stellar look.
+  stellar:  { dark: '#6EE7B7', light: '#0E9A6E' },
 
   // sky — lighter, airy blue. Feels open and friendly.
   sky:      { dark: '#38BDF8', light: '#0EA5E9' },
 
   // ocean — deep navy blue. Serious, financial, trustworthy.
   ocean:    { dark: '#60A5FA', light: '#1D4ED8' },
-
-  // forest — earthy green. Eco, sustainability, growth.
-  forest:   { dark: '#6EE7B7', light: '#0E9A6E' },
 
   // sunset — warm coral/pink. Energetic, creative, social.
   sunset:   { dark: '#FB7185', light: '#E11D48' },
@@ -120,9 +121,9 @@ function darkVariant(name: ThemeName): ConnectTheme {
   return {
     ...DARK_BASE,
     colorAccent: accent,
-    // Darker shade of the accent for readable text on accent fills.
-    // Using a very dark version of the accent ensures white text is legible.
-    colorAccentText: '#FFFFFF',
+    // For dark themes, the accent text (text on accent-filled buttons) is
+    // always near-black so it's legible on light accents (like minimal's #FAFAFA).
+    colorAccentText: '#09090B',
   };
 }
 
@@ -132,6 +133,8 @@ function lightVariant(name: ThemeName): ConnectTheme {
   return {
     ...LIGHT_BASE,
     colorAccent: accent,
+    // For light themes, the accent text is always white so it's legible on
+    // dark accents (like minimal's #18181B).
     colorAccentText: '#FFFFFF',
   };
 }
@@ -142,9 +145,13 @@ function lightVariant(name: ThemeName): ConnectTheme {
 //   import { minimalDark, skyLight } from '@saganta/stellar-appkit-ui-web';
 // ---------------------------------------------------------------------------
 
-// minimal (default) — neutral blue
+// minimal (default) — neutral, fits any project
 export const minimalDark: ConnectTheme = darkVariant('minimal');
 export const minimalLight: ConnectTheme = lightVariant('minimal');
+
+// stellar — Stellar brand green
+export const stellarDark: ConnectTheme = darkVariant('stellar');
+export const stellarLight: ConnectTheme = lightVariant('stellar');
 
 // sky — light sky blue
 export const skyDark: ConnectTheme = darkVariant('sky');
@@ -153,10 +160,6 @@ export const skyLight: ConnectTheme = lightVariant('sky');
 // ocean — deep ocean blue
 export const oceanDark: ConnectTheme = darkVariant('ocean');
 export const oceanLight: ConnectTheme = lightVariant('ocean');
-
-// forest — earthy green
-export const forestDark: ConnectTheme = darkVariant('forest');
-export const forestLight: ConnectTheme = lightVariant('forest');
 
 // sunset — warm coral/pink
 export const sunsetDark: ConnectTheme = darkVariant('sunset');
@@ -183,9 +186,9 @@ export const lightTheme: ConnectTheme = minimalLight;
 
 export const THEME_REGISTRY: Record<ThemeName, { dark: ConnectTheme; light: ConnectTheme }> = {
   minimal: { dark: minimalDark, light: minimalLight },
+  stellar: { dark: stellarDark, light: stellarLight },
   sky:     { dark: skyDark, light: skyLight },
   ocean:   { dark: oceanDark, light: oceanLight },
-  forest:  { dark: forestDark, light: forestLight },
   sunset:  { dark: sunsetDark, light: sunsetLight },
 };
 

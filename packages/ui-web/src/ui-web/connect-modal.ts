@@ -980,7 +980,7 @@ export class SagantaAppKitModal extends ModalBase {
 
   private resolveTheme(): ConnectTheme {
     // The theme attribute accepts:
-    //   - A named theme: 'minimal' | 'sky' | 'ocean' | 'forest' | 'sunset'
+    //   - A named theme: 'minimal' | 'stellar' | 'sky' | 'ocean' | 'sunset'
     //   - 'dark' (backwards compat — maps to minimalDark)
     //   - 'light' (backwards compat — maps to minimalLight)
     //   - 'auto' (follows prefers-color-scheme, defaults to minimal)

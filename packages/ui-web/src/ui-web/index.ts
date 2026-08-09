@@ -1,14 +1,14 @@
 export { SagantaAppKitModal } from './connect-modal.js';
 export type { PresentationMode } from './connect-modal.js';
 
-// Theme exports — 5 named themes (minimal, sky, ocean, forest, sunset),
+// Theme exports — 5 named themes (minimal, stellar, sky, ocean, sunset),
 // each with dark + light variants. `minimalDark` is the default.
 export {
   // Named themes (dark + light variants)
   minimalDark, minimalLight,
+  stellarDark, stellarLight,
   skyDark, skyLight,
   oceanDark, oceanLight,
-  forestDark, forestLight,
   sunsetDark, sunsetLight,
   // Registry + helpers
   THEME_REGISTRY, THEME_NAMES,
