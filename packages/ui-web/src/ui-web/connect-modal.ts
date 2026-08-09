@@ -625,15 +625,16 @@ export class SagantaAppKitModal extends ModalBase {
         // Config follows Reown/AppKit's proven scannable approach:
         // - errorCorrectionLevel 'M' (15% redundancy) — the qrcode library
         //   default, dense enough for scanners but not overly dense like 'H'.
-        //   Reown uses this level; 'H' (30%) makes the QR harder to scan
-        //   because the modules are more tightly packed.
-        // - margin: 2 — the quiet zone (white padding) that scanners need to
-        //   detect the QR boundary. margin: 0 caused scanning failures.
+        // - margin: 1 — minimal quiet zone. The .wc-qr-frame provides the
+        //   visible white padding via its own background + border-radius,
+        //   so the QR's internal margin can be small. This lets the finder
+        //   patterns extend close to the frame's rounded corners, so the
+        //   rounding clips them slightly (matching Reown's aesthetic).
         // - scale: 8 — generates the QR at its natural module size × 8 (not
         //   forcing an arbitrary pixel width). The container's CSS handles
         //   the displayed size, avoiding distortion.
         QRCode.toDataURL(uri, {
-          margin: 2,
+          margin: 1,
           scale: 8,
           color: { dark: '#000000', light: '#ffffff' },
           errorCorrectionLevel: 'M',

@@ -350,13 +350,14 @@ export function buildStyles(theme: ConnectTheme): string {
       display: flex !important;
     }
     .wc-qr-img {
-      /* QR image fills the entire frame — the margin: 2 in the QR generation
-         provides the quiet zone, and object-fit: contain ensures the QR is
-         not distorted (cover would crop the quiet zone). */
+      /* QR image fills the entire frame — object-fit: cover ensures the QR
+         extends to the frame's rounded corners, so the border-radius clips
+         the finder patterns slightly (matching Reown's aesthetic). The QR's
+         internal margin: 1 provides the minimal quiet zone for scanning. */
       width: 100%;
       height: 100%;
       display: block;
-      object-fit: contain;
+      object-fit: cover;
     }
     /* WalletConnect logo overlay in the center of the QR.
        Deep gray container with a white ring (halo) around it — creates
