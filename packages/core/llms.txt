@@ -15,7 +15,7 @@ Stellar AppKit is a Web3Modal / Reown AppKit equivalent for Stellar. It provides
 npm install @saganta/stellar-appkit @saganta/stellar-appkit-ui-web
 ```
 
-That's it. All wallet SDKs and the Stellar SDK are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector. The UI package has zero runtime dependencies (drag-to-dismiss uses a custom 30-line spring; open/close transitions use native WAAPI).
+That's it. All wallet SDKs and the Stellar SDK are bundled as regular dependencies — installed automatically, version-locked to known-working ranges, and tree-shaken out of your bundle if you don't use the corresponding connector. The UI package has two runtime dependencies: `qr-code-styling@^1.9.2` (styled QR codes for the WalletConnect pairing view — rounded data modules, extra-rounded finder pattern outer rings, circular finder pattern inner dots) and `motion` (used by the optional animation presets). The bottom-sheet drag-to-dismiss still uses a custom 30-line spring engine on native Pointer Events + `requestAnimationFrame`; the open/close transitions use native WAAPI.
 
 Bundled dependencies (no manual install needed):
 - `@stellar/stellar-sdk` — core (transaction building, Soroban RPC, contract spec)
@@ -24,6 +24,8 @@ Bundled dependencies (no manual install needed):
 - `@creit.tech/xbull-wallet-connect` — xBull connector
 - `@ledgerhq/hw-app-str` + `@ledgerhq/hw-transport-webhid` + `@ledgerhq/hw-transport-webusb` — Ledger connector
 - `@walletconnect/sign-client` — WalletConnect connector
+- `qr-code-styling` (in `@saganta/stellar-appkit-ui-web`) — styled QR codes for the WalletConnect pairing view
+- `motion` (in `@saganta/stellar-appkit-ui-web`) — animation presets for modal/bottom-sheet transitions
 
 Framework wrappers are optional peer dependencies (install the one for your framework):
 - `react` + `react-dom` — `@saganta/stellar-appkit/react`
@@ -83,10 +85,11 @@ const appkit = new StellarAppKit({
 
 WalletConnect covers every non-extension Stellar wallet — Hana (SDF's wallet), Lobstr, Hot Wallet, and any mobile wallet.
 
-- **With `<stellar-appkit-modal>` (recommended):** the QR code is rendered automatically as an inline SVG using `better-qr` (zero network dependency). Omit `onUri` entirely.
-- **Without the modal (custom UI):** set `onUri` to render the QR yourself (use `qrcode.react`, `qrcode`, or `better-qr`).
+- **With `<stellar-appkit-modal>` (recommended):** the QR code is rendered automatically as an inline SVG via [`qr-code-styling`](https://www.npmjs.com/package/qr-code-styling). The styling matches Reown's QR aesthetic: rounded data modules (`dotsOptions.type: 'rounded'`), extra-rounded finder pattern outer rings (`cornersSquareOptions.type: 'extra-rounded'`), and circular finder pattern inner dots (`cornersDotOptions.type: 'dot'`). Omit `onUri` entirely.
+- **Without the modal (custom UI):** set `onUri` to render the QR yourself (use `qr-code-styling`, `qrcode.react`, or `qrcode` — `better-qr` was used in older versions and is no longer bundled).
 - **`Networks` export:** `import { Networks } from '@saganta/stellar-appkit'` — no need for `@stellar/stellar-sdk`.
-- `@walletconnect/sign-client` + `better-qr` are bundled (lazy-imported, tree-shaken if unused).
+- `@walletconnect/sign-client` is bundled (lazy-imported, tree-shaken if unused); `qr-code-styling` is a dependency of `@saganta/stellar-appkit-ui-web` (lazy-imported inside the modal only when the WC connector is registered).
+- **WalletConnect is pinned to the top of the wallet list** when present (it's the only "always-available" connector since it's a relay, not a browser extension). Its sub-label reads "Scan QR Code" instead of "Installed".
 
 ## Wallet Connection
 
@@ -245,7 +248,7 @@ function ModalHost() {
   const ref = useRef<StellarAppKitModalHandle>(null);
   return (
     <>
-      <StellarAppKitModal ref={ref} mode="auto" theme="dark"
+      <StellarAppKitModal ref={ref} mode="auto" theme="minimal"
                           onConnect={(s) => console.log(s)} />
       <button onClick={() => ref.current?.open()}>Connect</button>
     </>
@@ -263,7 +266,7 @@ function ModalHost() {
   const modal = ref<InstanceType<typeof StellarAppKitModal>>();
 </script>
 <template>
-  <StellarAppKitModal ref="modal" mode="auto" theme="dark"
+  <StellarAppKitModal ref="modal" mode="auto" theme="minimal"
                       @connect="(s) => console.log(s)" />
   <button @click="modal?.open()">Connect</button>
 </template>
@@ -276,7 +279,7 @@ import type { StellarAppKitModalHandle } from '@saganta/stellar-appkit-ui-web/so
 import '@saganta/stellar-appkit-ui-web';
 
 let handle: StellarAppKitModalHandle | undefined;
-<StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="dark" />;
+<StellarAppKitModal ref={(h) => (handle = h)} mode="auto" theme="minimal" />;
 <button onClick={() => handle?.open()}>Connect</button>;
 ```
 
@@ -288,14 +291,14 @@ let handle: StellarAppKitModalHandle | undefined;
   setStellarAppKitContext({ network: 'TESTNET', connectors: [...] });
   let modalEl: HTMLElement;
 </script>
-<stellar-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="dark"
+<stellar-appkit-modal use:stellarmodal bind:this={modalEl} mode="auto" theme="minimal"
                       on:sc-connect={(e) => console.log(e.detail)} />
 <button on:click={() => openModal(modalEl)}>Connect</button>
 ```
 
 ### Modal props (all frameworks)
 - `mode`: 'auto' | 'modal' | 'bottomsheet' | 'inline'
-- `theme`: 'dark' | 'light'
+- `theme`: a named theme (`'minimal'` (default), `'stellar'`, `'sky'`, `'ocean'`, `'sunset'`) with optional `:light` suffix (e.g. `'sky:light'`), `'auto'` (follows `prefers-color-scheme`), or `'dark'` / `'light'` (backwards-compat → `minimalDark` / `minimalLight`). See "Theming" below.
 - `branding`: 'default' | 'minimal' | 'hidden'
 - `logoSrc`: string (URL)
 - `title`: string
@@ -349,19 +352,52 @@ const appkit = new StellarAppKit({
 
 ## Theming
 
+The modal ships with **5 named themes**, each with a dark and light variant (10 theme objects total). Themes are built on a shared **zinc neutral base palette** (`#09090B` / `#FFFFFF` bg, `#18181B` / `#F8F8F8` surface, `#FAFAFA` / `#18181B` text). Each named theme only overrides the accent color — the rest of the palette stays consistent across themes.
+
+| Theme | Accent (dark / light) | Notes |
+|---|---|---|
+| `minimal` (default) | `#FAFAFA` / `#18181B` (neutral) | No brand color — fits any project |
+| `stellar` | `#6EE7B7` / `#0E9A6E` (Stellar green) | Stellar brand theme |
+| `sky` | `#38BDF8` / `#0EA5E9` (light sky blue) | Open, friendly |
+| `ocean` | `#60A5FA` / `#1D4ED8` (deep ocean blue) | Serious, financial |
+| `sunset` | `#FB7185` / `#E11D48` (warm coral/pink) | Energetic, creative |
+
+The `theme` attribute accepts:
+- A named theme: `theme="minimal"`, `theme="stellar"`, `theme="sky"`, `theme="ocean"`, `theme="sunset"` (resolves to the dark variant by default)
+- Named theme with `:light` suffix: `theme="sky:light"`, `theme="ocean:light"`
+- `theme="auto"` — follows `prefers-color-scheme` (resolves to `minimal` dark/light)
+- `theme="dark"` or `theme="light"` (backwards compat — both map to `minimalDark` / `minimalLight`)
+- Omitted / unknown — defaults to `minimal` (dark)
+
 ```css
 stellar-appkit-modal {
-  --sak-color-bg: #0B0D0E;
-  --sak-color-accent: #6EE7B7;
+  --sak-color-bg: #09090B;
+  --sak-color-surface: #18181B;
+  --sak-color-accent: #6EE7B7;  /* override the theme's accent */
+  --sak-color-text: #FAFAFA;
   --sak-radius-lg: 20px;
   --sak-font-display: 'Geist Sans', sans-serif;
 }
 ```
 
 ```html
-<stellar-appkit-modal mode="auto" theme="dark" stellar-expert-avatars="true">
+<stellar-appkit-modal mode="auto" theme="minimal" stellar-expert-avatars="true">
 </stellar-appkit-modal>
+<stellar-appkit-modal mode="auto" theme="stellar"></stellar-appkit-modal>
+<stellar-appkit-modal mode="auto" theme="sky:light"></stellar-appkit-modal>
+<stellar-appkit-modal mode="auto" theme="auto"></stellar-appkit-modal>
 ```
+
+Resolved theme objects are also exported from `@saganta/stellar-appkit-ui-web` for non-UI use: `minimalDark`, `minimalLight`, `stellarDark`, `stellarLight`, `skyDark`, `skyLight`, `oceanDark`, `oceanLight`, `sunsetDark`, `sunsetLight`, plus `THEME_NAMES` and `THEME_REGISTRY`.
+
+## Built-in wallet UX features
+
+These features are wired into `<stellar-appkit-modal>`'s connected view — no config needed:
+
+- **"Get Testnet funds" button** — only rendered when `session.network === 'TESTNET'`. Calls `https://friendbot.stellar.org/?addr=<address>` via `fetch()` (no `window.open` — the user stays in the modal). Shows a "Funding requested…" banner, then polls the balance at 3s / 6s / 10s after the click so the new XLM appears automatically. Testnet-only — Futurenet / Standalone / Public don't render the button.
+- **Balance + transaction-history polling** — while the modal is open and a wallet is connected, the modal silently refreshes the balance + recent transactions every **10 seconds** (silent = no skeleton-loading flash; cached values stay visible until the new fetch resolves). Polling starts on modal open, stops on close/disconnect. After any successful `signTransaction()`, the modal also refreshes the balance + history 2 seconds later so the new transaction shows up immediately.
+- **WalletConnect pinned to top of wallet list** — when a WalletConnect connector is registered, it sorts to the top of the wallet list and its sub-label reads "Scan QR Code" instead of "Installed".
+- **Ledger icon** — the Ledger wallet row uses a bundled inline SVG: white background with a black "L" wordmark at `font-weight: 400` (Inter / Helvetica Neue / Helvetica / Arial).
 
 ## Error Handling
 

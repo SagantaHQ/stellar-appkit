@@ -158,44 +158,43 @@ Every visual value is a design token, exposed as CSS custom properties on web an
 
 ```css
 stellar-appkit-modal {
-  --sak-color-bg: #0B0D0E;
-  --sak-color-surface: #14171A;
-  --sak-color-border: rgba(255,255,255,0.08);
-  --sak-color-text: #F5F6F7;
-  --sak-color-text-muted: #9AA0A6;
-  --sak-color-accent: #6EE7B7;
+  --sak-color-bg: #09090B;
+  --sak-color-surface: #18181B;
+  --sak-color-border: #27272A;
+  --sak-color-text: #FAFAFA;
+  --sak-color-text-muted: #A1A1AA;
+  --sak-color-accent: #6EE7B7;          /* overridden by the named theme */
+  --sak-color-accent-text: #09090B;     /* text color on accent-filled buttons */
   --sak-radius-sm: 10px;
   --sak-radius-lg: 20px;
   --sak-font-display: 'Geist Sans', ui-sans-serif, system-ui;
   --sak-font-mono: 'Geist Mono', ui-monospace;
-  --sak-shadow-elevated: 0 20px 60px rgba(0,0,0,0.35);
+  --sak-shadow-elevated: 0 20px 60px rgba(0,0,0,0.65);
   --sak-logo-url: url('/brand/logo.svg');
   --sak-branding: 'show';   /* 'show' | 'hide' — "powered by" footer */
 }
 ```
 
-```ts
-// RN / JS equivalent
-<ConnectProvider
-  theme={{
-    mode: 'dark',
-    colors: { bg: '#0B0D0E', surface: '#14171A', accent: '#6EE7B7', text: '#F5F6F7' },
-    radius: { sm: 10, lg: 20 },
-    fonts: { display: 'GeistSans', mono: 'GeistMono' },
-    logo: { uri: 'https://.../logo.svg', width: 28, height: 28 },
-    showBranding: true,
-  }}
-/>
-```
+**Theme system (v1.9.x).** The modal ships **5 named themes**, each with a dark + light variant (10 theme objects total). Themes are built on top of a shared **zinc neutral base palette** — each named theme only overrides the accent color, so the rest of the palette stays consistent. See **§8.20** for the full theme registry, accent values, and `theme` attribute resolution rules.
 
-**Default theme** (what ships before any customization) — deliberately not one of the generic "AI-default" looks (cream+terracotta, near-black+acid-green, broadsheet-serif). Direction: a quiet, editorial dark-mode with a single considered accent and generous type — closer to a well-made trading terminal than a crypto-modal template:
+| Theme | Accent (dark / light) | Notes |
+|---|---|---|
+| `minimal` (default) | `#FAFAFA` / `#18181B` (neutral) | No brand color — fits any project |
+| `stellar` | `#6EE7B7` / `#0E9A6E` (Stellar green) | Stellar brand theme |
+| `sky` | `#38BDF8` / `#0EA5E9` (light sky blue) | Open, friendly |
+| `ocean` | `#60A5FA` / `#1D4ED8` (deep ocean blue) | Serious, financial |
+| `sunset` | `#FB7185` / `#E11D48` (warm coral/pink) | Energetic, creative |
 
-- **Color** — near-black graphite `#0B0D0E` background, elevated surface `#14171A`, hairline borders at 8% white, primary text `#F5F6F7`, muted text `#9AA0A6`, one accent — a desaturated mint `#6EE7B7` used only for the active/selected state and the primary CTA, never decoratively.
+The `theme` attribute accepts a named theme (`theme="stellar"`), a `:light` suffix (`theme="sky:light"`), `auto` (follows `prefers-color-scheme`), or `dark`/`light` (backwards-compat → `minimalDark` / `minimalLight`). Omitted / unknown values fall back to `minimal` (dark variant).
+
+**Default theme** (what ships before any customization) — `minimalDark`, a quiet editorial dark-mode palette built on zinc neutrals, with a near-white `#FAFAFA` accent (the primary CTA, the active wallet row, focus rings). The `minimal` accent is intentionally not a brand color — the modal looks native wherever it's embedded, instead of broadcasting "I am a Stellar app". Apps that want the Stellar brand look can switch to `theme="stellar"` for the green accent. The other named themes (`sky`, `ocean`, `sunset`) are accent-only variations on the same zinc base — pick the one that matches your product's palette.
+
+- **Color** — zinc-950 `#09090B` background, zinc-900 `#18181B` surface, zinc-800 `#27272A` borders, zinc-50 `#FAFAFA` primary text, zinc-400 `#A1A1AA` muted text. The accent for `minimalDark` is `#FAFAFA` (near-white) with `#09090B` accent-text (the text on a solid accent fill is near-black for legibility on light accents).
 - **Type** — Geist Sans for UI labels and wallet names, Geist Mono for addresses, hashes, and network names (matches how addresses are usually read — as data, not prose).
 - **Signature element** — the connecting state doesn't use a generic spinner; it uses a single hairline circular arc that traces the outline of the selected wallet's icon tile, so "connecting" reads as *this specific wallet is being reached*, not a generic loading state.
 - **Motion** — one orchestrated open/close transition (sheet slides from the trigger's edge on mobile, modal scales from 96%→100% with a backdrop fade on desktop), restrained hover states elsewhere, `prefers-reduced-motion` respected throughout.
 
-Light mode is a first-class second token set (useful for Saganta's own site, which is light-mode/Pyth-inspired), not a naive inversion — surfaces, borders, and the accent are re-tuned separately.
+Light mode is a first-class second token set (zinc-50 / zinc-100 / zinc-200 surfaces, zinc-900 text), not a naive inversion — surfaces, borders, and the accent are re-tuned separately. Every theme resolves to one of these two base palettes; only the accent + accent-text color change between named themes.
 
 ---
 
@@ -714,7 +713,7 @@ The `client.ts` `resolveNetworkPassphrase()` private method now calls this helpe
 
 ---
 
-## 8.15 WalletConnect QR rendering — `better-qr` + late-bound `onUri`
+## 8.15 WalletConnect QR rendering — `qr-code-styling` + late-bound `onUri`
 
 The WalletConnect connector generates a pairing URI that the user must scan as a QR code with their wallet app. Previously, the app had to render this QR code itself — the modal showed a generic "Continue in WalletConnect" spinner with no QR code, which was confusing.
 
@@ -736,25 +735,31 @@ if (typeof wcConnector.setOnUri === 'function') {
 
 The `onUri` option on `createWalletConnectConnector()` is now **optional** — when omitted, it defaults to a no-op. The modal overrides it via `setOnUri()`.
 
-**2. `better-qr` for QR rendering**
+**2. `qr-code-styling` for QR rendering**
 
-The modal uses [`better-qr`](https://www.npmjs.com/package/better-qr) to render the pairing URI as an inline SVG:
+The modal uses [`qr-code-styling@^1.9.2`](https://www.npmjs.com/package/qr-code-styling) to render the pairing URI as an inline SVG with rounded modules and dot-style finder pattern centers — matching Reown's QR aesthetic. (Earlier versions used `better-qr`; it was replaced with `qr-code-styling` because it supports the styled module types — `dotsOptions.type: 'rounded'`, `cornersSquareOptions.type: 'extra-rounded'`, `cornersDotOptions.type: 'dot'` — without writing a custom QR renderer.)
 
 ```ts
-import { toSvg } from 'better-qr';
+import QRCodeStyling from 'qr-code-styling';
 
-const qrSvg = toSvg(uri, {
-  moduleSize: 6,
-  margin: 2,
-  foreground: '#000000',
-  background: '#ffffff',
-  errorCorrectionLevel: 'M',
+const qr = new QRCodeStyling({
+  width: 256,
+  height: 256,
+  type: 'svg',
+  data: uri,
+  margin: 8,
+  qrOptions: { errorCorrectionLevel: 'H' },
+  dotsOptions:            { color: '#202020', type: 'rounded' },         // rounded data modules
+  cornersSquareOptions:   { color: '#202020', type: 'extra-rounded' },    // rounded finder pattern outer rings
+  cornersDotOptions:      { color: '#202020', type: 'dot' },              // circular finder pattern inner dots
+  backgroundOptions:      { color: '#ffffff' },
 });
+qr.append(wcCanvas);
 ```
 
-The SVG is embedded directly in the shadow DOM — zero network dependency (no external API calls like `api.qrserver.com`), works offline, no privacy leak. The SVG scales crisply at any size.
+The SVG is embedded directly in the shadow DOM — zero network dependency (no external API calls like `api.qrserver.com`), works offline, no privacy leak. The SVG scales crisply at any size. High error-correction (`'H'`) is used so the wallet logo can be overlaid in the center without breaking scanability.
 
-`better-qr` is a bundled dependency of `@saganta/stellar-appkit-ui-web` — installed automatically, lazy-imported only when the WC connector is actually used, tree-shaken out otherwise.
+`qr-code-styling` is a runtime dependency of `@saganta/stellar-appkit-ui-web` — declared in `packages/ui-web/package.json`'s `dependencies`, installed automatically, lazy-imported inside the modal only when the WC connector is registered, tree-shaken out otherwise.
 
 **3. Connecting view replacement**
 
@@ -937,6 +942,192 @@ These are maintained in the [docs repo](https://github.com/sagantaHQ/stellar-app
 ### Live demos site
 
 The demos site at [demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com) hosts 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route in the [demos repo](https://github.com/sagantaHQ/stellar-appkit-demos), built with Next.js 15 + OpenNext for Cloudflare Workers.
+
+---
+
+## 8.20 Named theme registry — 5 themes × dark/light variants
+
+Earlier versions of the modal shipped exactly one theme: a dark variant with a Stellar-green `#6EE7B7` accent, plus a light variant. The default `theme="dark"` was used by almost every consumer, so the modal's green-accent-on-graphite look became a recognizable brand signal — which is the wrong default for a drop-in component that's supposed to look native inside any host app.
+
+### Design
+
+The theme system is now a small registry of **5 named themes**, each with a **dark** and **light** variant (10 theme objects total). Each theme is built by overriding only the `colorAccent` + `colorAccentText` tokens on top of a shared base palette — no other token varies, so adding a new theme is a 2-line change in `tokens.ts`.
+
+**Base palette — zinc neutrals.** Both dark and light variants share the same neutral foundation (Apple / Linear / Vercel style):
+
+| Token | Dark (`DARK_BASE`) | Light (`LIGHT_BASE`) |
+|---|---|---|
+| `colorBg` | `#09090B` (zinc-950) | `#FFFFFF` |
+| `colorSurface` | `#18181B` (zinc-900) | `#F8F8F8` |
+| `colorSurfaceHover` | `#27272A` (zinc-800) | `#F1F1F1` |
+| `colorBorder` | `#27272A` (zinc-800) | `#E4E4E7` (zinc-200) |
+| `colorText` | `#FAFAFA` (zinc-50) | `#18181B` (zinc-900) |
+| `colorTextMuted` | `#A1A1AA` (zinc-400) | `#71717A` (zinc-500) |
+| `colorDanger` | `#DC2626` | `#DC2626` |
+| `colorAccentText` | `#09090B` (always near-black on dark themes — legible on light accents) | `#FFFFFF` (always white on light themes — legible on dark accents) |
+
+**Named themes — accent-only overrides.** Each named theme only supplies a `dark` and `light` accent color:
+
+| Theme | Accent (dark) | Accent (light) | Vibe |
+|---|---|---|---|
+| `minimal` (default) | `#FAFAFA` (zinc-50) | `#18181B` (zinc-900) | No brand color — fits any project |
+| `stellar` | `#6EE7B7` (Stellar mint) | `#0E9A6E` | Stellar brand green |
+| `sky` | `#38BDF8` (sky-400) | `#0EA5E9` (sky-500) | Open, friendly blue |
+| `ocean` | `#60A5FA` (blue-400) | `#1D4ED8` (blue-700) | Serious, financial deep blue |
+| `sunset` | `#FB7185` (rose-400) | `#E11D48` (rose-600) | Energetic coral/pink |
+
+The `minimal` theme deliberately uses a *neutral* accent (near-white on dark, near-black on light) so the modal reads as "just a UI element" rather than "a Stellar-branded widget". The accent is still semantically meaningful — it's the color of the primary CTA, the active wallet row, focus rings — it's just not a brand color. Apps that *want* the Stellar brand look opt in with `theme="stellar"`.
+
+### `theme` attribute resolution
+
+`resolveTheme()` in `connect-modal.ts` accepts:
+
+- **Named theme** (`'minimal'` | `'stellar'` | `'sky'` | `'ocean'` | `'sunset'`) — resolves to the **dark** variant by default.
+- **Named theme with `:light` suffix** (e.g. `'sky:light'`, `'ocean:dark'`) — explicit variant override. The suffix is optional for dark, required for light.
+- **`'auto'`** — follows `prefers-color-scheme: light`, resolving to `minimalLight` when light is preferred, `minimalDark` otherwise. Always resolves to the `minimal` theme (not the consumer's named theme) so the auto behavior is predictable — apps that want a specific named theme with auto color-scheme should render two `<stellar-appkit-modal>` instances and toggle visibility from their own `matchMedia` listener.
+- **`'dark'` or `'light'`** — **backwards-compat**. Both map to `minimalDark` / `minimalLight` respectively. Consumers on older versions of the SDK whose HTML still has `theme="dark"` will see the new minimal palette instead of the old green-accent dark theme. Apps that want the old green look should migrate to `theme="stellar"`.
+- **Omitted / unknown** — falls back to `minimalDark`.
+
+### Exports
+
+Resolved theme objects are exported from `@saganta/stellar-appkit-ui-web`:
+
+```ts
+import {
+  minimalDark, minimalLight,
+  stellarDark, stellarLight,
+  skyDark, skyLight,
+  oceanDark, oceanLight,
+  sunsetDark, sunsetLight,
+  THEME_NAMES,        // ['minimal', 'stellar', 'sky', 'ocean', 'sunset']
+  THEME_REGISTRY,     // Record<ThemeName, { dark: ConnectTheme; light: ConnectTheme }>
+  darkTheme,          // @deprecated alias for minimalDark (backwards compat)
+  lightTheme,         // @deprecated alias for minimalLight (backwards compat)
+} from '@saganta/stellar-appkit-ui-web';
+```
+
+The deprecated `darkTheme` / `lightTheme` exports are kept so existing consumers' imports don't break — they now point at `minimalDark` / `minimalLight` (which uses the neutral accent, not the old green). Consumers who want the old green-accent look should migrate to `stellarDark`.
+
+### Implementation notes
+
+- `BASE_TOKENS` (radii, fonts) is shared by both `DARK_BASE` and `LIGHT_BASE` — those tokens don't change between modes.
+- `darkVariant(name)` and `lightVariant(name)` build a theme by spreading the appropriate base and overriding `colorAccent` + `colorAccentText`. This keeps each theme definition to ~2 lines instead of duplicating ~15 tokens per theme.
+- The stylesheet is cached by `themeKey = colorBg|colorAccent|colorText` — `buildStyles(theme)` (which generates a ~1000-line CSS string) only runs when the theme actually changes, not on every `render()`.
+- Theme objects are also passed to `themeHostDeclarations(theme)` to seed `:host` defaults for `::slotted` content that can't reach a `var()` declared deeper in the sheet.
+
+---
+
+## 8.21 Balance + transaction-history polling
+
+The connected view shows the wallet's XLM balance and the 5 most recent transactions. Both come from Horizon — `accounts/{address}` for the balance + trustlines, `accounts/{address}/transactions` for the history. Calling Horizon once on connect isn't enough: the user might receive funds, sign a transaction in another tab, or have a pending funding request (see §8.22) that hasn't posted yet.
+
+### Polling design
+
+- **Interval:** 10 seconds. Frequent enough to feel live (a received payment shows up within ~10s of the sender's submission), not so frequent that it hammers Horizon's public API (6 requests/minute per modal instance — well under the rate limit).
+- **Silent mode:** the poller calls `refreshAccountData(silent = true)`. In silent mode, the existing `cachedBalance` and `cachedTxHistory` stay rendered while the fetch is in flight; the new values replace them when the fetch resolves. The skeleton-loading shimmer only appears on the **initial** fetch (when `cachedBalance` is null), not on polls. This prevents a 200ms flash of "Loading…" every 10 seconds, which would look broken.
+- **Lifecycle:** polling starts when the modal opens (`open()` → `startBalancePolling()`) and stops on close (`close()` → `stopBalancePolling()`), disconnect, or `destroy()`. The poller is a `setInterval` ID held on the modal instance; `stopBalancePolling()` calls `clearInterval` and nulls the reference. Re-opening the modal starts a fresh interval.
+- **Guard:** every poll tick checks `this._client?.session && this.isOpen` before calling `refreshAccountData(true)`. If the user disconnected (or closed the modal between the tick and the fetch), the poll is a no-op.
+- **Refresh after signing:** separate from the 10s poller, the `signQueueChange` handler in `wireEvents()` fires when a `signTransaction()` / `signAuthEntry()` / `signMessage()` resolves. If the queue empties and no error is set, the modal schedules a one-shot `setTimeout(() => void this.refreshAccountData(true), 2000)` — a 2-second delay lets Horizon index the new transaction before the refetch, so the user sees the new balance + the new row in transaction history immediately after signing.
+
+### Why not WebSocket / SSE
+
+Horizon's public API doesn't expose a stable streaming endpoint for account balances that's broadly usable across all networks (Testnet / Public / Futurenet). Streaming is also more fragile for the modal's lifecycle (reconnect on tab focus, reconnection backoff, etc.) than a 10s poll. The poller adds 6 requests/minute — acceptable for the UX gain, and the silent mode means users never see the requests happening.
+
+### Implementation
+
+```ts
+private startBalancePolling() {
+  if (this.balancePollInterval) return; // already polling
+  this.balancePollInterval = setInterval(() => {
+    if (this._client?.session && this.isOpen) {
+      void this.refreshAccountData(true); // silent — no loading flash
+    }
+  }, 10_000);
+}
+
+private stopBalancePolling() {
+  if (this.balancePollInterval) {
+    clearInterval(this.balancePollInterval);
+    this.balancePollInterval = null;
+  }
+}
+```
+
+The poller is started in `open()` and stopped in `close()` / `destroy()` / on disconnect. The post-signing refresh is a one-shot `setTimeout(…, 2000)` in the `signQueueChange` handler — it's not part of the poller, and it fires regardless of whether the modal is still open (the next render will be visible when the user re-opens the modal).
+
+---
+
+## 8.22 Friendbot integration — "Get Testnet funds" button
+
+The connected view, when `session.network === 'TESTNET'`, renders a "Get Testnet funds" button next to the balance. Clicking it funds the connected address with 10,000 XLM via [friendbot.stellar.org](https://friendbot.stellar.org) — Testnet's faucet. The button is **Testnet-only**: Futurenet has a separate faucet URL, Standalone has none, and Public obviously doesn't either. The check is `session.network === 'TESTNET'` (exact match), not a broader `isTestnet` predicate.
+
+### Why `fetch()` and not `window.open`
+
+Older versions opened `https://friendbot.stellar.org/?addr=...` in a new tab via `window.open()`. This was bad UX:
+
+- The new tab showed a raw JSON response (the funding transaction envelope) — confusing to non-developers.
+- The user had to close the new tab and manually refresh the modal to see the new balance.
+- The friendbot URL was exposed in the tab bar, which made it look like the app was sending the user to a third-party site.
+
+The fix is a `fetch()` call from inside the modal:
+
+```ts
+const url = `https://friendbot.stellar.org/?addr=${encodeURIComponent(session.address)}`;
+const res = await fetch(url);
+if (!res.ok) throw new Error(`friendbot returned ${res.status}`);
+// friendbot returns a JSON transaction envelope on success — we discard it.
+// The balance polls below will pick up the new XLM.
+```
+
+The user never leaves the modal. The fetch is fire-and-forget from the user's perspective: success or failure both lead to the same UX (banner clears after ~3.5s, balance polls run).
+
+### UX flow
+
+1. User clicks "Get Testnet funds".
+2. Modal sets `this.fundsRequested = true` and re-renders, revealing a "Funding requested…" banner in the balance section.
+3. `fetch(url)` runs. The banner stays visible during the fetch.
+4. On success or failure (catch block — friendbot returns non-200, network error, CORS, etc.), the banner is cleared after a 3.5-second timeout. There's no error UI — friendbot is a convenience feature, not a critical flow; if it's down or rate-limited, the user can retry.
+5. **Automatic balance refresh** — three one-shot `setTimeout`s at 3s, 6s, and 10s after the click each call `refreshAccountData()`. Friendbot typically credits within 2-5s, but Horizon's index can lag by another 1-2s. The 3s + 6s + 10s schedule catches the credit without the user having to manually refresh. Each timeout guards against the user disconnecting or switching wallets in the meantime (compares `current.address !== session.address` and bails if the address changed).
+
+### Why not poll continuously until the balance changes
+
+The 3-poll schedule is finite and predictable — friendbot either succeeds within ~10s or it doesn't (in which case the user should retry). An open-ended "poll until balance changes" loop would either need an upper bound (same outcome, more code) or risk running forever if friendbot silently fails. The 3-poll schedule is the simplest implementation that handles the normal case (funds arrive within 10s) and degrades gracefully (if they don't, the user sees no change and can click the button again).
+
+### Implementation
+
+```ts
+this.root.querySelector('[data-action="get-testnet-funds"]')?.addEventListener('click', async () => {
+  const session = this._client?.session;
+  if (!session || session.network !== 'TESTNET') return;
+
+  const url = `https://friendbot.stellar.org/?addr=${encodeURIComponent(session.address)}`;
+
+  this.fundsRequested = true;
+  this.render();
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`friendbot returned ${res.status}`);
+  } catch {
+    // Fetch failed (network error, CORS, or friendbot down).
+    // The banner will clear after the timeout — no error UI needed
+    // since this is a convenience feature, not a critical flow.
+  }
+
+  window.setTimeout(() => {
+    this.fundsRequested = false;
+    this.render();
+  }, 3500);
+
+  [3000, 6000, 10000].forEach((delay) => {
+    window.setTimeout(() => {
+      const current = this._client?.session;
+      if (!current || current.address !== session.address) return;
+      void this.refreshAccountData();
+    }, delay);
+  });
+});
+```
 
 ---
 
