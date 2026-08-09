@@ -348,10 +348,11 @@ export function buildStyles(theme: ConnectTheme): string {
       border-radius: 16px;
     }
     /* WalletConnect logo overlay in the center of the QR.
-       Uses a nested <span> pattern to avoid the browser <img> border-radius
-       clipping bug where the image overflows the rounded corners:
-         .wc-qr-logo        — outer: rounded corners + padding + white bg + shadow
-         .wc-qr-logo__img   — inner: background-image with background-size: cover + rounded */
+       Uses a nested <span> pattern with overflow: hidden on the outer span
+       to reliably clip the background-image into rounded corners across
+       all browsers:
+         .wc-qr-logo        — outer: rounded corners + padding + white bg + shadow + overflow: hidden
+         .wc-qr-logo__img   — inner: background-image with background-size: contain + rounded */
     .wc-qr-logo {
       position: absolute;
       width: 44px;
@@ -365,11 +366,18 @@ export function buildStyles(theme: ConnectTheme): string {
       align-items: center;
       justify-content: center;
       box-sizing: border-box;
+      /* overflow: hidden is the key — it clips the inner background-image
+         into the outer element's rounded corners. Without it, the image
+         overflows the border-radius. */
+      overflow: hidden;
     }
     .wc-qr-logo__img {
       width: 100%;
       height: 100%;
-      background-size: cover;
+      /* contain (not cover) so the full logo is visible without cropping.
+         Wallet logos are often square or have padding built in — cover
+         would crop them. */
+      background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
       border-radius: 6px;
