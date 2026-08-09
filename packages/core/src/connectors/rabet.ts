@@ -78,10 +78,28 @@ export function createRabetConnector(): WalletConnector {
     submit: false,
   };
 
-  /** Gets the Rabet API from window, or null if not installed. */
-  function getRabet(): RabetApi | null {
+  /**
+   * Gets the Rabet API from window, or null if not installed.
+   * Rabet is slow to inject its global — SWK waits 100ms before checking.
+   * We do the same: if window.rabet isn't present immediately, we wait.
+   */
+  function getRabetSync(): RabetApi | null {
     if (typeof window === 'undefined') return null;
     return (window as unknown as { rabet?: RabetApi }).rabet ?? null;
+  }
+
+  /** Async check with 100ms delay — matches SWK's approach. */
+  function getRabetAsync(): Promise<RabetApi | null> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(getRabetSync()), 100);
+    });
+  }
+
+  /** Maps Stellar network passphrase → Rabet's network string. */
+  function mapNetwork(passphrase: string): string {
+    // Rabet uses "mainnet" for PUBLIC and "testnet" for everything else
+    if (passphrase === 'Public Global Stellar Network ; September 2015') return 'mainnet';
+    return 'testnet';
   }
 
   const connector: WalletConnector = {
@@ -90,21 +108,18 @@ export function createRabetConnector(): WalletConnector {
     capabilities,
 
     async getReachability() {
-      const rabet = getRabet();
-      if (!rabet) return 'not-installed';
-      try {
-        const unlocked = await rabet.isUnlocked();
-        return unlocked ? 'available' : 'locked';
-      } catch {
-        // isUnlocked may not be available in older versions — assume available
-        // if the rabet object is present.
-        return 'available';
-      }
+      // Fast path: check synchronously first
+      const rabet = getRabetSync();
+      if (rabet) return 'available';
+      // Slow path: Rabet may still be injecting — wait 100ms (matches SWK)
+      const delayed = await getRabetAsync();
+      return delayed ? 'available' : 'not-installed';
     },
 
     async connect(_opts?: ConnectOptions): Promise<WalletAccount> {
       return withNormalizedError(meta.id, async () => {
-        const rabet = getRabet();
+        let rabet = getRabetSync();
+        if (!rabet) rabet = await getRabetAsync();
         if (!rabet) {
           throw ConnectError.invalidRequest('Rabet extension is not installed.', undefined, meta.id);
         }
@@ -120,14 +135,14 @@ export function createRabetConnector(): WalletConnector {
     },
 
     async disconnect(): Promise<void> {
-      const rabet = getRabet();
+      const rabet = getRabetSync();
       if (rabet) {
         try { await rabet.disconnect(); } catch { /* ignore */ }
       }
     },
 
     async getAddress(): Promise<GetAddressResult> {
-      const rabet = getRabet();
+      const rabet = getRabetSync();
       if (!rabet) return { address: '' };
       try {
         const result = await rabet.connect();
@@ -145,13 +160,16 @@ export function createRabetConnector(): WalletConnector {
 
     async signTransaction(xdr: string, signOpts?: SignTxOptions): Promise<SignTransactionResult> {
       return withNormalizedError(meta.id, async () => {
-        const rabet = getRabet();
+        let rabet = getRabetSync();
+        if (!rabet) rabet = await getRabetAsync();
         if (!rabet) {
           throw ConnectError.invalidRequest('Rabet extension is not installed.', undefined, meta.id);
         }
-        // Rabet's sign() takes the network passphrase as the second argument
+        // Rabet uses its own network strings: "mainnet" / "testnet"
+        // (NOT the Stellar passphrase) — matches SWK's RabetNetwork enum
         const networkPassphrase = signOpts?.networkPassphrase ?? resolveNetworkPassphrase('PUBLIC') ?? '';
-        const result = await rabet.sign(xdr, networkPassphrase);
+        const rabetNetwork = mapNetwork(networkPassphrase);
+        const result = await rabet.sign(xdr, rabetNetwork);
         if (result.error) {
           throw ConnectError.internal(`Rabet sign error: ${result.error}`, undefined, meta.id);
         }

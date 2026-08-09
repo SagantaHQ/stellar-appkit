@@ -1,5 +1,5 @@
 import { ConnectorRegistry } from './connectors/registry.js';
-import { createFreighterConnector, createAlbedoConnector, createXBullConnector, createLedgerConnector, createRabetConnector, createKleverConnector } from './connectors/index.js';
+import { createFreighterConnector, createAlbedoConnector, createXBullConnector, createLedgerConnector, createRabetConnector, createKleverConnector, createHotWalletConnector } from './connectors/index.js';
 import { TypedEmitter } from './events.js';
 import { createWebStorage, SESSION_STORAGE_KEY } from './storage.js';
 import { TabSync } from './tab-sync.js';
@@ -173,6 +173,7 @@ export function defaultConnectors(): WalletConnector[] {
     createLedgerConnector(),
     createRabetConnector(),
     createKleverConnector(),
+    createHotWalletConnector(),
   ];
 }
 

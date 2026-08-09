@@ -77,6 +77,31 @@ export const walletIcons: Record<string, string> = {
       <text x="64" y="88" font-family="Arial, sans-serif" font-size="56" font-weight="bold" fill="#fff" text-anchor="middle">K</text>
     </svg>`
   ).toString('base64')}`,
+
+  // HOT Wallet — orange/red gradient
+  'hot-wallet': `data:image/svg+xml;base64,${Buffer.from(
+    `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="hot-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#FF6B35"/>
+          <stop offset="100%" stop-color="#E84118"/>
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="28" fill="url(#hot-grad)"/>
+      <text x="64" y="90" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#fff" text-anchor="middle">HOT</text>
+    </svg>`
+  ).toString('base64')}`,
+
+  // Trezor — dark hardware wallet device icon
+  trezor: `data:image/svg+xml;base64,${Buffer.from(
+    `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#1A1A1A"/>
+      <rect x="30" y="20" width="68" height="88" rx="8" fill="none" stroke="#fff" stroke-width="4"/>
+      <rect x="42" y="36" width="44" height="44" rx="4" fill="none" stroke="#fff" stroke-width="3"/>
+      <circle cx="64" cy="58" r="6" fill="#fff"/>
+      <rect x="56" y="70" width="16" height="4" rx="2" fill="#fff"/>
+    </svg>`
+  ).toString('base64')}`,
 };
 
 /**

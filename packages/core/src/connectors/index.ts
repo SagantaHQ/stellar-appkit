@@ -6,4 +6,7 @@ export { createWalletConnectConnector } from './walletconnect.js';
 export { createLedgerConnector } from './ledger.js';
 export { createRabetConnector } from './rabet.js';
 export { createKleverConnector } from './klever.js';
+export { createHotWalletConnector } from './hot-wallet.js';
+export { createTrezorConnector } from './trezor.js';
 export type { LedgerConnectorOptions } from './ledger.js';
+export type { TrezorConnectorOptions } from './trezor.js';
