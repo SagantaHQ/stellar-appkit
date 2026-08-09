@@ -2,7 +2,7 @@ import type { StellarAppKit, WalletAccountOption, WalletReachability, Transactio
 import { ConnectError, NetworkMismatchError, type WalletConnector } from '@saganta/stellar-appkit';
 import { t, onLocaleChange } from '@saganta/stellar-appkit';
 import QrCreator from '@konnorr/qr-creator';
-import { darkTheme, lightTheme, themeToCssDeclarations, type ConnectTheme } from './tokens.js';
+import { THEME_REGISTRY, THEME_NAMES, minimalDark, themeToCssDeclarations, type ConnectTheme, type ThemeName } from './tokens.js';
 import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
@@ -979,9 +979,39 @@ export class SagantaAppKitModal extends ModalBase {
   }
 
   private resolveTheme(): ConnectTheme {
-    const attr = this.getAttribute('theme') ?? 'dark';
-    const mode = attr === 'auto' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : attr;
-    return mode === 'light' ? lightTheme : darkTheme;
+    // The theme attribute accepts:
+    //   - A named theme: 'minimal' | 'sky' | 'ocean' | 'forest' | 'sunset'
+    //   - 'dark' (backwards compat — maps to minimalDark)
+    //   - 'light' (backwards compat — maps to minimalLight)
+    //   - 'auto' (follows prefers-color-scheme, defaults to minimal)
+    //   - undefined / null (defaults to 'minimal')
+    //
+    // Named themes resolve to their dark variant by default. To get the light
+    // variant, append ':light' (e.g. 'sky:light'). To follow the system color
+    // scheme, use 'auto' (resolves to minimal dark/light based on prefers-color-scheme).
+    const attr = this.getAttribute('theme') ?? 'minimal';
+
+    // Backwards compatibility: old 'dark' / 'light' values map to minimal.
+    if (attr === 'dark') return THEME_REGISTRY.minimal.dark;
+    if (attr === 'light') return THEME_REGISTRY.minimal.light;
+
+    // 'auto' follows the system color scheme (minimal dark/light).
+    if (attr === 'auto') {
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      return prefersLight ? THEME_REGISTRY.minimal.light : THEME_REGISTRY.minimal.dark;
+    }
+
+    // Named theme with optional ':light' suffix (e.g. 'sky:light', 'ocean:dark').
+    // Default variant is dark.
+    const [name, variant] = attr.split(':') as [string, 'dark' | 'light' | undefined];
+    if (THEME_NAMES.includes(name as ThemeName)) {
+      const themeName = name as ThemeName;
+      const mode = variant === 'light' ? 'light' : 'dark';
+      return THEME_REGISTRY[themeName][mode];
+    }
+
+    // Unknown theme — fall back to minimal dark (the default).
+    return minimalDark;
   }
 
   private render() {
