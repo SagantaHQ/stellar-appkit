@@ -1972,27 +1972,38 @@ export class SagantaAppKitModal extends ModalBase {
       this.cachedTxHistory = [];
     });
 
-    // "Get Testnet funds" — opens friendbot.stellar.org in a new tab to fund the
-    // connected address, then polls the balance a few times so the new XLM shows
-    // up without the user having to manually refresh. friendbot typically credits
-    // within 2-5 seconds, but Horizon's index can lag by another 1-2s, so we
-    // retry at 3s + 6s + 10s after the click.
-    this.root.querySelector('[data-action="get-testnet-funds"]')?.addEventListener('click', () => {
+    // "Get Testnet funds" — calls friendbot.stellar.org via fetch to fund the
+    // connected address, then polls the balance so the new XLM shows up without
+    // the user having to manually refresh. friendbot typically credits within
+    // 2-5 seconds, but Horizon's index can lag by another 1-2s, so we retry at
+    // 3s + 6s + 10s after the click.
+    this.root.querySelector('[data-action="get-testnet-funds"]')?.addEventListener('click', async () => {
       const session = this._client?.session;
       if (!session || session.network !== 'TESTNET') return;
 
-      // Open the faucet URL in a new tab. friendbot responds with a JSON envelope
-      // (or HTML if the browser doesn't send Accept: application/json) — either
-      // way, the user sees a success/failure response in the new tab.
       const url = `https://friendbot.stellar.org/?addr=${encodeURIComponent(session.address)}`;
-      window.open(url, '_blank', 'noopener,noreferrer');
 
-      // Show the "Funding requested…" banner for ~3.5s. Re-renders to reveal it.
+      // Show the "Funding requested…" banner. Re-renders to reveal it.
       this.fundsRequested = true;
       this.render();
+
+      try {
+        // Call friendbot via fetch — no new tab opened, stays in the modal.
+        // friendbot returns a JSON transaction envelope on success.
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`friendbot returned ${res.status}`);
+        }
+        // Success — the funding transaction has been submitted.
+        // The balance polls below will pick up the new XLM.
+      } catch {
+        // Fetch failed (network error, CORS, or friendbot down).
+        // The banner will clear after the timeout — no error UI needed
+        // since this is a convenience feature, not a critical flow.
+      }
+
+      // Clear the "Funding requested…" banner after ~3.5s.
       window.setTimeout(() => {
-        // Only clear if no other state change has happened in the meantime —
-        // but since we re-render on every state change, this is safe.
         this.fundsRequested = false;
         this.render();
       }, 3500);
