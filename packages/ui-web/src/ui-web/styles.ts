@@ -333,8 +333,12 @@ export function buildStyles(theme: ConnectTheme): string {
       /* The QR image (generated with margin: 2) includes its own white quiet
          zone, so no padding needed here — the image fills the frame. */
       padding: 0;
-      /* Soft elevation shadow — premium floating look */
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+      /* Smooth multi-layer shadow — ambient + key + contact for a premium
+         soft floating effect. Three layers create depth without harshness:
+         - 0 1px 2px: contact shadow (tight, dark — grounds the element)
+         - 0 4px 12px: key shadow (medium spread — main elevation)
+         - 0 16px 48px: ambient shadow (wide, light — atmospheric depth) */
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.08), 0 16px 48px rgba(0, 0, 0, 0.12);
       display: flex;
       align-items: center;
       justify-content: center;
