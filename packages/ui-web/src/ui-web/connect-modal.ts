@@ -540,8 +540,11 @@ export class SagantaAppKitModal extends ModalBase {
   private startBalancePolling() {
     if (this.balancePollInterval) return; // already polling
     this.balancePollInterval = setInterval(() => {
-      // Only poll if we're still connected + the modal is open
-      if (this._client?.session && this.isOpen) {
+      // Only poll if we're connected, the modal is open, AND we're on the
+      // connected view (where balance + history are shown). Don't poll
+      // during signing, transaction preview, SIWS, wallet list, etc. —
+      // it's wasteful and the data isn't visible there anyway.
+      if (this._client?.session && this.isOpen && this.view === 'connected') {
         void this.refreshAccountData(true); // silent — no loading flash
       }
     }, 10_000);
