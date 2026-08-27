@@ -859,14 +859,22 @@ export class StellarAppKit {
     return this.enqueueSign(async () => {
       const connector = this.requireActiveConnector();
 
+      // Inject the network passphrase if not explicitly provided in opts.
+      // This is critical for Freighter — when networkPassphrase is undefined,
+      // Freighter defaults to Main Net, causing a "wrong network" error even
+      // when the transaction was built for Testnet.
+      const resolvedOpts = {
+        ...opts,
+        networkPassphrase: opts?.networkPassphrase ?? this.resolveNetworkPassphrase(),
+      };
+
       if (this.onPreviewTransaction && !opts?.skipPreview) {
-        const networkPassphrase = opts?.networkPassphrase ?? this.resolveNetworkPassphrase();
-        const preview: TransactionPreview = await buildTransactionPreview(xdr, networkPassphrase, this.previewOptions);
+        const preview: TransactionPreview = await buildTransactionPreview(xdr, resolvedOpts.networkPassphrase, this.previewOptions);
         const approved = await this.onPreviewTransaction(preview);
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return connector.signTransaction(xdr, opts);
+      return connector.signTransaction(xdr, resolvedOpts);
     });
   }
 
