@@ -4,4 +4,4 @@ dist/
 .DS_Store
 bun.lock
 bun.lock
-package-lock.jsonsss
+package-lock.json
