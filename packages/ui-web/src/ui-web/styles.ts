@@ -200,7 +200,7 @@ export function buildStyles(theme: ConnectTheme): string {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
       /* Subtle breathe — the logo gently scales up and down while
          waiting for the wallet to respond. 1.2s feels responsive + alive. */
-      animation: sak-logo-breathe 1.2s ease-in-out infinite;
+      animation: sak-logo-breathe 2.5s ease-in-out infinite;
     }
     @keyframes sak-logo-breathe {
       0%, 100% { transform: scale(1); }
@@ -216,13 +216,13 @@ export function buildStyles(theme: ConnectTheme): string {
       width: 88px;
       height: 88px;
       color: ${v('colorAccent', theme)};
-      animation: sak-connecting-dash 0.8s linear infinite;
+      animation: sak-connecting-dash 2s linear infinite;
     }
     @keyframes sak-connecting-dash {
       to { stroke-dashoffset: -360; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .connecting-view__arc { animation-duration: 8s; }
+      .connecting-view__arc { animation-duration: 2.5s; }
       .connecting-view__logo { animation: none; }
       .connecting-view > * { animation: none; opacity: 1; }
     }
@@ -475,7 +475,7 @@ export function buildStyles(theme: ConnectTheme): string {
       position: relative;
       z-index: 1;
       background: ${v('colorSurface', theme)};
-      animation: sak-logo-breathe 1.2s ease-in-out infinite;
+      animation: sak-logo-breathe 2.5s ease-in-out infinite;
     }
     .signing-view__arc {
       position: absolute;
