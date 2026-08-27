@@ -199,9 +199,8 @@ export function buildStyles(theme: ConnectTheme): string {
       /* Soft drop shadow matching wallet-tile — premium floating look */
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
       /* Subtle breathe — the logo gently scales up and down while
-         waiting for the wallet to respond. Slow enough to feel calm,
-         not anxious. */
-      animation: sak-logo-breathe 2.8s ease-in-out infinite;
+         waiting for the wallet to respond. 1.2s feels responsive + alive. */
+      animation: sak-logo-breathe 1.2s ease-in-out infinite;
     }
     @keyframes sak-logo-breathe {
       0%, 100% { transform: scale(1); }
@@ -210,15 +209,14 @@ export function buildStyles(theme: ConnectTheme): string {
     /* The spinner — an SVG <rect> with stroke-dasharray that animates
        around the perimeter of the rounded-square border. A solid line
        segment travels around the rect, creating a "drawing the border"
-       effect. Uses ease-in-out timing for a smoother, more organic feel
-       than linear (which feels mechanical). */
+       effect. 0.8s with linear timing for a consistent, energetic spin. */
     .connecting-view__arc {
       position: absolute;
       inset: 0;
       width: 88px;
       height: 88px;
       color: ${v('colorAccent', theme)};
-      animation: sak-connecting-dash 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      animation: sak-connecting-dash 0.8s linear infinite;
     }
     @keyframes sak-connecting-dash {
       to { stroke-dashoffset: -360; }
@@ -477,7 +475,7 @@ export function buildStyles(theme: ConnectTheme): string {
       position: relative;
       z-index: 1;
       background: ${v('colorSurface', theme)};
-      animation: sak-logo-breathe 2.8s ease-in-out infinite;
+      animation: sak-logo-breathe 1.2s ease-in-out infinite;
     }
     .signing-view__arc {
       position: absolute;
@@ -485,7 +483,7 @@ export function buildStyles(theme: ConnectTheme): string {
       width: 88px;
       height: 88px;
       color: ${v('colorAccent', theme)};
-      animation: sak-connecting-dash 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      animation: sak-connecting-dash 0.8s linear infinite;
     }
     .signing-view__icon {
       color: ${v('colorDanger', theme)};
