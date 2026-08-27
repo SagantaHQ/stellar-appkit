@@ -1148,7 +1148,10 @@ this.root.querySelector('[data-action="get-testnet-funds"]')?.addEventListener('
 | 2.8 | Bundled dependencies (§8.7 Dependency strategy) — moved all wallet SDKs (`@stellar/freighter-api`, `@albedo-link/intent`, `@creit.tech/xbull-wallet-connect`, `@ledgerhq/*`, `@walletconnect/sign-client`), the Stellar SDK (`@stellar/stellar-sdk`), and gesture libraries (`@use-gesture/vanilla`, `motion`) from `peerDependencies` to `dependencies` in `packages/core/package.json`. Consumers now do a single `npm install @saganta/stellar-appkit` — no more manual wallet SDK installs, no version-mismatch breakage. Frameworks (`react`/`vue`/`solid-js`/`svelte`) remain as optional peer deps because of the singleton constraint (two React copies break hooks). Version bumped to 0.2.0. | **done** |
 | 2 | `ui-web` Web Components + theming, default dark theme, network-mismatch/account-switcher/account-picker/transaction-preview views | **done** |
 | 2.5 | WalletConnect v2 relay adapter (covers Lobstr/Hana/Hot Wallet + QR flow) | **done** |
-| 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility | next |
+| 3 | `ui-react-native` — bottom sheet, deep-link handling, Expo compatibility. Same API as web SDK but native. WalletConnect works out of the box for mobile wallets. | next |
+| 3.5 | **Lynx.js support** — first-class [Lynx.js](https://lynxjs.org/) bindings. Same connectors, same Soroban pipeline, same SIWS flow, but with native rendering performance via Lynx's React-like component model. | planned |
+| 3.7 | **Social login** — email/passwordless social login (Google, GitHub, etc.) that creates a non-custodial Stellar wallet under the hood. No seed phrases, no extensions — just sign in and transact. | planned |
+| 3.8 | **Compliance (built-in KYC)** — optional KYC layer integrating with identity verification providers. Apps requiring compliance can gate transactions behind KYC without a separate verification flow. | planned |
 | 4 | Ledger Soroban auth-entry signing | **done** |
 | 5 | Smart-account/passkey signer as a native `WalletConnector` (Saganta embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline | later |
 

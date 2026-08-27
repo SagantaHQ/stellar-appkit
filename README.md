@@ -1067,8 +1067,11 @@ Flagged explicitly rather than silently half-working:
 
 ## Roadmap
 
-1. `ui-react-native` — bottom sheet, Expo compatibility
-2. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
+1. **Social Login** — Email/passwordless social login (Google, GitHub, etc.) that creates a non-custodial Stellar wallet under the hood. No seed phrases, no browser extensions — just sign in and start transacting.
+2. **Compliance (Built-in KYC)** — An optional KYC layer that integrates with identity verification providers. Apps that need compliance can require KYC before allowing transactions — without building a separate verification flow.
+3. **React Native Support** — Full React Native connector + UI components. Same API as the web SDK, but native. WalletConnect works out of the box for connecting mobile wallets.
+4. **Lynx.js Support** — First-class [Lynx.js](https://lynxjs.org/) bindings so apps built on Lynx can use Stellar AppKit without compromise — same connectors, same Soroban pipeline, same SIWS flow, but with native rendering performance.
+5. Smart-account/passkey signer as a native `WalletConnector` (Saganta's embedded wallet), gas-sponsorship hook in the Soroban invoke pipeline
 
 Full detail in [ARCHITECTURE.md §9](./ARCHITECTURE.md#9-phased-roadmap).
 
