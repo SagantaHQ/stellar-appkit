@@ -11,7 +11,7 @@ Built by [Saganta](https://github.com/saganta) as the wallet-connection layer of
 | | Link | Description |
 |---|---|---|
 | **📖 Official Docs** | **[stellar-appkit.saganta.com](https://stellar-appkit.saganta.com)** | Full documentation — installation, quick start, API reference, guides, wallet docs, changelog |
-| **🎮 Official Demos** | **[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** | 18 live, copy-pasteable Next.js demos — wallet connection, signing, Soroban, SIWS, theming, i18n |
+| **🎮 Official Demos** | **[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** | 19 live, copy-pasteable Next.js demos — wallet connection, signing, Soroban, SIWS, theming, i18n |
 | **📦 npm** | **[npmjs.com/package/@saganta/stellar-appkit](https://www.npmjs.com/package/@saganta/stellar-appkit)** | `@saganta/stellar-appkit` · `@saganta/stellar-appkit-ui-web` · `@saganta/stellar-appkit-siws-verify` |
 | **💻 GitHub** | **[github.com/sagantaHQ/stellar-appkit](https://github.com/sagantaHQ/stellar-appkit)** | Source code, issues, discussions, releases |
 
@@ -949,7 +949,7 @@ The wallet list now shows an **"Installed"** badge next to every wallet that's r
 
 ### Live demos
 
-**[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** — 14 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route you can copy into your own app. Built with Next.js 15 + OpenNext for Cloudflare.
+**[demos.stellar-appkit.saganta.com](https://demos.stellar-appkit.saganta.com)** — 19 working Next.js demos covering wallet connection, transaction signing, Soroban contract calls, SIWS authentication, and theming. Each demo is a real route you can copy into your own app. Built with Next.js 15 + OpenNext for Cloudflare.
 
 ### Local demo
 

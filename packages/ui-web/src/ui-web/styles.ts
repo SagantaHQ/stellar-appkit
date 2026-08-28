@@ -199,7 +199,7 @@ export function buildStyles(theme: ConnectTheme): string {
       /* Soft drop shadow matching wallet-tile — premium floating look */
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
       /* Subtle breathe — the logo gently scales up and down while
-         waiting for the wallet to respond. 1.2s feels responsive + alive. */
+         waiting for the wallet to respond. 2.5s feels calm + alive. */
       animation: sak-logo-breathe 2.5s ease-in-out infinite;
     }
     @keyframes sak-logo-breathe {
@@ -209,7 +209,7 @@ export function buildStyles(theme: ConnectTheme): string {
     /* The spinner — an SVG <rect> with stroke-dasharray that animates
        around the perimeter of the rounded-square border. A solid line
        segment travels around the rect, creating a "drawing the border"
-       effect. 0.8s with linear timing for a consistent, energetic spin. */
+       effect. 2s with linear timing for a consistent, steady spin. */
     .connecting-view__arc {
       position: absolute;
       inset: 0;
