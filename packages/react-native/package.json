@@ -1,0 +1,92 @@
+{
+  "name": "@saganta/stellar-appkit-react-native",
+  "version": "1.9.50",
+  "description": "React Native connector + modal UI for Stellar AppKit \u2014 WalletConnect deep linking, Albedo WebView bridge, AsyncStorage persistence, full modal parity with the web SDK.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./polyfills": {
+      "types": "./dist/polyfills.d.ts",
+      "import": "./dist/polyfills.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
+    "./albedo": {
+      "types": "./dist/albedo/index.d.ts",
+      "import": "./dist/albedo/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@saganta/stellar-appkit": "^1.9.50"
+  },
+  "peerDependencies": {
+    "@gorhom/bottom-sheet": ">=4",
+    "@react-native-async-storage/async-storage": ">=1",
+    "@walletconnect/react-native-compat": ">=2",
+    "buffer": ">=6",
+    "react": ">=18",
+    "react-native": ">=0.73",
+    "react-native-get-random-values": ">=1.11",
+    "react-native-qrcode-svg": ">=6",
+    "react-native-svg": ">=13",
+    "react-native-webview": ">=13"
+  },
+  "peerDependenciesMeta": {
+    "@gorhom/bottom-sheet": {
+      "optional": true
+    },
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    },
+    "@walletconnect/react-native-compat": {
+      "optional": true
+    },
+    "buffer": {
+      "optional": true
+    },
+    "react-native-get-random-values": {
+      "optional": true
+    },
+    "react-native-qrcode-svg": {
+      "optional": true
+    },
+    "react-native-svg": {
+      "optional": true
+    },
+    "react-native-webview": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.78.0",
+    "@gorhom/bottom-sheet": "^5.0.0",
+    "react-native-svg": "^15.0.0",
+    "react-native-qrcode-svg": "^6.3.0",
+    "react-native-webview": "^13.0.0",
+    "@react-native-async-storage/async-storage": "^2.0.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SagantaHQ/stellar-appkit"
+  }
+}

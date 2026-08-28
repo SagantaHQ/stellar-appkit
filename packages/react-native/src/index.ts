@@ -1,0 +1,45 @@
+/**
+ * @saganta/stellar-appkit-react-native — headless entry.
+ *
+ * Re-exports everything from core (the services layer is platform-agnostic)
+ * plus the React Native additions:
+ *
+ * - `defaultReactNativeConnectors()` — WC + optional Albedo(WebView) set
+ * - `createAsyncStorage()` — AsyncStorage-backed `ConnectStorage`
+ * - deep-link registry — MWA-style wallet handoff (`freighterwallet://wc?uri=...`)
+ * - `isReactNativeRuntime()` — real RN detection (RN defines `window`!)
+ *
+ * UI (modal) lives in `@saganta/stellar-appkit-react-native/ui`, polyfills in
+ * `@saganta/stellar-appkit-react-native/polyfills`, the Albedo WebView screen
+ * in `@saganta/stellar-appkit-react-native/albedo` — separate subpaths so
+ * apps only bundle what they import.
+ */
+
+export * from '@saganta/stellar-appkit';
+
+export {
+  defaultReactNativeConnectors,
+  createAlbedoWebViewConnector,
+  type ReactNativeConnectorsOptions,
+  type AlbedoWebViewBridge,
+  type AlbedoWebViewConnectorOptions,
+  ALBEDO_FRONTEND_URL,
+} from './connectors/index.js';
+
+export {
+  createAsyncStorage,
+  createMemoryStorage,
+  type KeyValueLikeStorage,
+} from './storage.js';
+
+export {
+  registerMobileWallet,
+  listMobileWallets,
+  getMobileWallet,
+  buildWalletConnectDeepLink,
+  buildOpenWalletAppLink,
+  findWalletByDeepLink,
+  type MobileWalletDeepLink,
+} from './deep-links.js';
+
+export { isReactNativeRuntime } from './platform.js';
