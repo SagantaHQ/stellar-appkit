@@ -105,4 +105,4 @@ if (result.ok) {
 
 ## License
 
-MIT © [Saganta](https://github.com/saganta)
+MIT © [Saganta](https://github.com/SagantaHQ)
