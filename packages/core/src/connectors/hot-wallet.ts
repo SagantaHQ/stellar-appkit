@@ -36,19 +36,10 @@ interface HotSdk {
   request<T = unknown>(method: string, params: Record<string, unknown>): Promise<T>;
 }
 
-/** HOT Wallet's brand color — orange/red gradient. */
-const HOT_WALLET_ICON = `data:image/svg+xml;base64,${Buffer.from(
-  `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="hot-grad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#FF6B35"/>
-        <stop offset="100%" stop-color="#E84118"/>
-      </linearGradient>
-    </defs>
-    <rect width="128" height="128" rx="28" fill="url(#hot-grad)"/>
-    <text x="64" y="90" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#fff" text-anchor="middle">HOT</text>
-  </svg>`
-).toString('base64')}`;
+/** HOT Wallet's brand color — orange/red gradient.
+ *  Pre-encoded base64 literal — see the note on RABET_ICON for why the SVG
+ *  bytes are inlined rather than computed with `Buffer.from` at import time. */
+const HOT_WALLET_ICON = `data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgIDxkZWZzPgogICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImhvdC1ncmFkIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iI0ZGNkIzNSIvPgogICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI0U4NDExOCIvPgogICAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPC9kZWZzPgogICAgPHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIyOCIgZmlsbD0idXJsKCNob3QtZ3JhZCkiLz4KICAgIDx0ZXh0IHg9IjY0IiB5PSI5MCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjQ4IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+SE9UPC90ZXh0PgogIDwvc3ZnPg==`;
 
 export function createHotWalletConnector(): WalletConnector {
   const meta: WalletMeta = {

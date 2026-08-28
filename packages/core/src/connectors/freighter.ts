@@ -209,14 +209,13 @@ export function createFreighterConnector(): WalletConnector {
         // The signature is over the SHA-256 hash of the prefixed message,
         // NOT the raw message bytes. We surface this hash as `signedData`
         // so the verifier can verify against it directly.
-        const { createHash } = await import('crypto');
         const sep53Prefix = Buffer.from('Stellar Signed Message:\n', 'utf-8');
         const messageBytes = Buffer.from(message, 'utf-8');
-        const sep53Hash = createHash('sha256').update(Buffer.concat([sep53Prefix, messageBytes])).digest();
+        const signedData = await sha256Base64(Buffer.concat([sep53Prefix, messageBytes]));
         return {
           signedMessage: bufferLikeToBase64(res.signedMessage),
           signerAddress: res.signerAddress,
-          signedData: sep53Hash.toString('base64'),
+          signedData,
         };
       });
     },
@@ -228,4 +227,44 @@ export function createFreighterConnector(): WalletConnector {
 /** Freighter's signAuthEntry/signMessage have returned either a raw Buffer or an already-encoded string across versions — normalize both to base64. */
 function bufferLikeToBase64(value: string | { toString(encoding: 'base64'): string }): string {
   return typeof value === 'string' ? value : value.toString('base64');
+}
+
+/**
+ * SHA-256 over raw bytes, base64-encoded, adapted to the runtime:
+ * - WebCrypto `crypto.subtle` when available (all modern browsers, Node >= 18,
+ *   bun) — the common path, no extra code downloaded.
+ * - Pure-JS `js-sha256` fallback for runtimes without `crypto.subtle`
+ *   (React Native/Hermes), lazily imported so bundlers only pull it there.
+ *
+ * Deliberately never imports the Node `crypto` module — the bare specifier
+ * breaks Metro/React Native bundling — and never touches Buffer, so the whole
+ * path is polyfill-free on every platform.
+ */
+async function sha256Base64(bytes: Uint8Array): Promise<string> {
+  // Copy into a fresh ArrayBuffer — satisfies BufferSource on every TS lib
+  // version and decouples the digest from the caller's buffer.
+  const input = new Uint8Array(bytes);
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const digest = new Uint8Array(await subtle.digest('SHA-256', input));
+    return bytesToBase64(digest);
+  }
+  const { sha256: pureSha256 } = await import('js-sha256');
+  return bytesToBase64(hexToBytes(pureSha256(input)));
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
 }

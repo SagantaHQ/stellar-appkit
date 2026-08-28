@@ -51,19 +51,10 @@ interface KleverStellarApi {
   getNetwork(): Promise<{ network: string; networkPassphrase: string }>;
 }
 
-/** Klever's brand color — blue gradient. */
-const KLEVER_ICON = `data:image/svg+xml;base64,${Buffer.from(
-  `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="klever-grad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#0066FF"/>
-        <stop offset="100%" stop-color="#0044CC"/>
-      </linearGradient>
-    </defs>
-    <rect width="128" height="128" rx="28" fill="url(#klever-grad)"/>
-    <text x="64" y="88" font-family="Arial, sans-serif" font-size="56" font-weight="bold" fill="#fff" text-anchor="middle">K</text>
-  </svg>`
-).toString('base64')}`;
+/** Klever's brand color — blue gradient.
+ *  Pre-encoded base64 literal — see the note on RABET_ICON for why the SVG
+ *  bytes are inlined rather than computed with `Buffer.from` at import time. */
+const KLEVER_ICON = `data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgIDxkZWZzPgogICAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImtsZXZlci1ncmFkIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzAwNjZGRiIvPgogICAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzAwNDRDQyIvPgogICAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPC9kZWZzPgogICAgPHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIyOCIgZmlsbD0idXJsKCNrbGV2ZXItZ3JhZCkiLz4KICAgIDx0ZXh0IHg9IjY0IiB5PSI4OCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjU2IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSI+SzwvdGV4dD4KICA8L3N2Zz4=`;
 
 export function createKleverConnector(): WalletConnector {
   const meta: WalletMeta = {

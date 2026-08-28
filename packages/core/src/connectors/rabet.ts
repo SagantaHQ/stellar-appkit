@@ -45,19 +45,11 @@ interface RabetApi {
   on(event: 'networkChanged', handler: (networkId: string) => void): void;
 }
 
-/** Rabet's official brand color — purple/violet gradient. */
-const RABET_ICON = `data:image/svg+xml;base64,${Buffer.from(
-  `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="rabet-grad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#7B2FBE"/>
-        <stop offset="100%" stop-color="#4A1E73"/>
-      </linearGradient>
-    </defs>
-    <rect width="128" height="128" rx="28" fill="url(#rabet-grad)"/>
-    <path d="M64 28C50 28 38 38 38 52c0 8 4 14 10 18-8 4-14 12-14 22 0 2 2 4 4 4h52c2 0 4-2 4-4 0-10-6-18-14-22 6-4 10-10 10-18 0-14-12-24-26-24zm0 12c8 0 14 6 14 14 0 6-4 10-8 12-2 1-2 3 0 4 6 3 10 9 12 16H46c2-7 6-13 12-16 2-1 2-3 0-4-4-2-8-6-8-12 0-8 6-14 14-14z" fill="#fff"/>
-  </svg>`
-).toString('base64')}`;
+/** Rabet's official brand color — purple/violet gradient.
+ *  Pre-encoded base64 literal (not `Buffer.from` at module top level) so the
+ *  connector barrel imports cleanly on runtimes without a global Buffer
+ *  polyfill — React Native/Metro. Same bytes as the SVG it encodes. */
+const RABET_ICON = `data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgIDxkZWZzPgogICAgICA8bGluZWFyR3JhZGllbnQgaWQ9InJhYmV0LWdyYWQiIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj4KICAgICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjN0IyRkJFIi8+CiAgICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjNEExRTczIi8+CiAgICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8L2RlZnM+CiAgICA8cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSJ1cmwoI3JhYmV0LWdyYWQpIi8+CiAgICA8cGF0aCBkPSJNNjQgMjhDNTAgMjggMzggMzggMzggNTJjMCA4IDQgMTQgMTAgMTgtOCA0LTE0IDEyLTE0IDIyIDAgMiAyIDQgNCA0aDUyYzIgMCA0LTIgNC00IDAtMTAtNi0xOC0xNC0yMiA2LTQgMTAtMTAgMTAtMTggMC0xNC0xMi0yNC0yNi0yNHptMCAxMmM4IDAgMTQgNiAxNCAxNCAwIDYtNCAxMC04IDEyLTIgMS0yIDMgMCA0IDYgMyAxMCA5IDEyIDE2SDQ2YzItNyA2LTEzIDEyLTE2IDItMSAyLTMgMC00LTQtMi04LTYtOC0xMiAwLTggNi0xNCAxNC0xNHoiIGZpbGw9IiNmZmYiLz4KICA8L3N2Zz4=`;
 
 export function createRabetConnector(): WalletConnector {
   const meta: WalletMeta = {

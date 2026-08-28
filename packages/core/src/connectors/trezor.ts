@@ -87,15 +87,9 @@ export function createTrezorConnector(options: TrezorConnectorOptions): WalletCo
   const meta: WalletMeta = {
     id: 'trezor',
     name: 'Trezor',
-    icon: `data:image/svg+xml;base64,${Buffer.from(
-      `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-        <rect width="128" height="128" rx="28" fill="#1A1A1A"/>
-        <rect x="30" y="20" width="68" height="88" rx="8" fill="none" stroke="#fff" stroke-width="4"/>
-        <rect x="42" y="36" width="44" height="44" rx="4" fill="none" stroke="#fff" stroke-width="3"/>
-        <circle cx="64" cy="58" r="6" fill="#fff"/>
-        <rect x="56" y="70" width="16" height="4" rx="2" fill="#fff"/>
-      </svg>`
-    ).toString('base64')}`,
+    // Pre-encoded base64 literal (computed once, not per-factory-call) — keeps
+    // the factory import-safe on runtimes without a global Buffer polyfill.
+    icon: `data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTI4IDEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICAgICAgICA8cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjI4IiBmaWxsPSIjMUExQTFBIi8+CiAgICAgICAgPHJlY3QgeD0iMzAiIHk9IjIwIiB3aWR0aD0iNjgiIGhlaWdodD0iODgiIHJ4PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNCIvPgogICAgICAgIDxyZWN0IHg9IjQyIiB5PSIzNiIgd2lkdGg9IjQ0IiBoZWlnaHQ9IjQ0IiByeD0iNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjMiLz4KICAgICAgICA8Y2lyY2xlIGN4PSI2NCIgY3k9IjU4IiByPSI2IiBmaWxsPSIjZmZmIi8+CiAgICAgICAgPHJlY3QgeD0iNTYiIHk9IjcwIiB3aWR0aD0iMTYiIGhlaWdodD0iNCIgcng9IjIiIGZpbGw9IiNmZmYiLz4KICAgICAgPC9zdmc+`,
     installUrl: {},
     platforms: ['hardware'],
   };
