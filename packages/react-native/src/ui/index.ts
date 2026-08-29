@@ -23,6 +23,7 @@
 
 export { AppKitModal, type AppKitModalProps } from './AppKitModal.js';
 export { useAppKit, type AppKitState } from './useAppKit.js';
+export { WalletIcon, type WalletIconProps } from './WalletIcon.js';
 export {
   minimalDark, minimalLight, stellarDark, stellarLight,
   skyDark, skyLight, oceanDark, oceanLight,

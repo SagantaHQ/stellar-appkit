@@ -46,12 +46,17 @@ export function useAppKit(client: StellarAppKit): AppKitState {
 function snapshot(client: StellarAppKit): AppKitState {
   const session = client.session;
   const connector = client.activeConnector;
+  // Relay connectors (WalletConnect) know which wallet actually answered —
+  // show "Freighter" / "LOBSTR" / "HOT Wallet" instead of the generic
+  // "WalletConnect" connector label. Direct connectors don't implement
+  // getSessionPeer() — their meta already IS the wallet.
+  const peer = connector?.getSessionPeer?.() ?? null;
   return {
     status: client.status,
     session,
     sessions: client.sessions,
     pendingSignCount: client.pendingSignCount,
-    walletName: connector?.meta.name ?? null,
-    walletIcon: connector?.meta.icon ?? null,
+    walletName: peer?.name ?? connector?.meta.name ?? null,
+    walletIcon: peer?.icon ?? connector?.meta.icon ?? null,
   };
 }

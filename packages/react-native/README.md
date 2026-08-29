@@ -2,10 +2,12 @@
 
 React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-appkit) — the same client, the same connectors, the same modal UX as the web SDK, adapted to native.
 
-- **WalletConnect mobile-first** — tap a wallet, we embed the pairing URI into its deep link (`freighterwallet://wc?uri=...`) and hand off to the wallet app, Solana-Mobile-Adapter style. QR remains the fallback for every other wallet (LOBSTR, desktop pairings).
+- **Named mobile wallet list** — every Stellar wallet with a mobile app and a WalletConnect registration ships built-in: **Freighter, LOBSTR, HOT Wallet, Scopuly**. Tap one and we embed the pairing URI into its deep link (`freighterwallet://wc?uri=...`, WalletConnect-modal compatible) and hand off to the wallet app, Solana-Mobile-Adapter style — branded with the wallet's own name and icon throughout. QR remains the fallback for every other WalletConnect wallet (SafePal, Hana, …).
+- **True wallet names** — WalletConnect sessions capture the peer wallet's metadata, so the connecting and account views show "Freighter" or "HOT Wallet", never a generic "WalletConnect" label.
 - **Albedo WebView bridge** — Albedo's web confirm flow, reproduced inside an in-app WebView (`window.opener` shim + synthetic MessageEvents — the exact popup protocol).
 - **AsyncStorage persistence** — sessions survive app restarts via a first-class `ConnectStorage` adapter.
 - **Full modal parity** — bottom-sheet modal (`@gorhom/bottom-sheet`), wallet list with live reachability, connecting/signing animations (same v1.9.50 timings as web, reduced-motion aware via `AccessibilityInfo`), account view, error states, i18n (25 locales).
+- **Icons that render** — the `<WalletIcon>` component understands every icon format in the SDK: PNG/JPEG data URIs (native `Image`), SVG data URIs (via `react-native-svg`), remote URLs, and a letter-avatar fallback. This is what fixed “icons not showing” on RN.
 
 ## Install
 
@@ -64,26 +66,38 @@ export function App() {
 }
 ```
 
-## The WalletConnect mobile flow
+## The mobile wallet flow
 
-When the user taps **WalletConnect**, the modal switches to a pairing view:
+The modal's wallet list shows every wallet that can actually pair on a phone:
 
-1. **Deep-link wallets first** — every wallet in the registry (Freighter Mobile out of the box) is offered as a one-tap handoff. The `wc:` pairing URI is embedded into `<scheme>://wc?uri=<encoded>` and opened with `Linking.openURL()`. The wallet opens with the pairing pre-loaded; approve there and the session completes over the WalletConnect relay.
-2. **QR fallback** — for wallets without a registered deep link (LOBSTR today), toggle the QR and scan from the wallet app.
+1. **Named mobile wallets first** — Freighter, LOBSTR, HOT Wallet and Scopuly each get their own row (when the WalletConnect connector is configured). Tapping one starts the pairing and deep-links straight into the wallet app — the whole flow (connecting view, account view, sign requests) is branded with that wallet's own name and icon, and falls back to the wallet's https universal link when the native scheme can't open. If neither works, the connecting view offers the store page.
+2. **Albedo (WebView)** — when its connector is registered.
+3. **WalletConnect (QR)** — for every other WalletConnect wallet (SafePal, Hana, …): a pairing view with the deep-link wallets listed first and a QR fallback.
 
-Add wallets as they ship deep-link support — no AppKit release needed:
+The built-in registry (verified against the WalletConnect Explorer, `chains=stellar:*`):
+
+| Wallet | Native link | Universal link |
+|---|---|---|
+| Freighter | `freighterwallet://` | — |
+| LOBSTR | `lobstr://` | `https://lobstr.co/uni/wc` |
+| HOT Wallet | `hotwallet://` | `https://app.hot-labs.org` |
+| Scopuly | `scopuly://wc` | `https://app.scopuly.com/wc` |
+
+Add more wallets as they ship deep-link support — no AppKit release needed:
 
 ```ts
 import { registerMobileWallet } from '@saganta/stellar-appkit-react-native';
 
 registerMobileWallet({
-  id: 'lobstr-mobile',
-  name: 'LOBSTR',
-  icon: lobstrIcon,
-  scheme: 'lobstr',
+  id: 'my-wallet',
+  name: 'My Wallet',
+  icon: myWalletIcon,          // data:image/png;base64,... renders best
+  scheme: 'mywallet',
   installUrl: { ios: '...', android: '...' },
 });
 ```
+
+`buildWalletConnectDeepLink(id, uri)` then produces `mywallet://wc?uri=<encoded>` — byte-compatible with WalletConnect's own modal (`CoreUtil.formatNativeUrl`), the format every Explorer-registered wallet is tested against. Pass `link` for wallets whose registered native entry includes a path (like Scopuly's `scopuly://wc`) and `universal` for an https fallback.
 
 ## Headless usage (no modal)
 
@@ -111,7 +125,7 @@ const appkit = new StellarAppKit({
 |---|---|
 | `@saganta/stellar-appkit-react-native` | Core re-exports + RN connector set, storage adapters, deep-link registry, platform detection |
 | `.../polyfills` | `installPolyfills()` |
-| `.../ui` | `AppKitModal`, `useAppKit`, themes (5 × dark/light) |
+| `.../ui` | `AppKitModal`, `useAppKit`, `WalletIcon`, themes (5 × dark/light) |
 | `.../albedo` | `createAlbedoWebViewBridge` + `AlbedoWebViewScreen` (requires `react-native-webview`) |
 
 ## Requirements

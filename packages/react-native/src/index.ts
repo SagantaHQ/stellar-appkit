@@ -37,8 +37,11 @@ export {
   listMobileWallets,
   getMobileWallet,
   buildWalletConnectDeepLink,
+  buildWalletConnectUniversalLink,
   buildOpenWalletAppLink,
   findWalletByDeepLink,
+  formatWalletConnectLink,
+  formatWalletConnectUniversalLink,
   type MobileWalletDeepLink,
 } from './deep-links.js';
 
