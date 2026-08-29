@@ -614,7 +614,9 @@ export function AppKitModal({
       footerComponent={(props) => <BottomSheetFooter {...props}>{footer}</BottomSheetFooter>}
     >
       {header}
-      <BottomSheetScrollView contentContainerStyle={styles.content}>{body}</BottomSheetScrollView>
+      <BottomSheetScrollView contentContainerStyle={[styles.content, { paddingBottom: 68 }]}>
+        {body}
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 }
