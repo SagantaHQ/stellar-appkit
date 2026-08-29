@@ -1,7 +1,7 @@
 {
   "name": "@saganta/stellar-appkit-react-native",
-  "version": "1.9.50",
-  "description": "React Native connector + modal UI for Stellar AppKit \u2014 WalletConnect deep linking, Albedo WebView bridge, AsyncStorage persistence, full modal parity with the web SDK.",
+  "version": "1.9.51",
+  "description": "React Native connector + modal UI for Stellar AppKit — WalletConnect deep linking, Albedo WebView bridge, AsyncStorage persistence, full modal parity with the web SDK.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
