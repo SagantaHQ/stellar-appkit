@@ -17,7 +17,7 @@
 import React from 'react';
 import { Image, Pressable, Text, View, type ImageSourcePropType } from 'react-native';
 import { t } from '@saganta/stellar-appkit';
-import { ChevronLeftIcon, CloseIcon } from '../icons.jsx';
+import { ChevronLeftIcon, CloseIcon } from '../icons.js';
 import { WalletIcon } from '../WalletIcon.js';
 import type { AppKitStyles } from '../styles.js';
 import type { ConnectThemeRN } from '../theme.js';

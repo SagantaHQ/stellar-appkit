@@ -60,7 +60,7 @@ export {
   RetryIcon,
   WalletGlyphIcon,
   type IconProps,
-} from './icons.jsx';
+} from './icons.js';
 export { QrCodeView, type QrCodeViewProps } from './qr/QrCodeView.js';
 export { generateQrMatrix, qrMatrixToRects, type QrMatrix, type QrRect, type QrEcLevel } from './qr/qr-matrix.js';
 export {

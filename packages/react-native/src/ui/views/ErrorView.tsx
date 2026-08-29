@@ -13,7 +13,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { t } from '@saganta/stellar-appkit';
-import { AlertCircleIcon } from '../icons.jsx';
+import { AlertCircleIcon } from '../icons.js';
 import type { AppKitStyles } from '../styles.js';
 import type { ConnectThemeRN } from '../theme.js';
 

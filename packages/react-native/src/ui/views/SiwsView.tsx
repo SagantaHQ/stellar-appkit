@@ -26,7 +26,7 @@ import { Animated, Pressable, Text, View } from 'react-native';
 import { t } from '@saganta/stellar-appkit';
 import { useBreathe, useEntranceStagger } from '../animations.js';
 import { SquircleArc } from '../SquircleArc.js';
-import { RetryIcon } from '../icons.jsx';
+import { RetryIcon } from '../icons.js';
 import { WalletIcon } from '../WalletIcon.js';
 import { SQUIRCLE_SPEC } from '../squircle-track.js';
 import type { AppKitStyles } from '../styles.js';
