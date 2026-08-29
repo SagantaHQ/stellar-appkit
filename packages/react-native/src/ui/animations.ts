@@ -76,6 +76,11 @@ export function useBreathe(reducedMotion: boolean): Animated.Value {
  * The spinner — a 360° rotation loop. 2s linear to match the web modal's
  * `sak-connecting-dash 2s linear infinite`; slowed to 2.5s under reduced
  * motion (web: `animation-duration: 2.5s`), never the pre-v1.9.50 8s.
+ *
+ * Kept for backward compatibility (public export). The web-parity
+ * squircle spinner (SquircleArc) consumes `useLoopProgress` instead —
+ * the same 0→1 cycle but consumed as dash-pattern progress rather than
+ * a rotation angle.
  */
 export function useSpinner(reducedMotion: boolean): Animated.Value {
   const rotate = useRef(new Animated.Value(0)).current;
@@ -93,4 +98,59 @@ export function useSpinner(reducedMotion: boolean): Animated.Value {
     return () => loop.stop();
   }, [rotate, reducedMotion]);
   return rotate;
+}
+
+/**
+ * Staggered entrance for the connecting/signing views — port of the web
+ * `.connecting-view > *` cascade: each child fades in and slides up 8px
+ * over 0.5s `cubic-bezier(0.16, 1, 0.3, 1)`, delayed 0/80/160/240ms by
+ * child index (web caps the delays at the 4th child; later children all
+ * ride the 240ms slot). Disabled entirely under reduced motion (web:
+ * `animation: none; opacity: 1`).
+ *
+ * Returns one style per child index 0..count-1.
+ */
+export function useEntranceStagger(
+  count: number,
+  reducedMotion: boolean
+): Array<{ opacity: Animated.Value; translateY: Animated.Value }> {
+  const [styles] = useState(() =>
+    Array.from({ length: count }, () => ({
+      opacity: new Animated.Value(reducedMotion ? 1 : 0),
+      translateY: new Animated.Value(reducedMotion ? 0 : 8),
+    }))
+  );
+  useEffect(() => {
+    if (reducedMotion) {
+      // Instant final state (still animate to be safe if the flag flipped).
+      styles.forEach((s) => {
+        s.opacity.setValue(1);
+        s.translateY.setValue(0);
+      });
+      return;
+    }
+    const anims = styles.map((s, i) =>
+      Animated.parallel([
+        Animated.timing(s.opacity, {
+          toValue: 1,
+          duration: 500,
+          easing: Easing.bezier(0.16, 1, 0.3, 1),
+          delay: Math.min(i, 3) * 80,
+          useNativeDriver: true,
+        }),
+        Animated.timing(s.translateY, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.bezier(0.16, 1, 0.3, 1),
+          delay: Math.min(i, 3) * 80,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    const all = Animated.parallel(anims);
+    all.start();
+    return () => all.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedMotion]);
+  return styles;
 }

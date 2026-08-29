@@ -10,6 +10,14 @@
  * - not-installed wallets keep full opacity and carry an accent "Install"
  *   button on the right (`.wallet-install-btn`)
  * - unavailable wallets dim to 0.55 (`.wallet-row[data-unavailable]`)
+ * - the header is the web `.header` (16/18/8 padding, 15/600 title, 28×28
+ *   icon buttons) with the `.header--connecting` back-arrow variant
+ * - connecting/signing/SIWS views use the web `.connecting-view` metrics
+ *   (88×88 logo wrap, 56×56 squircle logo, 17/600 title, 14/1.5 muted
+ *   subtitle capped at 280 wide, 999-radius retry pill)
+ * - the panel footer is the web `.footer` ("Powered by Stellar AppKit")
+ * - inline mode renders the web `.inline-root .panel`: radiusLg corners,
+ *   1px colorBorder outline, no overlay/handle/close button
  *
  * Every view imports `buildStyles(theme)` output through the orchestrator's
  * `useMemo`, so a custom theme restyles the whole sheet consistently.
@@ -27,29 +35,43 @@ export function buildStyles(theme: ConnectThemeRN) {
     content: { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 24, gap: 14 },
     sections: { gap: 6 },
 
-    // ---- Sheet header (title centered — the bottom-sheet idiom) -----------
+    // ---- Panel header (web .header) -----------------------------------------
+    // Web: display:flex; align-items:center; gap:10px; padding:16px 18px 8px.
+    // No border-bottom — the sheet handle + spacing separate it from the body.
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: theme.colorBorder,
-      minHeight: 48,
+      gap: 10,
+      paddingHorizontal: 18,
+      paddingTop: 16,
+      paddingBottom: 8,
+      minHeight: 44,
     },
-    headerTitle: { color: theme.colorText, fontSize: 17, fontWeight: '700', flex: 1, textAlign: 'center' },
+    // Web .header .brand: logo 22×22 radius 6 + title, flex 1, gap 8.
+    headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
+    headerLogo: { width: 22, height: 22, borderRadius: 6 },
+    // Web .header .title: 15px / 600 / -0.01em, ellipsized.
+    headerTitle: {
+      color: theme.colorText,
+      fontSize: 15,
+      fontWeight: '600',
+      letterSpacing: -0.15,
+      flex: 1,
+      textAlign: 'center',
+    },
+    headerTitleLeft: { textAlign: 'left', flex: 1 },
+    // Web .icon-btn: 28×28, radius radiusSm, muted glyph, hover surfaceHover.
     headerButton: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 28,
+      height: 28,
+      borderRadius: theme.radiusSm,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme.colorSurface,
     },
-    headerButtonPressed: { opacity: 0.6 },
-    headerButtonSpacer: { width: 36 },
-    headerButtonGlyph: { color: theme.colorText, fontSize: 22, fontWeight: '600', lineHeight: 24, marginTop: -2 },
+    headerButtonPressed: { backgroundColor: theme.colorSurfaceHover, opacity: 0.9 },
+
+    // Web .header--connecting: back arrow + centered wallet name + close.
+    headerConnecting: { justifyContent: 'space-between' },
 
     centered: { alignItems: 'center', gap: 10, paddingVertical: 28 },
     title: { color: theme.colorText, fontSize: 18, fontWeight: '700', textAlign: 'center' },
@@ -154,11 +176,86 @@ export function buildStyles(theme: ConnectThemeRN) {
     moreChevron: { color: theme.colorTextMuted, fontSize: 20, fontWeight: '600', transform: [{ rotate: '90deg' }] },
     moreChevronOpen: { transform: [{ rotate: '-90deg' }] },
 
-    // ---- Connecting / signing view ----------------------------------------
-    animWrap: { width: 104, height: 104, alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
-    animLogoWrap: { borderRadius: 22, overflow: 'hidden' },
-    animArc: { position: 'absolute', width: 96, height: 96 },
+    // ---- Connecting / signing / SIWS views (web .connecting-view) ----------
+    // Web: flex column, center, padding 32px 24px 28px. Children stagger in
+    // via useEntranceStagger (0.5s fade + 8px slide, 80ms apart).
+    connectingView: { alignItems: 'center', paddingHorizontal: 24, paddingTop: 32, paddingBottom: 28 },
+    // Web .connecting-view__logo-wrap: 88×88, margin-bottom 28.
+    logoWrap: { width: 88, height: 88, marginBottom: 28, alignItems: 'center', justifyContent: 'center' },
+    // Web .connecting-view__logo: 56×56 squircle (radius 22), soft drop shadow
+    // (same as wallet-tile), breathing scale loop.
+    connectingLogo: {
+      width: 56,
+      height: 56,
+      borderRadius: 22,
+      backgroundColor: theme.colorBg,
+      overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.12,
+      shadowRadius: 8,
+      elevation: 2,
+    },
+    // Web .connecting-view--error .connecting-view__logo-wrap { margin-bottom: 24 }
+    logoWrapError: { marginBottom: 24 },
+    // Web .connecting-view__title: 17px / 600 / -0.015em / line-height 1.3.
+    connectingTitle: {
+      color: theme.colorText,
+      fontSize: 17,
+      fontWeight: '600',
+      letterSpacing: -0.26,
+      lineHeight: 22,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    // Web .connecting-view__subtitle: 14px / 1.5, muted, max-width 280,
+    // margin-bottom 32. Error variant: colorDanger, margin-bottom 24.
+    connectingSubtitle: {
+      color: theme.colorTextMuted,
+      fontSize: 14,
+      lineHeight: 21,
+      textAlign: 'center',
+      maxWidth: 280,
+      marginBottom: 32,
+    },
+    connectingSubtitleError: { color: theme.colorDanger, marginBottom: 24 },
 
+    // Web .connecting-view__retry: pill with 1px border, radius 999, padding
+    // 8px 18px, 14px / 500 text, 6px gap, retry glyph at 14px. Press →
+    // scale(0.97) + surfaceHover.
+    retryPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 18,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+    },
+    retryPillPressed: { backgroundColor: theme.colorSurfaceHover, transform: [{ scale: 0.97 }] },
+    retryPillText: { color: theme.colorText, fontSize: 14, fontWeight: '500' },
+
+    // Web .connecting-view__cancel (SIWS cancel): same pill, 13px muted text.
+    ghostPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 18,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+    },
+    ghostPillPressed: { backgroundColor: theme.colorSurfaceHover, transform: [{ scale: 0.97 }] },
+    ghostPillText: { color: theme.colorTextMuted, fontSize: 13, fontWeight: '500' },
+
+    // Web .signing-view--error: circle-X glyph 40px danger, margin-bottom 16.
+    signingErrorIcon: { marginBottom: 16 },
+    // Web .signing-view__actions: row, gap 8, centered.
+    signingActions: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
+
+    // ---- Deep-link extras (RN-only affordances) ----------------------------
     openFailedCard: {
       alignItems: 'center',
       gap: 10,
@@ -217,17 +314,57 @@ export function buildStyles(theme: ConnectThemeRN) {
     addressText: { color: theme.colorTextMuted, fontSize: 13, letterSpacing: 0.3 },
     danger: { color: theme.colorDanger, fontSize: 12, marginTop: 2 },
 
-    // ---- Error view ---------------------------------------------------------
-    errorBadge: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      borderWidth: 2,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 4,
+    // ---- Error / network-mismatch states (web .error-state) ----------------
+    // Web: flex column, center, gap 10, padding 28px 20px; svg 28×28 danger;
+    // title 14/600; message 13/1.5 muted.
+    errorState: { alignItems: 'center', gap: 10, paddingVertical: 28, paddingHorizontal: 20 },
+    errorStateIcon: { marginBottom: 0 },
+    errorStateTitle: { color: theme.colorText, fontSize: 14, fontWeight: '600', textAlign: 'center' },
+    errorStateMessage: {
+      color: theme.colorTextMuted,
+      fontSize: 13,
+      lineHeight: 19.5,
+      textAlign: 'center',
     },
-    errorBadgeText: { fontSize: 28, fontWeight: '800' },
+    errorStateStrong: { color: theme.colorText, fontWeight: '700' },
+    // Web .btn: 13px / 500, padding 9px 14px, radius radiusSm, 1px border.
+    btn: {
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+      borderRadius: theme.radiusSm,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+      marginTop: 6,
+    },
+    btnPressed: { backgroundColor: theme.colorSurfaceHover, opacity: 0.9 },
+    btnText: { color: theme.colorText, fontSize: 13, fontWeight: '500', textAlign: 'center' },
+
+    // ---- Panel footer (web .footer) -----------------------------------------
+    // Web: padding 10px 16px, 1px top border, 11px muted, centered.
+    footer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 4,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colorBorder,
+    },
+    footerText: { color: theme.colorTextMuted, fontSize: 11 },
+    footerLink: { color: theme.colorAccent, fontSize: 11, fontWeight: '500' },
+
+    // ---- Inline mode (web .inline-root .panel) ------------------------------
+    // radiusLg corners + 1px colorBorder outline, no overlay/handle/close.
+    inlinePanel: {
+      borderRadius: theme.radiusLg,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+      backgroundColor: theme.colorSurface,
+      overflow: 'hidden',
+      alignSelf: 'stretch',
+    },
+    inlineBody: { maxHeight: 480 },
   });
 }
 

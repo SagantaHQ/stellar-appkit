@@ -6,8 +6,9 @@ React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-a
 - **True wallet names** — WalletConnect sessions capture the peer wallet's metadata, so the connecting and account views show "Freighter" or "HOT Wallet", never a generic "WalletConnect" label.
 - **Albedo WebView bridge** — Albedo's web confirm flow, reproduced inside an in-app WebView (`window.opener` shim + synthetic MessageEvents — the exact popup protocol).
 - **AsyncStorage persistence** — sessions survive app restarts via a first-class `ConnectStorage` adapter.
-- **Full modal parity** — bottom-sheet modal (`@gorhom/bottom-sheet`), wallet list with live reachability, connecting/signing animations (same v1.9.50 timings as web, reduced-motion aware via `AccessibilityInfo`), account view, error states, i18n (25 locales).
-- **Icons that render — no SVG library** — RN's `Image` can't rasterize SVG, so instead of pulling in `react-native-svg` (a large native dependency), every wallet logo is pre-rasterized as a compressed 128×128 palette PNG with alpha (~30 KB for all 21, bundled as base64 literals). `<WalletIcon>` resolves icons by wallet key → bundled PNG, renders raster sources natively, matches WalletConnect peer names ("Freighter" → Freighter logo), and falls back to a branded letter avatar.
+- **Full modal parity (1:1 with the web modal)** — bottom-sheet modal (`@gorhom/bottom-sheet`) or **inline panel** (`mode="inline"`, web parity), web-metric wallet list with live reachability, the web's squircle dash-arc spinner (the traveling-dash rounded-square — not a circle — rebuilt with pure Views, same 2s/0.8s timings, reduced-motion aware via `AccessibilityInfo`), the web's back-arrow error header, connecting/signing/SIWS error variants with retry pills, network-mismatch view, "Powered by Stellar AppKit" footer, i18n (25 locales).
+- **SIWS (Sign-In With Stellar)** — when `siwsConfig` is set on the client, the modal runs the automatic sign-in flow right after connect (checking session → fetching nonce → approve in wallet → verifying), with per-step timeouts, retry caps and disconnect-on-fail — the same flow, phases and copy as the web modal.
+- **Icons that render — no SVG library** — RN's `Image` can't rasterize SVG, so instead of pulling in `react-native-svg` (a large native dependency), every wallet logo is pre-rasterized as a compressed 128×128 palette PNG with alpha (~30 KB for all 21, bundled as base64 literals). `<WalletIcon>` resolves icons by wallet key → bundled PNG, renders raster sources natively, matches WalletConnect peer names ("Freighter" → Freighter logo), and falls back to a branded letter avatar. The UI chrome icons (chevrons, close, alert, retry, checkmark) are likewise pure-View ports of the web's inline SVGs (`./ui` exports the icon set).
 - **`<QrCodeView>` remains exported** — a vendored pure-JS QR encoder drawn with plain React Native Views (no `react-native-qrcode-svg`) for apps that build their own tablet/desktop-style pairing screens; the modal itself doesn't use it.
 
 ## Install
@@ -67,6 +68,60 @@ export function App() {
   );
 }
 ```
+
+### Presentation modes
+
+`<AppKitModal>` renders one of two presentations — the same modes the web
+modal offers:
+
+- **`mode="bottomsheet"` (default)** — the `@gorhom/bottom-sheet` overlay:
+  backdrop, drag handle, swipe-to-dismiss. `open` presents/dismisses it.
+- **`mode="inline"`** — the panel renders in place, like the web's
+  `mode="inline"`: a bordered card (radiusLg + 1px `colorBorder` outline)
+  embedded in your screen, no overlay and no close button. The `open` prop
+  is ignored (the panel is always visible); the view state machine (wallet
+  list → connecting → account) lives inside the panel just like the sheet.
+
+```tsx
+// Inline — for users who don't want a bottom sheet:
+<AppKitModal client={appkit} mode="inline" open onClose={() => {}} theme={stellarDark} />
+```
+
+Optional header branding (web `title` / `logo-src` attributes):
+
+```tsx
+<AppKitModal client={appkit} open={open} onClose={close} title="My Wallet" logo={require('./logo.png')} />
+```
+
+### SIWS — Sign-In With Stellar
+
+Set `siws` on the client config and the modal handles the whole
+authentication UX after connect, phase for phase like the web modal
+(`useSiwsFlow` is also exported if you build your own UI):
+
+```ts
+const appkit = new StellarAppKit({
+  // ...
+  siws: {
+    statement: 'Sign in to My App',
+    session: async () => (await fetch('/api/siws/session')).json(),
+    nonce: async () => (await fetch('/api/siws/nonce')).text(),
+    verify: async (data, nonce) => {
+      const res = await fetch('/api/siws/verify', { method: 'POST', body: JSON.stringify({ ...data, nonce }) });
+      return res.ok ? res.json() : null;
+    },
+  },
+});
+```
+
+The flow: **Checking session… → Fetching secure nonce… → Approve the
+sign-in request in {wallet} → Verifying your signature…**, each step with
+a per-step timeout (`timeoutMs`, default 15s). Failures show the
+"Sign-in failed" view with the extracted error and a Try-again pill;
+retries are capped (`maxRetries`, default 3) after which the message
+becomes "Too many failed attempts". Cancelling (or dismissing the modal
+before sign-in succeeds) disconnects the wallet when
+`disconnectOnFail` is true (the default) — exactly the web semantics.
 
 ## The mobile wallet flow
 
@@ -190,7 +245,7 @@ builds (`expo export`) are unaffected — splitting is a dev-server behavior.
 |---|---|
 | `@saganta/stellar-appkit-react-native` | Core re-exports + RN connector set, storage adapters, deep-link registry, platform detection |
 | `.../polyfills` | `installPolyfills()` |
-| `.../ui` | `AppKitModal`, `useAppKit`, `WalletIcon`, themes (5 × dark/light) |
+| `.../ui` | `AppKitModal` (bottom-sheet + inline modes), `useAppKit`, `useSiwsFlow`, `WalletIcon`, `SquircleArc` + squircle-track geometry, pure-View icon set, themes (5 × dark/light) |
 | `.../albedo` | `createAlbedoWebViewBridge` + `AlbedoWebViewScreen` (requires `react-native-webview`) |
 
 ## Modal internals (for contributors)
@@ -200,20 +255,32 @@ orchestrator (state machine, connect actions, bottom-sheet shell):
 
 ```
 src/ui/
-  AppKitModal.tsx        orchestrator — view state machine + deep-link handoff
+  AppKitModal.tsx        orchestrator — view state machine, error routing (web parity),
+                        deep-link handoff, sheet/inline shells, footer
   styles.ts              shared design system (port of the web modal's CSS)
-  types.ts               shared view types
+  types.ts               shared view types + back-header resolution
+  squircle-track.ts      pure geometry of the web spinner (SVG rect path + dash math)
+  SquircleArc.tsx        the spinner component — pure Views, native-driven opacity PWM
+  icons.tsx              pure-View ports of the web's inline SVG chrome icons
+  useSiws.ts             SIWS flow hook (web triggerSiwsFlow port)
+  animations.ts          breathe / dash loop / entrance stagger (web timings)
   views/
+    HeaderView.tsx       header variants: brand | connecting-back | connected-wallet
     WalletListView.tsx   wallet picker — flat rows, featured + "More wallets" expander
     WalletRowView.tsx    one wallet row (.wallet-row port: tile | name | status)
-    ConnectingView.tsx   connecting / signing view (+ breathe/spinner animations)
+    ConnectingView.tsx   connecting view (+ error variant + retry pill)
+    SigningView.tsx      signing view (+ 0.8s arc, error variant with Cancel/Try again)
+    SiwsView.tsx         SIWS phases + error view
     AccountView.tsx      connected account
-    ErrorView.tsx        failure + retry
+    ErrorView.tsx        generic error + network mismatch (web .error-state)
 ```
 
 The wallet listing mirrors the web modal's design: 40dp squircle tiles with a soft drop shadow,
 14/500 names, an "Installed" outline badge with an accent dot, accent Install pills for
-not-installed wallets, and 0.55 dimming for unavailable ones.
+not-installed wallets, and 0.55 dimming for unavailable ones. The connecting/signing/SIWS
+views mirror the web `.connecting-view` metrics (88×88 wrap, 56×56 squircle logo, 17/600
+title, 14/1.5 muted subtitle capped at 280, 999-radius pills), and the header swaps to the
+web `.header--connecting` (back arrow + wallet name) while connecting or on errors.
 
 ## Requirements
 

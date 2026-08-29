@@ -1,26 +1,38 @@
 /**
- * ConnectingView — shown while a wallet's connect() promise (or a sign
- * request) is in flight. Port of the web modal's `.connecting-view`:
+ * ConnectingView — shown while a wallet's connect() promise is in flight.
+ * Port of the web modal's `.connecting-view`, metrics 1:1:
  *
- *   [breathing wallet logo behind a spinning arc]
- *   Continue in {Wallet}
- *   Accept connection request in the wallet
+ *   [breathing 56×56 squircle logo inside an 88×88 wrap]
+ *   [the squircle dash-arc spinner — NOT a circle, like the web]
+ *   Continue in {Wallet}                     (17/600, -0.015em)
+ *   Accept connection request in the wallet  (14/1.5 muted, ≤280 wide)
+ *   ↻ Try again                              (999-radius pill — error only)
  *
- * Deep-link extras (mobile-only):
+ * Error variant (`connecting-view--error`): the spinner arc disappears,
+ * the logo stops breathing, the subtitle turns danger-colored with the
+ * failure message, and a "Try again" pill re-fires the same wallet. The
+ * header (rendered by AppKitModal) shows the back arrow + wallet name,
+ * exactly like the web's `.header--connecting`.
+ *
+ * Deep-link extras (mobile-only, stacked under the web-parity core):
  * - "Open in wallet app" re-fires the deep link while pairing waits
  * - when neither the wallet's scheme nor universal link could open, the
  *   card swaps in an "isn't installed" hint with a store Install button
  *   plus a "Copy pairing code" fallback for wallets with manual pairing
  *
- * Animation timings match web v1.9.50: 2.5s logo breathe, 2s spinner arc,
- * both reduced-motion aware (breathe off, spinner slowed to 2.5s).
+ * Animation timings match web v1.9.50: 2.5s logo breathe, 2s spinner arc
+ * (2.5s under reduced motion; breathe and the staggered entrance are
+ * disabled there, web: `animation: none`).
  */
 
 import React from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { t } from '@saganta/stellar-appkit';
-import { useBreathe, useSpinner } from '../animations.js';
+import { useBreathe, useEntranceStagger } from '../animations.js';
+import { SquircleArc } from '../SquircleArc.js';
+import { RetryIcon } from '../icons.jsx';
 import { WalletIcon } from '../WalletIcon.js';
+import { SQUIRCLE_SPEC } from '../squircle-track.js';
 import type { AppKitStyles } from '../styles.js';
 import type { ConnectThemeRN } from '../theme.js';
 
@@ -32,11 +44,16 @@ export interface ConnectingViewProps {
   walletIcon: string | null;
   /** Registry/connector key for PNG icon resolution. */
   walletKey: string | null;
+  /** Web: connecting.accept_request, or the error subtitle on failure. */
   subtitle: string;
+  /** True once connect() rejected — switches to the error variant. */
+  error: boolean;
   openFailed: boolean;
   failedWalletName?: string;
   onInstallFailedWallet: () => void;
   onRetryOpen: () => void;
+  /** Re-runs connect() for the same wallet (web: retry-connecting). */
+  onRetryConnect: () => void;
   /** Shares the pairing URI — set when a mobile wallet was picked and the URI is ready. */
   onShareUri?: () => void;
   reopenWallet?: () => void;
@@ -51,29 +68,69 @@ export function ConnectingView(props: ConnectingViewProps) {
     walletIcon,
     walletKey,
     subtitle,
+    error,
     openFailed,
     failedWalletName,
     onInstallFailedWallet,
+    onRetryConnect,
     onShareUri,
     reopenWallet,
   } = props;
   const breathe = useBreathe(reducedMotion);
-  const spinner = useSpinner(reducedMotion);
-  const spin = spinner.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  // The stagger covers the web children: logo-wrap, title, subtitle, retry.
+  // The deep-link extras ride the last slot like web's nth-child(n+5).
+  const entrance = useEntranceStagger(4, reducedMotion);
 
   return (
-    <View style={styles.centered}>
-      <View style={styles.animWrap}>
-        <AnimatedBox scale={breathe}>
-          <View style={styles.animLogoWrap}>
-            <WalletIcon source={walletIcon} walletKey={walletKey} fallbackLabel={walletName} size={64} radius={22} />
+    <View style={styles.connectingView}>
+      <Animated.View
+        style={[
+          styles.logoWrap,
+          error && styles.logoWrapError,
+          {
+            opacity: entrance[0]!.opacity,
+            transform: [{ translateY: entrance[0]!.translateY }, { scale: error ? 1 : breathe }],
+          },
+        ]}
+      >
+        {!error && (
+          <View style={{ position: 'absolute' }}>
+            <SquircleArc
+              color={theme.colorAccent}
+              size={SQUIRCLE_SPEC.box}
+              strokeWidth={SQUIRCLE_SPEC.strokeWidth}
+              durationMs={reducedMotion ? SQUIRCLE_SPEC.connectingReducedMotionDurationMs : SQUIRCLE_SPEC.connectingDurationMs}
+            />
           </View>
-        </AnimatedBox>
-        <AnimatedSpinner style={styles.animArc} rotate={spin} color={theme.colorAccent} />
-      </View>
-      <Text style={styles.title}>{t('connecting.continue_in_wallet', { walletName })}</Text>
-      <Text style={styles.muted}>{subtitle}</Text>
+        )}
+        <View style={styles.connectingLogo}>
+          <WalletIcon source={walletIcon} walletKey={walletKey} fallbackLabel={walletName} size={56} radius={22} />
+        </View>
+      </Animated.View>
 
+      <Animated.View style={{ opacity: entrance[1]!.opacity, transform: [{ translateY: entrance[1]!.translateY }] }}>
+        <Text style={styles.connectingTitle}>{t('connecting.continue_in_wallet', { walletName })}</Text>
+      </Animated.View>
+
+      <Animated.View style={{ opacity: entrance[2]!.opacity, transform: [{ translateY: entrance[2]!.translateY }] }}>
+        <Text style={[styles.connectingSubtitle, error && styles.connectingSubtitleError]}>{subtitle}</Text>
+      </Animated.View>
+
+      {error && (
+        <Animated.View style={{ opacity: entrance[3]!.opacity, transform: [{ translateY: entrance[3]!.translateY }] }}>
+          <Pressable
+            style={({ pressed }) => [styles.retryPill, pressed && styles.retryPillPressed]}
+            onPress={onRetryConnect}
+            accessibilityRole="button"
+            accessibilityLabel={t('action.try_again')}
+          >
+            <RetryIcon color={theme.colorText} size={14} />
+            <Text style={styles.retryPillText}>{t('action.try_again')}</Text>
+          </Pressable>
+        </Animated.View>
+      )}
+
+      {/* ---- Deep-link extras (RN-only affordances, web has no QR here) ---- */}
       {openFailed && (
         <View style={styles.openFailedCard}>
           <Text style={styles.openFailedText}>
@@ -109,30 +166,5 @@ export function ConnectingView(props: ConnectingViewProps) {
         </Pressable>
       )}
     </View>
-  );
-}
-
-/** Small helpers so the Animated primitives live in one place. */
-function AnimatedBox({ scale, children }: { scale: Animated.Value; children: React.ReactNode }) {
-  return <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>;
-}
-
-function AnimatedSpinner({ style, rotate, color }: { style: any; rotate: Animated.AnimatedInterpolation<string | number>; color: string }) {
-  // A simple arc spinner: a bordered circle with one transparent quarter.
-  return (
-    <Animated.View
-      style={[
-        style,
-        {
-          transform: [{ rotate }],
-          borderRadius: 999,
-          borderWidth: 3,
-          borderTopColor: 'transparent',
-          borderLeftColor: 'transparent',
-          borderRightColor: color,
-          borderBottomColor: color,
-        },
-      ]}
-    />
   );
 }

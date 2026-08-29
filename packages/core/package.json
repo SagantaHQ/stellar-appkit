@@ -1,6 +1,6 @@
 {
   "name": "@saganta/stellar-appkit",
-  "version": "1.9.55",
+  "version": "1.9.56",
   "description": "Unified Stellar wallet connections, Soroban, and transaction preview — the core SDK (no UI).",
   "type": "module",
   "sideEffects": false,

@@ -24,11 +24,47 @@ export interface WalletBranding {
 }
 
 /** The modal's internal view state machine. */
-export type ViewId = 'list' | 'connecting' | 'signing' | 'account' | 'error';
+export type ViewId =
+  | 'list'
+  | 'connecting'
+  | 'signing'
+  | 'account'
+  | 'error'
+  | 'network-mismatch'
+  | 'siws-checking'
+  | 'siws-nonce'
+  | 'siws-signing'
+  | 'siws-verifying'
+  | 'siws-error';
 
 /** i18n key for each view's sheet-header title (connecting/signing keep the wallet name). */
 export const VIEW_TITLES: Partial<Record<ViewId, string>> = {
   list: 'title.connect_wallet',
   account: 'title.account',
   error: 'error.title',
+  'network-mismatch': 'title.wrong_network',
+  'siws-checking': 'siws.title',
+  'siws-nonce': 'siws.title',
+  'siws-signing': 'siws.title',
+  'siws-verifying': 'siws.title',
+  'siws-error': 'siws.error_title',
 };
+
+/** SIWS phases share one component + one title. */
+export const SIWS_PHASES: readonly ViewId[] = [
+  'siws-checking',
+  'siws-nonce',
+  'siws-signing',
+  'siws-verifying',
+] as const;
+
+/** Which views use the web `.header--connecting` (back arrow + wallet name + close). */
+export function usesBackHeader(view: ViewId, hasError: boolean): boolean {
+  return (
+    view === 'connecting' ||
+    view === 'network-mismatch' ||
+    view === 'siws-error' ||
+    (view === 'signing' && hasError) ||
+    (view === 'error' && hasError)
+  );
+}
