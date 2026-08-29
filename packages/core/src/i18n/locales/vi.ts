@@ -40,6 +40,8 @@ const vi: LocaleMessages = {
     "empty": "Không có ví nào được đăng ký. Truyền connectors vào cấu hình StellarAppKit.",
     "not_installed": "Chưa cài đặt",
     "install": "Cài đặt",
+    "section_stellar": "Ví Stellar",
+    "more_wallets": "Thêm ví ({count})",
     "status": {
       "connecting": "Đang kết nối…",
       "locked": "Đã khóa",
@@ -61,7 +63,8 @@ const vi: LocaleMessages = {
     "copy_uri": "Sao chép URI",
     "copied": "Đã sao chép!",
     "generating_code": "Đang tạo mã ghép nối…",
-    "qr_failed": "Tạo QR thất bại. Sử dụng nút sao chép bên dưới."
+    "qr_failed": "Tạo QR thất bại. Sử dụng nút sao chép bên dưới.",
+    "copy_pairing_code": "Sao chép mã ghép nối"
   },
   "action": {
     "try_again": "Thử lại",

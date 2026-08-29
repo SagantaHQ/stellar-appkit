@@ -4,27 +4,30 @@
  * Feature parity with the web `<stellar-appkit-modal>` adapted to native
  * idioms (per ARCHITECTURE.md's RN plan):
  *
- * - **Named mobile wallet list**: every Stellar wallet with a mobile app and
- *   a WalletConnect registration (Freighter, LOBSTR, HOT Wallet, Scopuly)
- *   gets its own row — tap it and we deep-link straight into that wallet
- *   with the pairing URI embedded (`freighterwallet://wc?uri=...`),
- *   Solana-Mobile-Adapter style. The connecting view, account view and
- *   sign-request prompts all carry the wallet's own name and icon — never
- *   a generic "WalletConnect" label.
- * - **WalletConnect (QR)** row for every other WC wallet (SafePal, Hana,
- *   and anything else with the Stellar namespace) — pairing view with the
- *   mobile wallets listed first, QR fallback, copy/share URI.
- * - **Albedo (WebView)** row when its connector is registered.
+ * - **Deep-link-only pairing**: on a phone the same device would have to
+ *   scan a QR code, so the RN modal never renders one. Every wallet row
+ *   embeds the WalletConnect pairing URI into the wallet's own deep link
+ *   (`freighterwallet://wc?uri=...`) and hands off to the OS,
+ *   Solana-Mobile-Adapter style.
+ * - **Sectioned wallet list**: the featured Stellar-first wallets (Freighter,
+ *   LOBSTR, HOT Wallet, Scopuly) plus the registered connectors (Albedo
+ *   WebView, …) come first; every other WalletConnect-registered mobile
+ *   wallet (SafePal, Blockchain.com, Arculus, Atomic Wallet, …) collapses
+ *   under a "More wallets" expander so the sheet stays scannable.
+ * - **True wallet names** — the connecting view, account view and
+ *   sign-request prompts carry the wallet's own name and icon, never a
+ *   generic "WalletConnect" label.
+ * - **Copy pairing code** — when a deep link can't open the wallet, the
+ *   pairing URI can still be shared/copied so wallets with manual pairing
+ *   fields can complete the handshake.
  * - Connecting / signing views with the same animation timings as web
  *   v1.9.50 (2.5s breathe, 2s spinner, reduced-motion aware).
- * - Account view with share/disconnect.
- * - Error view with retry.
+ * - Account view with share/disconnect. Error view with retry.
  *
  * Icons render through `<WalletIcon>` — zero native image dependencies:
- * the core SVG logos are pre-rasterized as compressed PNGs (wallet-icons.ts),
- * raster sources render natively, WC peers match by name, and everything
- * else gets a branded letter avatar. The pairing QR is `<QrCodeView>` —
- * pure-JS encoder + plain Views (no react-native-qrcode-svg either).
+ * wallet logos are pre-rasterized as compressed palette PNGs (with alpha)
+ * in deep-links.ts and wallet-icons.ts, raster sources render natively, WC
+ * peers match by name, and everything else gets a branded letter avatar.
  *
  * Presentation: @gorhom/bottom-sheet with a backdrop, swipe-to-dismiss.
  */
@@ -42,15 +45,15 @@ import {
   View,
 } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { QrCodeView } from './qr/QrCodeView.js';
 import type { StellarAppKit, WalletConnector, WalletReachability } from '@saganta/stellar-appkit';
 import { t } from '@saganta/stellar-appkit';
 import {
-  listMobileWallets,
   buildWalletConnectDeepLink,
   buildWalletConnectUniversalLink,
   buildOpenWalletAppLink,
   getMobileWallet,
+  listAdditionalMobileWallets,
+  listFeaturedMobileWallets,
   type MobileWalletDeepLink,
 } from '../deep-links.js';
 import { useAppKit } from './useAppKit.js';
@@ -79,11 +82,10 @@ interface WalletBranding {
   key: string | null;
 }
 
-type ViewId = 'list' | 'pairing' | 'connecting' | 'signing' | 'account' | 'error';
+type ViewId = 'list' | 'connecting' | 'signing' | 'account' | 'error';
 
 const VIEW_TITLES: Partial<Record<ViewId, string>> = {
   list: 'title.connect_wallet',
-  pairing: 'title.connect_wallet',
   account: 'title.account',
   error: 'error.title',
 };
@@ -96,14 +98,15 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
   const [walletRows, setWalletRows] = useState<WalletRow[]>([]);
   const [loadingWallets, setLoadingWallets] = useState(false);
   const [wcUri, setWcUri] = useState<string | null>(null);
-  const [showQr, setShowQr] = useState(false);
+  const [showMoreWallets, setShowMoreWallets] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [connectingWallet, setConnectingWallet] = useState<WalletBranding | null>(null);
   /**
    * When the user picked a named mobile wallet (Freighter, LOBSTR, HOT,
-   * Scopuly) — its registry id. Drives the deep-link handoff, the
-   * "open the wallet again" affordance for sign requests, and the account
-   * view's fallback branding when the wallet doesn't send peer metadata.
+   * Scopuly, SafePal, …) — its registry id. Drives the deep-link handoff,
+   * the "open the wallet again" affordance for sign requests, and the
+   * account view's fallback branding when the wallet doesn't send peer
+   * metadata.
    */
   const pairedMobileWalletId = useRef<string | null>(null);
   /** Set when neither the wallet's scheme nor universal link could open. */
@@ -130,7 +133,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     if (open) {
       setView(client.session ? 'account' : 'list');
       setWcUri(null);
-      setShowQr(false);
+      setShowMoreWallets(false);
       setErrorText(null);
       setOpenFailed(false);
       setConnectingWallet(null);
@@ -197,7 +200,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
   // --- connect actions ---------------------------------------------------------
 
   /**
-   * Connects a named mobile wallet (Freighter, LOBSTR, HOT Wallet, Scopuly):
+   * Connects a named mobile wallet (featured or under "More wallets"):
    * start the WalletConnect pairing, and the moment the relay hands us the
    * URI, deep-link straight into the wallet app. The whole flow is branded
    * with the wallet's own name and icon.
@@ -226,27 +229,6 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     [client, wcConnector, openWalletDeepLink]
   );
 
-  /**
-   * Generic WalletConnect pairing — QR for every wallet that isn't in the
-   * named list (SafePal, Hana, …), with the deep-link wallets offered first.
-   */
-  const connectWalletConnect = useCallback(async () => {
-    if (!wcConnector) return;
-    setConnectingWallet({ name: wcConnector.meta.name, icon: wcConnector.meta.icon ?? null, key: 'walletconnect' });
-    setOpenFailed(false);
-    setView('pairing');
-
-    const wc = wcConnector as WalletConnector & { setOnUri?: (fn: (uri: string) => void) => void };
-    if (typeof wc.setOnUri === 'function') {
-      wc.setOnUri((uri) => setWcUri(uri));
-    }
-    try {
-      await client.connect('walletconnect');
-    } catch {
-      /* surfaced via the error event */
-    }
-  }, [client, wcConnector]);
-
   /** Connects a registered connector directly (Albedo WebView, …). */
   const connectConnector = useCallback(
     async (walletId: string) => {
@@ -262,22 +244,6 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
       }
     },
     [client]
-  );
-
-  /** A deep-link wallet tapped from the QR pairing view. */
-  const openMobileWallet = useCallback(
-    async (mobileWalletId: string) => {
-      if (!wcUri) return;
-      const wallet = getMobileWallet(mobileWalletId);
-      if (wallet) {
-        pairedMobileWalletId.current = mobileWalletId;
-        setConnectingWallet({ name: wallet.name, icon: wallet.icon, key: wallet.id });
-        setView('connecting');
-      }
-      const ok = await openWalletDeepLink(mobileWalletId, wcUri);
-      setOpenFailed(!ok);
-    },
-    [wcUri, openWalletDeepLink]
   );
 
   /** Re-opens the paired wallet app (sign-request handoff). */
@@ -299,6 +265,11 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     setOpenFailed(!ok);
   }, [wcUri, openWalletDeepLink]);
 
+  /** Shares the raw pairing URI — for wallets with a manual "paste code" field. */
+  const sharePairingUri = useCallback(async () => {
+    if (wcUri) await Share.share({ message: wcUri });
+  }, [wcUri]);
+
   const disconnect = useCallback(async () => {
     await client.disconnect();
     pairedMobileWalletId.current = null;
@@ -306,15 +277,8 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     void refreshWallets();
   }, [client, refreshWallets]);
 
-  const goBack = useCallback(() => {
-    setErrorText(null);
-    setOpenFailed(false);
-    setView('list');
-  }, []);
-
   if (!open) return null;
 
-  const showBack = view === 'pairing';
   const titleKey = VIEW_TITLES[view];
 
   return (
@@ -330,24 +294,12 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
       backgroundStyle={{ backgroundColor: theme.colorBg, borderTopLeftRadius: theme.radiusLg, borderTopRightRadius: theme.radiusLg }}
       handleIndicatorStyle={{ backgroundColor: theme.colorTextMuted }}
     >
-      {/* Sheet header — title, back (pairing), close */}
+      {/* Sheet header — title + close */}
       <View style={styles.header}>
-        {showBack ? (
-          <Pressable
-            style={styles.headerButton}
-            onPress={goBack}
-            accessibilityRole="button"
-            accessibilityLabel={t('aria.back')}
-            hitSlop={8}
-          >
-            <Text style={styles.headerButtonGlyph}>‹</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.headerButtonSpacer} />
-        )}
+        <View style={styles.headerButtonSpacer} />
         {titleKey ? <Text style={styles.headerTitle}>{t(titleKey)}</Text> : <View />}
         <Pressable
-          style={styles.headerButton}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.headerButtonPressed]}
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel={t('aria.close_dialog')}
@@ -365,29 +317,16 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
             loading={loadingWallets}
             rows={walletRows}
             showMobileWallets={Boolean(wcConnector)}
+            showMore={showMoreWallets}
+            onToggleMore={() => setShowMoreWallets((v) => !v)}
             onConnectMobile={connectMobileWallet}
             onConnectConnector={connectConnector}
-            onConnectWalletConnect={connectWalletConnect}
             onInstall={(row) => {
               const url = Platform.select({
                 ios: row.connector.meta.installUrl?.ios,
                 android: row.connector.meta.installUrl?.android,
               });
               if (url) void Linking.openURL(url);
-            }}
-          />
-        )}
-
-        {view === 'pairing' && (
-          <PairingView
-            styles={styles}
-            theme={theme}
-            uri={wcUri}
-            showQr={showQr}
-            onToggleQr={() => setShowQr((v) => !v)}
-            onOpenWallet={openMobileWallet}
-            onShare={async () => {
-              if (wcUri) await Share.share({ message: wcUri });
             }}
           />
         )}
@@ -413,6 +352,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
               if (url) void Linking.openURL(url);
             }}
             onRetryOpen={retryOpenWallet}
+            onShareUri={wcUri && pairedMobileWalletId.current ? sharePairingUri : undefined}
             reopenWallet={
               view === 'signing' && pairedMobileWalletId.current
                 ? reopenPairedWallet
@@ -456,8 +396,8 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
 }
 
 // ---------------------------------------------------------------------------
-// Wallet list — named mobile wallets first, then the registered connectors,
-// generic WalletConnect (QR) last
+// Wallet list — featured Stellar wallets + connectors in a card, every other
+// WC-registered mobile wallet collapsed under "More wallets"
 // ---------------------------------------------------------------------------
 
 function WalletListView(props: {
@@ -466,18 +406,30 @@ function WalletListView(props: {
   loading: boolean;
   rows: WalletRow[];
   showMobileWallets: boolean;
+  showMore: boolean;
+  onToggleMore: () => void;
   onConnectMobile: (wallet: MobileWalletDeepLink) => void;
   onConnectConnector: (walletId: string) => void;
-  onConnectWalletConnect: () => void;
   onInstall: (row: WalletRow) => void;
 }) {
-  const { styles, theme, loading, rows, showMobileWallets, onConnectMobile, onConnectConnector, onConnectWalletConnect, onInstall } = props;
+  const {
+    styles,
+    theme,
+    loading,
+    rows,
+    showMobileWallets,
+    showMore,
+    onToggleMore,
+    onConnectMobile,
+    onConnectConnector,
+    onInstall,
+  } = props;
 
-  const mobileWallets = showMobileWallets ? listMobileWallets() : [];
-  // The generic WalletConnect row replaces the raw connector row — it pairs
-  // via QR with ANY WalletConnect wallet (SafePal, Hana, …).
+  const featured = showMobileWallets ? listFeaturedMobileWallets() : [];
+  const additional = showMobileWallets ? listAdditionalMobileWallets() : [];
+  // The WalletConnect connector has no row of its own — the named mobile
+  // wallets above ARE its pairing surface (deep link only, no QR).
   const directRows = rows.filter((row) => row.connector.id !== 'walletconnect');
-  const wcRow = rows.find((row) => row.connector.id === 'walletconnect');
 
   if (loading && rows.length === 0) {
     return (
@@ -488,72 +440,100 @@ function WalletListView(props: {
     );
   }
 
+  const hasPrimarySection = featured.length > 0 || directRows.length > 0;
+
   return (
-    <View>
-      {/* Named mobile wallets — deep-link straight into the app */}
-      {mobileWallets.map((wallet) => (
-        <WalletRowView
-          key={wallet.id}
-          styles={styles}
-          theme={theme}
-          icon={wallet.icon}
-          walletKey={wallet.id}
-          name={wallet.name}
-          subtitle={t('wc.open_in_wallet')}
-          onPress={() => onConnectMobile(wallet)}
-          last={directRows.length === 0 && !wcRow}
-        />
-      ))}
+    <View style={styles.sections}>
+      {/* Featured Stellar wallets + registered connectors */}
+      {hasPrimarySection && (
+        <View>
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            {t('wallet_list.section_stellar')}
+          </Text>
+          <View style={styles.sectionCard}>
+            {featured.map((wallet, i) => (
+              <WalletRowView
+                key={wallet.id}
+                styles={styles}
+                theme={theme}
+                icon={wallet.icon}
+                walletKey={wallet.id}
+                name={wallet.name}
+                subtitle={t('wc.open_in_wallet')}
+                onPress={() => onConnectMobile(wallet)}
+                last={i === featured.length - 1 && directRows.length === 0}
+              />
+            ))}
+            {directRows.map((row, i) => {
+              const { connector, reachability } = row;
+              const disabled = reachability === 'not-installed' || reachability === 'unavailable';
+              return (
+                <WalletRowView
+                  key={connector.id}
+                  styles={styles}
+                  theme={theme}
+                  icon={connector.meta.icon ?? null}
+                  walletKey={connector.id}
+                  name={connector.meta.name}
+                  subtitle={
+                    reachability === 'locked'
+                      ? t('wallet_list.status.locked')
+                      : reachability === 'unavailable'
+                        ? t('wallet_list.status.unavailable')
+                        : t('wallet_list.status.installed')
+                  }
+                  disabled={disabled}
+                  onPress={() => onConnectConnector(connector.id)}
+                  badge={
+                    reachability === 'not-installed' ? (
+                      <Pressable
+                        style={({ pressed }) => [styles.installButton, pressed && styles.installButtonPressed]}
+                        onPress={() => onInstall(row)}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.installText}>{t('wallet_list.install')}</Text>
+                      </Pressable>
+                    ) : undefined
+                  }
+                  last={i === directRows.length - 1}
+                />
+              );
+            })}
+          </View>
+        </View>
+      )}
 
-      {/* Registered connectors (Albedo WebView, …) */}
-      {directRows.map((row, i) => {
-        const { connector, reachability } = row;
-        const disabled = reachability === 'not-installed' || reachability === 'unavailable';
-        return (
-          <WalletRowView
-            key={connector.id}
-            styles={styles}
-            theme={theme}
-            icon={connector.meta.icon ?? null}
-            walletKey={connector.id}
-            name={connector.meta.name}
-            subtitle={
-              reachability === 'locked'
-                ? t('wallet_list.status.locked')
-                : reachability === 'unavailable'
-                  ? t('wallet_list.status.unavailable')
-                  : t('wallet_list.status.installed')
-            }
-            disabled={disabled}
-            onPress={() => onConnectConnector(connector.id)}
-            badge={
-              reachability === 'not-installed' ? (
-                <Pressable
-                  style={styles.installButton}
-                  onPress={() => onInstall(row)}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.installText}>{t('wallet_list.install')}</Text>
-                </Pressable>
-              ) : undefined
-            }
-            last={i === directRows.length - 1 && !wcRow}
-          />
-        );
-      })}
-
-      {/* Generic WalletConnect — QR for every other wallet */}
-      {wcRow && (
-        <WalletRowView
-          styles={styles}
-          theme={theme}
-          icon={wcRow.connector.meta.icon ?? null}
-          walletKey="walletconnect"
-          name={wcRow.connector.meta.name}
-          subtitle={t('wallet_list.status.scan_qr')}
-          onPress={onConnectWalletConnect}
-          last
-        />
+      {/* Every other WalletConnect-registered mobile wallet */}
+      {additional.length > 0 && (
+        <View>
+          <Pressable
+            style={({ pressed }) => [styles.moreHeader, pressed && { opacity: 0.6 }]}
+            onPress={onToggleMore}
+            accessibilityRole="button"
+            accessibilityLabel={t('wallet_list.more_wallets', { count: additional.length })}
+            accessibilityState={{ expanded: showMore }}
+          >
+            <Text style={styles.sectionTitle}>{t('wallet_list.more_wallets', { count: additional.length })}</Text>
+            <Text style={[styles.moreChevron, showMore && styles.moreChevronOpen]}>›</Text>
+          </Pressable>
+          {showMore && (
+            <View style={styles.sectionCard}>
+              {additional.map((wallet, i) => (
+                <WalletRowView
+                  key={wallet.id}
+                  styles={styles}
+                  theme={theme}
+                  icon={wallet.icon}
+                  walletKey={wallet.id}
+                  name={wallet.name}
+                  subtitle={t('wc.open_in_wallet')}
+                  onPress={() => onConnectMobile(wallet)}
+                  last={i === additional.length - 1}
+                />
+              ))}
+            </View>
+          )}
+        </View>
       )}
     </View>
   );
@@ -594,69 +574,6 @@ function WalletRowView(props: {
 }
 
 // ---------------------------------------------------------------------------
-// WalletConnect pairing — deep-link wallets first, QR fallback
-// ---------------------------------------------------------------------------
-
-function PairingView(props: {
-  styles: ReturnType<typeof buildStyles>;
-  theme: ConnectThemeRN;
-  uri: string | null;
-  showQr: boolean;
-  onToggleQr: () => void;
-  onOpenWallet: (mobileWalletId: string) => void;
-  onShare: () => void;
-}) {
-  const { styles, theme, uri, showQr, onToggleQr, onOpenWallet, onShare } = props;
-  const mobileWallets = listMobileWallets();
-  return (
-    <View>
-      {!uri && (
-        <View style={styles.centered}>
-          <ActivityIndicator color={theme.colorAccent} />
-          <Text style={styles.muted}>{t('wc.generating_code')}</Text>
-        </View>
-      )}
-      {uri && (
-        <View>
-          {mobileWallets.map((wallet) => (
-            <WalletRowView
-              key={wallet.id}
-              styles={styles}
-              theme={theme}
-              icon={wallet.icon}
-              walletKey={wallet.id}
-              name={wallet.name}
-              subtitle={t('wc.open_in_wallet')}
-              onPress={() => onOpenWallet(wallet.id)}
-            />
-          ))}
-
-          <WalletRowView
-            styles={styles}
-            theme={theme}
-            icon={null}
-            name={t('wallet_list.status.scan_qr')}
-            subtitle={t('wc.scan_instructions')}
-            onPress={onToggleQr}
-          />
-
-          {showQr && (
-            <View style={styles.qrWrap}>
-              <QrCodeView value={uri} size={200} backgroundColor={theme.colorBg} color={theme.colorText} accessibilityLabel={t('wallet_list.status.scan_qr')} />
-              <Text style={[styles.muted, styles.qrHint]}>{t('wc.scan_instructions')}</Text>
-            </View>
-          )}
-
-          <Pressable style={styles.secondaryButton} onPress={onShare} accessibilityRole="button">
-            <Text style={styles.secondaryButtonText}>{t('wc.copy_uri')}</Text>
-          </Pressable>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Connecting / signing — breathe + spinner, v1.9.50 timings, wallet-branded
 // ---------------------------------------------------------------------------
 
@@ -673,9 +590,24 @@ function ConnectingView(props: {
   failedWalletName?: string;
   onInstallFailedWallet: () => void;
   onRetryOpen: () => void;
+  /** Shares the pairing URI — set when a mobile wallet was picked and the URI is ready. */
+  onShareUri?: () => void;
   reopenWallet?: () => void;
 }) {
-  const { styles, theme, reducedMotion, walletName, walletIcon, walletKey, subtitle, openFailed, failedWalletName, onInstallFailedWallet, onRetryOpen, reopenWallet } = props;
+  const {
+    styles,
+    theme,
+    reducedMotion,
+    walletName,
+    walletIcon,
+    walletKey,
+    subtitle,
+    openFailed,
+    failedWalletName,
+    onInstallFailedWallet,
+    onShareUri,
+    reopenWallet,
+  } = props;
   const breathe = useBreathe(reducedMotion);
   const spinner = useSpinner(reducedMotion);
   const spin = spinner.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -698,15 +630,33 @@ function ConnectingView(props: {
           <Text style={styles.openFailedText}>
             {t('wc.open_failed', { walletName: failedWalletName ?? walletName })}
           </Text>
-          <Pressable style={styles.installButton} onPress={onInstallFailedWallet} accessibilityRole="button">
+          <Pressable
+            style={({ pressed }) => [styles.installButton, pressed && styles.installButtonPressed]}
+            onPress={onInstallFailedWallet}
+            accessibilityRole="button"
+          >
             <Text style={styles.installText}>{t('wallet_list.install')}</Text>
           </Pressable>
+          {onShareUri && (
+            <Pressable style={styles.textButton} onPress={onShareUri} accessibilityRole="button">
+              <Text style={styles.textButtonText}>{t('wc.copy_pairing_code')}</Text>
+            </Pressable>
+          )}
         </View>
       )}
 
       {!openFailed && reopenWallet && (
-        <Pressable style={styles.primaryButton} onPress={onRetryOpen} accessibilityRole="button">
+        <Pressable
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+          onPress={reopenWallet}
+          accessibilityRole="button"
+        >
           <Text style={styles.primaryButtonText}>{t('wc.open_in_wallet')}</Text>
+        </Pressable>
+      )}
+      {!openFailed && onShareUri && (
+        <Pressable style={styles.textButton} onPress={onShareUri} accessibilityRole="button">
+          <Text style={styles.textButtonText}>{t('wc.copy_pairing_code')}</Text>
         </Pressable>
       )}
     </View>
@@ -764,10 +714,18 @@ function AccountView(props: {
           {pendingSigns > 0 && <Text style={styles.danger}>{t('connected.pending_signatures', { count: pendingSigns })}</Text>}
         </View>
       </View>
-      <Pressable style={styles.secondaryButton} onPress={onShare} accessibilityRole="button">
+      <Pressable
+        style={({ pressed }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed]}
+        onPress={onShare}
+        accessibilityRole="button"
+      >
         <Text style={styles.secondaryButtonText}>{t('aria.click_to_copy')}</Text>
       </Pressable>
-      <Pressable style={styles.dangerButton} onPress={onDisconnect} accessibilityRole="button">
+      <Pressable
+        style={({ pressed }) => [styles.dangerButton, pressed && styles.dangerButtonPressed]}
+        onPress={onDisconnect}
+        accessibilityRole="button"
+      >
         <Text style={styles.dangerButtonText}>{t('action.disconnect')}</Text>
       </Pressable>
     </View>
@@ -792,7 +750,11 @@ function ErrorView(props: {
       </View>
       <Text style={styles.title}>{t('error.title')}</Text>
       <Text style={styles.muted}>{message}</Text>
-      <Pressable style={styles.primaryButton} onPress={onRetry} accessibilityRole="button">
+      <Pressable
+        style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+        onPress={onRetry}
+        accessibilityRole="button"
+      >
         <Text style={styles.primaryButtonText}>{t('action.try_again')}</Text>
       </Pressable>
     </View>
@@ -806,6 +768,7 @@ function ErrorView(props: {
 function buildStyles(theme: ConnectThemeRN) {
   return StyleSheet.create({
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 14 },
+    sections: { gap: 18, paddingTop: 6 },
 
     // Header
     header: {
@@ -827,6 +790,7 @@ function buildStyles(theme: ConnectThemeRN) {
       justifyContent: 'center',
       backgroundColor: theme.colorSurface,
     },
+    headerButtonPressed: { opacity: 0.6 },
     headerButtonSpacer: { width: 36 },
     headerButtonGlyph: { color: theme.colorText, fontSize: 22, fontWeight: '600', lineHeight: 24, marginTop: -2 },
 
@@ -834,14 +798,38 @@ function buildStyles(theme: ConnectThemeRN) {
     title: { color: theme.colorText, fontSize: 18, fontWeight: '700', textAlign: 'center' },
     muted: { color: theme.colorTextMuted, fontSize: 13 },
 
-    // Wallet rows — flat list with hairline separators (matches the web modal)
+    // Sectioned wallet list — cards with hairline-separated rows
+    sectionTitle: {
+      color: theme.colorTextMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      letterSpacing: 0.6,
+      textTransform: 'uppercase',
+    },
+    sectionCard: {
+      backgroundColor: theme.colorSurface,
+      borderRadius: theme.radiusMd,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colorBorder,
+      overflow: 'hidden',
+      marginTop: 8,
+    },
+    moreHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 10,
+      paddingHorizontal: 4,
+    },
+    moreChevron: { color: theme.colorTextMuted, fontSize: 20, fontWeight: '600', transform: [{ rotate: '90deg' }] },
+    moreChevronOpen: { transform: [{ rotate: '-90deg' }] },
+
     walletRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 14,
       paddingVertical: 12,
-      paddingHorizontal: 4,
-      borderRadius: theme.radiusSm,
+      paddingHorizontal: 12,
     },
     walletRowBorder: {
       borderBottomWidth: StyleSheet.hairlineWidth,
@@ -858,17 +846,8 @@ function buildStyles(theme: ConnectThemeRN) {
       paddingHorizontal: 14,
       paddingVertical: 7,
     },
+    installButtonPressed: { opacity: 0.7 },
     installText: { color: theme.colorAccentText, fontSize: 13, fontWeight: '700' },
-
-    qrWrap: {
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: theme.colorSurface,
-      borderRadius: theme.radiusMd,
-      marginTop: 8,
-      gap: 10,
-    },
-    qrHint: { textAlign: 'center' },
 
     animWrap: { width: 104, height: 104, alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
     animLogoWrap: { borderRadius: theme.radiusLg, overflow: 'hidden' },
@@ -894,6 +873,7 @@ function buildStyles(theme: ConnectThemeRN) {
       marginTop: 8,
       alignSelf: 'stretch',
     },
+    primaryButtonPressed: { opacity: 0.8 },
     primaryButtonText: { color: theme.colorAccentText, fontSize: 15, fontWeight: '700' },
     secondaryButton: {
       borderColor: theme.colorBorder,
@@ -903,6 +883,7 @@ function buildStyles(theme: ConnectThemeRN) {
       alignItems: 'center',
       marginTop: 4,
     },
+    secondaryButtonPressed: { opacity: 0.6 },
     secondaryButtonText: { color: theme.colorText, fontSize: 14, fontWeight: '600' },
     dangerButton: {
       borderColor: theme.colorDanger,
@@ -912,7 +893,10 @@ function buildStyles(theme: ConnectThemeRN) {
       alignItems: 'center',
       marginTop: 4,
     },
+    dangerButtonPressed: { opacity: 0.6 },
     dangerButtonText: { color: theme.colorDanger, fontSize: 14, fontWeight: '600' },
+    textButton: { paddingVertical: 8, marginTop: 2 },
+    textButtonText: { color: theme.colorAccent, fontSize: 14, fontWeight: '600' },
     accountCard: {
       flexDirection: 'row',
       alignItems: 'center',

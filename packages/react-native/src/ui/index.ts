@@ -19,8 +19,10 @@
  *
  * Requires peer deps: react-native, react, @gorhom/bottom-sheet.
  *
- * No SVG library needed — icons are pre-rasterized compressed PNGs and the
- * pairing QR is rendered with plain Views (QrCodeView).
+ * No SVG library needed — wallet icons are pre-rasterized compressed PNGs.
+ * Pairing is deep-link only (the same phone would have to scan a QR code,
+ * so the modal never shows one); `<QrCodeView>` remains exported for apps
+ * that build their own tablet/desktop-style pairing screens.
  */
 
 export { AppKitModal, type AppKitModalProps } from './AppKitModal.js';

@@ -40,6 +40,8 @@ const ro: LocaleMessages = {
     "empty": "Nu sunt portofele înregistrate. Trimite connectors în configurația StellarAppKit.",
     "not_installed": "Neinstalat",
     "install": "Instalează",
+    "section_stellar": "Portofele Stellar",
+    "more_wallets": "Mai multe portofele ({count})",
     "status": {
       "connecting": "Se conectează…",
       "locked": "Blocat",
@@ -61,7 +63,8 @@ const ro: LocaleMessages = {
     "copy_uri": "Copiază URI",
     "copied": "Copiat!",
     "generating_code": "Se generează codul de asociere…",
-    "qr_failed": "Generarea QR a eșuat. Folosește butonul de copiere de mai jos."
+    "qr_failed": "Generarea QR a eșuat. Folosește butonul de copiere de mai jos.",
+    "copy_pairing_code": "Copiază codul de asociere"
   },
   "action": {
     "try_again": "Încearcă din nou",

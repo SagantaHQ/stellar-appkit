@@ -40,6 +40,8 @@ const pt_BR: LocaleMessages = {
     "empty": "Nenhuma carteira registrada. Passe connectors na configuração do StellarAppKit.",
     "not_installed": "Não instalado",
     "install": "Instalar",
+    "section_stellar": "Carteiras Stellar",
+    "more_wallets": "Mais carteiras ({count})",
     "status": {
       "connecting": "Conectando…",
       "locked": "Bloqueada",
@@ -61,7 +63,8 @@ const pt_BR: LocaleMessages = {
     "copy_uri": "Copiar URI",
     "copied": "Copiado!",
     "generating_code": "Gerando código de pareamento…",
-    "qr_failed": "Falha ao gerar QR. Use o botão de copiar abaixo."
+    "qr_failed": "Falha ao gerar QR. Use o botão de copiar abaixo.",
+    "copy_pairing_code": "Copiar código de pareamento"
   },
   "action": {
     "try_again": "Tentar novamente",

@@ -40,6 +40,8 @@ const th: LocaleMessages = {
     "empty": "ไม่มีกระเป๋าที่ลงทะเบียน ส่ง connectors ในการตั้งค่า StellarAppKit",
     "not_installed": "ยังไม่ได้ติดตั้ง",
     "install": "ติดตั้ง",
+    "section_stellar": "วอลเล็ต Stellar",
+    "more_wallets": "วอลเล็ตเพิ่มเติม ({count})",
     "status": {
       "connecting": "กำลังเชื่อมต่อ…",
       "locked": "ล็อค",
@@ -61,7 +63,8 @@ const th: LocaleMessages = {
     "copy_uri": "คัดลอก URI",
     "copied": "คัดลอกแล้ว!",
     "generating_code": "กำลังสร้างรหัสจับคู่…",
-    "qr_failed": "การสร้าง QR ล้มเหลว ใช้ปุ่มคัดลอกด้านล่าง"
+    "qr_failed": "การสร้าง QR ล้มเหลว ใช้ปุ่มคัดลอกด้านล่าง",
+    "copy_pairing_code": "คัดลอกรหัสการจับคู่"
   },
   "action": {
     "try_again": "ลองอีกครั้ง",

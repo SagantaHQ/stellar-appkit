@@ -40,6 +40,8 @@ const pl: LocaleMessages = {
     "empty": "Brak zarejestrowanych portfeli. Przekaż connectors w konfiguracji StellarAppKit.",
     "not_installed": "Nie zainstalowano",
     "install": "Zainstaluj",
+    "section_stellar": "Portfele Stellar",
+    "more_wallets": "Więcej portfeli ({count})",
     "status": {
       "connecting": "Łączenie…",
       "locked": "Zablokowany",
@@ -61,7 +63,8 @@ const pl: LocaleMessages = {
     "copy_uri": "Kopiuj URI",
     "copied": "Skopiowano!",
     "generating_code": "Generowanie kodu parowania…",
-    "qr_failed": "Generowanie QR nie powiodło się. Użyj przycisku kopiowania poniżej."
+    "qr_failed": "Generowanie QR nie powiodło się. Użyj przycisku kopiowania poniżej.",
+    "copy_pairing_code": "Skopiuj kod parowania"
   },
   "action": {
     "try_again": "Spróbuj ponownie",

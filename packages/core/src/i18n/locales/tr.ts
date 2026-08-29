@@ -40,6 +40,8 @@ const tr: LocaleMessages = {
     "empty": "Kayıtlı cüzdan yok. StellarAppKit yapılandırmasına connectors geçirin.",
     "not_installed": "Yüklü değil",
     "install": "Yükle",
+    "section_stellar": "Stellar cüzdanları",
+    "more_wallets": "Daha fazla cüzdan ({count})",
     "status": {
       "connecting": "Bağlanıyor…",
       "locked": "Kilitli",
@@ -61,7 +63,8 @@ const tr: LocaleMessages = {
     "copy_uri": "URI'yi kopyala",
     "copied": "Kopyalandı!",
     "generating_code": "Eşleştirme kodu oluşturuluyor…",
-    "qr_failed": "QR oluşturma başarısız. Aşağıdaki kopyala düğmesini kullanın."
+    "qr_failed": "QR oluşturma başarısız. Aşağıdaki kopyala düğmesini kullanın.",
+    "copy_pairing_code": "Eşleştirme kodunu kopyala"
   },
   "action": {
     "try_again": "Tekrar dene",

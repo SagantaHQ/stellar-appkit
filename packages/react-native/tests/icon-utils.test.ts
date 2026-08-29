@@ -93,10 +93,26 @@ describe('resolveWalletIconByName — WC peer metadata matching', () => {
     expect(resolveWalletIconByName('Ledger')).toBe(WALLET_PNG_ICONS['ledger']);
   });
 
-  test('unknown wallets (SafePal, Hana, …) return null → letter avatar', () => {
-    expect(resolveWalletIconByName('SafePal')).toBeNull();
+  test('unknown wallets (Hana, unregistered names, …) return null → letter avatar', () => {
     expect(resolveWalletIconByName('Hana')).toBeNull();
+    expect(resolveWalletIconByName('Some Unregistered Wallet')).toBeNull();
     expect(resolveWalletIconByName(null)).toBeNull();
+  });
+
+  test('additional registry wallets resolve by peer name and variant aliases', () => {
+    expect(resolveWalletIconByName('SafePal')).toBe(resolveWalletIconByKey('safepal-mobile'));
+    expect(resolveWalletIconByName('SafePal Wallet')).toBe(resolveWalletIconByKey('safepal-mobile'));
+    expect(resolveWalletIconByName('Blockchain.com')).toBe(resolveWalletIconByKey('blockchain-mobile'));
+    expect(resolveWalletIconByName('Arculus Wallet')).toBe(resolveWalletIconByKey('arculus-mobile'));
+    expect(resolveWalletIconByName('Atomic Wallet')).toBe(resolveWalletIconByKey('atomic-mobile'));
+    expect(resolveWalletIconByName('COCA Wallet')).toBe(resolveWalletIconByKey('coca-mobile'));
+    expect(resolveWalletIconByName('Trustee Wallet')).toBe(resolveWalletIconByKey('trustee-mobile'));
+    expect(resolveWalletIconByName('Hero Wallet')).toBe(resolveWalletIconByKey('hero-mobile'));
+    expect(resolveWalletIconByName('UKey Wallet')).toBe(resolveWalletIconByKey('ukey-mobile'));
+    expect(resolveWalletIconByName('SwiftEx Wallet')).toBe(resolveWalletIconByKey('swiftex-mobile'));
+    expect(resolveWalletIconByName('Kotai Wallet')).toBe(resolveWalletIconByKey('kotai-mobile'));
+    expect(resolveWalletIconByName('UKISS Hub')).toBe(resolveWalletIconByKey('ukiss-mobile'));
+    expect(resolveWalletIconByName('SOC Wallet')).toBe(resolveWalletIconByKey('soc-mobile'));
   });
 });
 
@@ -119,7 +135,7 @@ describe('resolveWalletIcon — resolution order', () => {
   });
 
   test('SVG sources with no key and unknown name → null (letter avatar)', () => {
-    expect(resolveWalletIcon({ source: SVG_DATA_URI, name: 'SafePal' })).toBeNull();
+    expect(resolveWalletIcon({ source: SVG_DATA_URI, name: 'Some Unregistered Wallet' })).toBeNull();
     expect(resolveWalletIcon({})).toBeNull();
   });
 

@@ -40,6 +40,8 @@ const uk: LocaleMessages = {
     "empty": "Немає зареєстрованих гаманців. Передайте connectors у конфігурацію StellarAppKit.",
     "not_installed": "Не встановлено",
     "install": "Встановити",
+    "section_stellar": "Гаманці Stellar",
+    "more_wallets": "Більше гаманців ({count})",
     "status": {
       "connecting": "Підключення…",
       "locked": "Заблоковано",
@@ -61,7 +63,8 @@ const uk: LocaleMessages = {
     "copy_uri": "Копіювати URI",
     "copied": "Скопійовано!",
     "generating_code": "Генерування коду зв'язку…",
-    "qr_failed": "Не вдалося згенерувати QR. Використовуйте кнопку копіювання нижче."
+    "qr_failed": "Не вдалося згенерувати QR. Використовуйте кнопку копіювання нижче.",
+    "copy_pairing_code": "Копіювати код зв’язування"
   },
   "action": {
     "try_again": "Спробувати знову",

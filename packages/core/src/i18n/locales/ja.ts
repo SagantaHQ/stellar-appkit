@@ -40,6 +40,8 @@ const ja: LocaleMessages = {
     "empty": "登録されたウォレットがありません。StellarAppKit の設定に connectors を渡してください。",
     "not_installed": "未インストール",
     "install": "インストール",
+    "section_stellar": "Stellarウォレット",
+    "more_wallets": "その他のウォレット（{count}）",
     "status": {
       "connecting": "接続中…",
       "locked": "ロック中",
@@ -61,7 +63,8 @@ const ja: LocaleMessages = {
     "copy_uri": "URI をコピー",
     "copied": "コピーしました！",
     "generating_code": "ペアリングコードを生成中…",
-    "qr_failed": "QR コードの生成に失敗しました。下のコピーボタンを使用してください。"
+    "qr_failed": "QR コードの生成に失敗しました。下のコピーボタンを使用してください。",
+    "copy_pairing_code": "ペアリングコードをコピー"
   },
   "action": {
     "try_again": "再試行",

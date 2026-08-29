@@ -1,6 +1,8 @@
 import { test, expect, describe, beforeEach } from 'bun:test';
 import {
   listMobileWallets,
+  listFeaturedMobileWallets,
+  listAdditionalMobileWallets,
   getMobileWallet,
   registerMobileWallet,
   buildWalletConnectDeepLink,
@@ -104,14 +106,90 @@ describe('mobile wallet deep-link registry', () => {
   test('every built-in icon is a raster data URI — renders natively in RN <Image>', () => {
     // Regression guard for "icons not showing": every BUILT-IN wallet icon
     // must be a png/jpeg data URI (RN Image handles those natively) — never
-    // an SVG data URI, which RN's Image cannot rasterize. (Test-added
-    // wallets like TEST_WALLET are deliberately skipped.)
-    const builtinIds = ['freighter-mobile', 'lobstr-mobile', 'hot-wallet-mobile', 'scopuly-mobile'];
-    for (const id of builtinIds) {
-      const wallet = getMobileWallet(id);
-      expect(wallet).toBeDefined();
-      expect(wallet!.icon.startsWith('data:image/')).toBe(true);
-      expect(wallet!.icon.startsWith('data:image/svg')).toBe(false);
+    // an SVG data URI, which RN's Image cannot rasterize. Covers the full
+    // built-in registry (featured + additional), not just the original four.
+    for (const wallet of listMobileWallets()) {
+      if (wallet.id === 'test-mobile' || wallet.id === 'test-custom') continue;
+      expect(wallet.icon.startsWith('data:image/')).toBe(true);
+      expect(wallet.icon.startsWith('data:image/svg')).toBe(false);
+    }
+  });
+
+  test('every built-in icon base64 actually decodes to a PNG/JPEG payload', () => {
+    // Regression guard for the corrupt-Freighter-icon bug: a base64 literal
+    // whose length isn't a multiple of 4 (or whose bytes aren't a real image)
+    // silently renders NOTHING in RN <Image> — the "icons are not showing"
+    // failure mode. Every built-in icon must decode to a valid raster header.
+    for (const wallet of listMobileWallets()) {
+      if (wallet.id === 'test-mobile' || wallet.id === 'test-custom') continue;
+      const comma = wallet.icon.indexOf(',');
+      const meta = wallet.icon.slice(0, comma);
+      const b64 = wallet.icon.slice(comma + 1);
+      expect(b64.length % 4).toBe(0);
+      const bytes = Buffer.from(b64, 'base64');
+      expect(bytes.length).toBeGreaterThan(100);
+      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+      const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+      expect(isPng || isJpeg).toBe(true);
+      if (isPng) {
+        // the IEND chunk must be present — truncated PNGs also render nothing
+        expect(bytes.includes(Buffer.from('IEND'))).toBe(true);
+      }
+      // meta must agree with the payload
+      expect(meta).toMatch(/^data:image\/(png|jpe?g);base64$/);
+    }
+  });
+
+  test('ships the full WalletConnect-registered Stellar mobile wallet set', () => {
+    // Verified against the WalletConnect Explorer registry
+    // (explorer-api.walletconnect.com, chains=stellar:pubnet): every
+    // consumer wallet with a registered native mobile link ships built-in.
+    const byId = new Map(listMobileWallets().map((w) => [w.id, w]));
+    const expected = [
+      'freighter-mobile', 'lobstr-mobile', 'hot-wallet-mobile', 'scopuly-mobile',
+      'safepal-mobile', 'blockchain-mobile', 'arculus-mobile', 'atomic-mobile',
+      'coca-mobile', 'trustee-mobile', 'maxwallet-mobile', 'zypto-mobile',
+      'hero-mobile', 'ukey-mobile', 'ecoin-mobile', 'swiftex-mobile',
+      'panaroma-mobile', 'kotai-mobile', 'cryptokara-mobile', 'ukiss-mobile',
+      'soc-mobile',
+    ];
+    for (const id of expected) {
+      expect(byId.has(id), `missing wallet ${id}`).toBe(true);
+    }
+    // plus any wallets the tests themselves registered
+    expect(listMobileWallets().length).toBeGreaterThanOrEqual(expected.length);
+  });
+
+  test('splits the registry into featured and additional sections', () => {
+    const featured = listFeaturedMobileWallets();
+    const additional = listAdditionalMobileWallets();
+    // Featured: exactly the four Stellar-first wallets.
+    expect(featured.map((w) => w.id)).toEqual([
+      'freighter-mobile', 'lobstr-mobile', 'hot-wallet-mobile', 'scopuly-mobile',
+    ]);
+    // Additional: everything else (multichain wallets registered for Stellar).
+    expect(additional.length).toBeGreaterThanOrEqual(17);
+    expect(additional.every((w) => !w.featured)).toBe(true);
+    // The two sections partition the full registry.
+    expect(featured.length + additional.length).toBe(listMobileWallets().length);
+  });
+
+  test('builds scheme://wc?uri= deep links for the additional wallets', () => {
+    expect(buildWalletConnectDeepLink('safepal-mobile', WC_URI)).toBe(`safepalwallet://wc?uri=${ENC}`);
+    expect(buildWalletConnectDeepLink('blockchain-mobile', WC_URI)).toBe(`blockchain-wallet://wc?uri=${ENC}`);
+    // Hero registers its native link WITH the /wc path (like Scopuly).
+    expect(buildWalletConnectDeepLink('hero-mobile', WC_URI)).toBe(`herowallet://wc/wc?uri=${ENC}`);
+  });
+
+  test('every wallet has a store link for at least one platform', () => {
+    // The "not installed" card needs somewhere to send the user — every
+    // built-in wallet must have an iOS or Android store URL.
+    for (const wallet of listMobileWallets()) {
+      if (wallet.id === 'test-mobile' || wallet.id === 'test-custom') continue;
+      expect(
+        wallet.installUrl.ios.length > 0 || wallet.installUrl.android.length > 0,
+        `${wallet.id} has no store link`
+      ).toBe(true);
     }
   });
 

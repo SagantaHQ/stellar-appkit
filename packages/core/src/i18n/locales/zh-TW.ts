@@ -40,6 +40,8 @@ const zh_TW: LocaleMessages = {
     "empty": "未找到已註冊的錢包。請在 StellarAppKit 設定中傳入 connectors。",
     "not_installed": "未安裝",
     "install": "安裝",
+    "section_stellar": "Stellar 錢包",
+    "more_wallets": "更多錢包（{count}）",
     "status": {
       "connecting": "連接中…",
       "locked": "已鎖定",
@@ -61,7 +63,8 @@ const zh_TW: LocaleMessages = {
     "copy_uri": "複製 URI",
     "copied": "已複製！",
     "generating_code": "正在產生配對碼…",
-    "qr_failed": "QR 碼產生失敗。請使用下方的複製按鈕。"
+    "qr_failed": "QR 碼產生失敗。請使用下方的複製按鈕。",
+    "copy_pairing_code": "複製配對碼"
   },
   "action": {
     "try_again": "重試",

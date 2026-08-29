@@ -40,6 +40,8 @@ const ko: LocaleMessages = {
     "empty": "등록된 지갑이 없습니다. StellarAppKit 설정에 connectors를 전달하세요.",
     "not_installed": "설치되지 않음",
     "install": "설치",
+    "section_stellar": "Stellar 지갑",
+    "more_wallets": "더 많은 지갑 ({count})",
     "status": {
       "connecting": "연결 중…",
       "locked": "잠김",
@@ -61,7 +63,8 @@ const ko: LocaleMessages = {
     "copy_uri": "URI 복사",
     "copied": "복사됨!",
     "generating_code": "페어링 코드 생성 중…",
-    "qr_failed": "QR 생성에 실패했습니다. 아래 복사 버튼을 사용하세요."
+    "qr_failed": "QR 생성에 실패했습니다. 아래 복사 버튼을 사용하세요.",
+    "copy_pairing_code": "페어링 코드 복사"
   },
   "action": {
     "try_again": "다시 시도",

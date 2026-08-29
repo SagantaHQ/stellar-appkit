@@ -54,6 +54,10 @@ export const en = {
     empty: 'No wallets registered. Pass connectors into the StellarAppKit config.',
     not_installed: 'Not installed',
     install: 'Install',
+    // Section header over the featured Stellar-first wallets (RN modal).
+    section_stellar: 'Stellar wallets',
+    // Collapsible section for the remaining WalletConnect-registered wallets (RN modal).
+    more_wallets: 'More wallets ({count})',
     status: {
       connecting: 'Connecting…',
       locked: 'Locked',
@@ -82,6 +86,8 @@ export const en = {
     copied: 'Copied!',
     generating_code: 'Generating QR Code…',
     qr_failed: 'QR generation failed. Use the copy button below.',
+    // Shares the raw pairing URI — for wallets with a manual "paste code" field (RN modal).
+    copy_pairing_code: 'Copy pairing code',
   },
 
   /** Action buttons — reused across views */

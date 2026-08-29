@@ -40,6 +40,8 @@ const ar: LocaleMessages = {
     "empty": "لا توجد محافظ مسجلة. مرر connectors في تكوين StellarAppKit.",
     "not_installed": "غير مثبت",
     "install": "تثبيت",
+    "section_stellar": "محافظ Stellar",
+    "more_wallets": "محافظ إضافية ({count})",
     "status": {
       "connecting": "جارٍ التوصيل…",
       "locked": "مقفل",
@@ -61,7 +63,8 @@ const ar: LocaleMessages = {
     "copy_uri": "نسخ URI",
     "copied": "تم النسخ!",
     "generating_code": "جارٍ إنشاء رمز الاقتران…",
-    "qr_failed": "فشل إنشاء رمز QR. استخدم زر النسخ أدناه."
+    "qr_failed": "فشل إنشاء رمز QR. استخدم زر النسخ أدناه.",
+    "copy_pairing_code": "نسخ رمز الاقتران"
   },
   "action": {
     "try_again": "إعادة المحاولة",

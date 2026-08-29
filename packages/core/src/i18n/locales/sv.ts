@@ -40,6 +40,8 @@ const sv: LocaleMessages = {
     "empty": "Inga plånböcker registrerade. Skicka connectors i StellarAppKit-konfigurationen.",
     "not_installed": "Inte installerad",
     "install": "Installera",
+    "section_stellar": "Stellar-plånböcker",
+    "more_wallets": "Fler plånböcker ({count})",
     "status": {
       "connecting": "Ansluter…",
       "locked": "Låst",
@@ -61,7 +63,8 @@ const sv: LocaleMessages = {
     "copy_uri": "Kopiera URI",
     "copied": "Kopierad!",
     "generating_code": "Genererar parningskod…",
-    "qr_failed": "QR-generering misslyckades. Använd kopieringsknappen nedan."
+    "qr_failed": "QR-generering misslyckades. Använd kopieringsknappen nedan.",
+    "copy_pairing_code": "Kopiera parningskoden"
   },
   "action": {
     "try_again": "Försök igen",

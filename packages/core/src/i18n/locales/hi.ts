@@ -40,6 +40,8 @@ const hi: LocaleMessages = {
     "empty": "कोई पंजीकृत वॉलेट नहीं। StellarAppKit कॉन्फ़िग में connectors पास करें।",
     "not_installed": "स्थापित नहीं है",
     "install": "स्थापित करें",
+    "section_stellar": "Stellar वॉलेट",
+    "more_wallets": "अधिक वॉलेट ({count})",
     "status": {
       "connecting": "कनेक्ट हो रहा है…",
       "locked": "लॉक्ड",
@@ -61,7 +63,8 @@ const hi: LocaleMessages = {
     "copy_uri": "URI कॉपी करें",
     "copied": "कॉपी हो गया!",
     "generating_code": "पेयरिंग कोड जेनरेट हो रहा है…",
-    "qr_failed": "QR जेनरेशन विफल। नीचे दिए गए कॉपी बटन का उपयोग करें।"
+    "qr_failed": "QR जेनरेशन विफल। नीचे दिए गए कॉपी बटन का उपयोग करें।",
+    "copy_pairing_code": "पेयरिंग कोड कॉपी करें"
   },
   "action": {
     "try_again": "पुनः प्रयास करें",

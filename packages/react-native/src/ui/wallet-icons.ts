@@ -143,6 +143,10 @@ export const WALLET_PNG_ICONS: Readonly<Record<string, string>> = {
  * WalletConnect peers report ("Freighter Wallet", "LOBSTR", "HOT Wallet",
  * "WalletConnect", …). Keys resolve through resolveWalletIconByKey(), so
  * both built-in and registerMobileWallet()-registered wallets match.
+ *
+ * Registry names match peer names directly in resolveWalletIconByName();
+ * these aliases cover the common variants (e.g. a peer reporting
+ * "SafePal Wallet" when the registry entry is "SafePal").
  */
 const NAME_ALIASES: Readonly<Record<string, string>> = {
   // Mobile wallets (icons live in the deep-link registry)
@@ -154,6 +158,24 @@ const NAME_ALIASES: Readonly<Record<string, string>> = {
   hotwallet: 'hot-wallet-mobile',
   'hot': 'hot-wallet-mobile',
   scopuly: 'scopuly-mobile',
+  // Additional WC-registered mobile wallets
+  safepal: 'safepal-mobile',
+  'safepal wallet': 'safepal-mobile',
+  'blockchain.com': 'blockchain-mobile',
+  'blockchain.com wallet': 'blockchain-mobile',
+  'blockchain wallet': 'blockchain-mobile',
+  arculus: 'arculus-mobile',
+  atomic: 'atomic-mobile',
+  coca: 'coca-mobile',
+  trustee: 'trustee-mobile',
+  hero: 'hero-mobile',
+  ukey: 'ukey-mobile',
+  ecoin: 'ecoin-mobile',
+  swiftex: 'swiftex-mobile',
+  panaroma: 'panaroma-mobile',
+  kotai: 'kotai-mobile',
+  ukiss: 'ukiss-mobile',
+  soc: 'soc-mobile',
   // Web connectors (icons above)
   albedo: 'albedo',
   rabet: 'rabet',
