@@ -20,9 +20,11 @@
  * - Account view with share/disconnect.
  * - Error view with retry.
  *
- * Icons render through `<WalletIcon>`, which understands every icon format
- * in the SDK (PNG/JPEG data URIs natively, SVG data URIs via react-native-svg,
- * remote URLs, letter-avatar fallback).
+ * Icons render through `<WalletIcon>` — zero native image dependencies:
+ * the core SVG logos are pre-rasterized as compressed PNGs (wallet-icons.ts),
+ * raster sources render natively, WC peers match by name, and everything
+ * else gets a branded letter avatar. The pairing QR is `<QrCodeView>` —
+ * pure-JS encoder + plain Views (no react-native-qrcode-svg either).
  *
  * Presentation: @gorhom/bottom-sheet with a backdrop, swipe-to-dismiss.
  */
@@ -40,7 +42,7 @@ import {
   View,
 } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import QRCode from 'react-native-qrcode-svg';
+import { QrCodeView } from './qr/QrCodeView.js';
 import type { StellarAppKit, WalletConnector, WalletReachability } from '@saganta/stellar-appkit';
 import { t } from '@saganta/stellar-appkit';
 import {
@@ -73,6 +75,8 @@ interface WalletRow {
 interface WalletBranding {
   name: string;
   icon: string | null;
+  /** Registry/connector key for icon resolution (mobile wallet id or connector id). */
+  key: string | null;
 }
 
 type ViewId = 'list' | 'pairing' | 'connecting' | 'signing' | 'account' | 'error';
@@ -202,7 +206,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     async (wallet: MobileWalletDeepLink) => {
       if (!wcConnector) return;
       pairedMobileWalletId.current = wallet.id;
-      setConnectingWallet({ name: wallet.name, icon: wallet.icon });
+      setConnectingWallet({ name: wallet.name, icon: wallet.icon, key: wallet.id });
       setOpenFailed(false);
       setView('connecting');
 
@@ -228,7 +232,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
    */
   const connectWalletConnect = useCallback(async () => {
     if (!wcConnector) return;
-    setConnectingWallet({ name: wcConnector.meta.name, icon: wcConnector.meta.icon ?? null });
+    setConnectingWallet({ name: wcConnector.meta.name, icon: wcConnector.meta.icon ?? null, key: 'walletconnect' });
     setOpenFailed(false);
     setView('pairing');
 
@@ -248,7 +252,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
     async (walletId: string) => {
       const connector = client.registry.get(walletId);
       if (!connector) return;
-      setConnectingWallet({ name: connector.meta.name, icon: connector.meta.icon ?? null });
+      setConnectingWallet({ name: connector.meta.name, icon: connector.meta.icon ?? null, key: walletId });
       setOpenFailed(false);
       setView('connecting');
       try {
@@ -267,7 +271,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
       const wallet = getMobileWallet(mobileWalletId);
       if (wallet) {
         pairedMobileWalletId.current = mobileWalletId;
-        setConnectingWallet({ name: wallet.name, icon: wallet.icon });
+        setConnectingWallet({ name: wallet.name, icon: wallet.icon, key: wallet.id });
         setView('connecting');
       }
       const ok = await openWalletDeepLink(mobileWalletId, wcUri);
@@ -395,6 +399,7 @@ export function AppKitModal({ client, open, onClose, theme = defaultTheme }: App
             reducedMotion={reducedMotion}
             walletName={connectingWallet?.name ?? state.walletName ?? t('wallet.fallback_your_wallet')}
             walletIcon={connectingWallet?.icon ?? state.walletIcon}
+            walletKey={connectingWallet?.key ?? null}
             subtitle={
               view === 'signing'
                 ? t('signing.subtitle')
@@ -492,6 +497,7 @@ function WalletListView(props: {
           styles={styles}
           theme={theme}
           icon={wallet.icon}
+          walletKey={wallet.id}
           name={wallet.name}
           subtitle={t('wc.open_in_wallet')}
           onPress={() => onConnectMobile(wallet)}
@@ -509,6 +515,7 @@ function WalletListView(props: {
             styles={styles}
             theme={theme}
             icon={connector.meta.icon ?? null}
+            walletKey={connector.id}
             name={connector.meta.name}
             subtitle={
               reachability === 'locked'
@@ -541,6 +548,7 @@ function WalletListView(props: {
           styles={styles}
           theme={theme}
           icon={wcRow.connector.meta.icon ?? null}
+          walletKey="walletconnect"
           name={wcRow.connector.meta.name}
           subtitle={t('wallet_list.status.scan_qr')}
           onPress={onConnectWalletConnect}
@@ -555,6 +563,8 @@ function WalletRowView(props: {
   styles: ReturnType<typeof buildStyles>;
   theme: ConnectThemeRN;
   icon: string | null;
+  /** Registry/connector key for icon resolution (PNG registry lookup). */
+  walletKey?: string | null;
   name: string;
   subtitle: string;
   onPress: () => void;
@@ -562,7 +572,7 @@ function WalletRowView(props: {
   badge?: React.ReactNode;
   last?: boolean;
 }) {
-  const { styles, theme, icon, name, subtitle, onPress, disabled, badge, last } = props;
+  const { styles, theme, icon, walletKey, name, subtitle, onPress, disabled, badge, last } = props;
   return (
     <Pressable
       style={({ pressed }) => [styles.walletRow, !last && styles.walletRowBorder, pressed && { backgroundColor: theme.colorSurfaceHover }]}
@@ -571,7 +581,7 @@ function WalletRowView(props: {
       accessibilityRole="button"
       accessibilityLabel={name}
     >
-      <WalletIcon source={icon} fallbackLabel={name} size={44} radius={theme.radiusSm} />
+      <WalletIcon source={icon} walletKey={walletKey} fallbackLabel={name} size={44} radius={theme.radiusSm} />
       <View style={styles.walletMeta}>
         <Text style={styles.walletName}>{name}</Text>
         <Text style={styles.muted}>{subtitle}</Text>
@@ -614,6 +624,7 @@ function PairingView(props: {
               styles={styles}
               theme={theme}
               icon={wallet.icon}
+              walletKey={wallet.id}
               name={wallet.name}
               subtitle={t('wc.open_in_wallet')}
               onPress={() => onOpenWallet(wallet.id)}
@@ -631,7 +642,7 @@ function PairingView(props: {
 
           {showQr && (
             <View style={styles.qrWrap}>
-              <QRCode value={uri} size={200} backgroundColor={theme.colorBg} color={theme.colorText} />
+              <QrCodeView value={uri} size={200} backgroundColor={theme.colorBg} color={theme.colorText} accessibilityLabel={t('wallet_list.status.scan_qr')} />
               <Text style={[styles.muted, styles.qrHint]}>{t('wc.scan_instructions')}</Text>
             </View>
           )}
@@ -655,6 +666,8 @@ function ConnectingView(props: {
   reducedMotion: boolean;
   walletName: string;
   walletIcon: string | null;
+  /** Registry/connector key for PNG icon resolution. */
+  walletKey: string | null;
   subtitle: string;
   openFailed: boolean;
   failedWalletName?: string;
@@ -662,7 +675,7 @@ function ConnectingView(props: {
   onRetryOpen: () => void;
   reopenWallet?: () => void;
 }) {
-  const { styles, theme, reducedMotion, walletName, walletIcon, subtitle, openFailed, failedWalletName, onInstallFailedWallet, onRetryOpen, reopenWallet } = props;
+  const { styles, theme, reducedMotion, walletName, walletIcon, walletKey, subtitle, openFailed, failedWalletName, onInstallFailedWallet, onRetryOpen, reopenWallet } = props;
   const breathe = useBreathe(reducedMotion);
   const spinner = useSpinner(reducedMotion);
   const spin = spinner.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
@@ -672,7 +685,7 @@ function ConnectingView(props: {
       <View style={styles.animWrap}>
         <AnimatedBox scale={breathe}>
           <View style={styles.animLogoWrap}>
-            <WalletIcon source={walletIcon} fallbackLabel={walletName} size={64} radius={theme.radiusLg} />
+            <WalletIcon source={walletIcon} walletKey={walletKey} fallbackLabel={walletName} size={64} radius={theme.radiusLg} />
           </View>
         </AnimatedBox>
         <AnimatedSpinner style={styles.animArc} rotate={spin} color={theme.colorAccent} />

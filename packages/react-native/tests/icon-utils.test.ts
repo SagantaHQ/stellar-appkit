@@ -1,13 +1,17 @@
 import { test, expect, describe } from 'bun:test';
 import {
   classifyIconSource,
-  decodeBase64,
-  decodeSvgDataUri,
   fallbackBackgroundColor,
+  resolveWalletIcon,
 } from '../src/ui/icon-utils.js';
+import {
+  WALLET_PNG_ICONS,
+  normalizeWalletName,
+  resolveWalletIconByKey,
+  resolveWalletIconByName,
+} from '../src/ui/wallet-icons.js';
 
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#0d9ea5"/></svg>';
-const SVG_B64 = Buffer.from(SVG, 'utf-8').toString('base64');
+const SVG_DATA_URI = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=';
 
 describe('classifyIconSource — every icon format the SDK ships', () => {
   test('PNG/JPEG/GIF/WebP data URIs render through RN Image', () => {
@@ -17,18 +21,17 @@ describe('classifyIconSource — every icon format the SDK ships', () => {
     expect(classifyIconSource('data:image/webp;base64,UklGR=')).toBe('raster-data');
   });
 
-  test('SVG data URIs (base64 and utf8) route to SvgXml', () => {
-    expect(classifyIconSource(`data:image/svg+xml;base64,${SVG_B64}`)).toBe('svg-data');
-    expect(classifyIconSource('data:image/svg+xml;utf8,<svg xmlns="…"></svg>')).toBe('svg-data');
-    expect(classifyIconSource('data:image/svg+xml,%3Csvg%3E')).toBe('svg-data');
+  test('SVG sources (data URIs and URLs) classify as svg — resolved via the PNG registry instead', () => {
+    expect(classifyIconSource(SVG_DATA_URI)).toBe('svg');
+    expect(classifyIconSource('data:image/svg+xml;utf8,<svg></svg>')).toBe('svg');
+    expect(classifyIconSource('https://example.com/icon.svg')).toBe('svg');
+    expect(classifyIconSource('https://example.com/icon.svg?v=2')).toBe('svg');
+    expect(classifyIconSource('http://example.com/icon.svg#x')).toBe('svg');
   });
 
-  test('remote URLs split by svg-ness', () => {
+  test('non-SVG remote URLs are raster (RN Image loads them)', () => {
     expect(classifyIconSource('https://imagedelivery.net/w/64')).toBe('raster-url');
-    expect(classifyIconSource('https://example.com/icon.svg')).toBe('svg-url');
-    expect(classifyIconSource('https://example.com/icon.svg?v=2')).toBe('svg-url');
-    expect(classifyIconSource('https://example.com/icon.svg#x')).toBe('svg-url');
-    expect(classifyIconSource('http://example.com/icon.svg')).toBe('svg-url');
+    expect(classifyIconSource('https://example.com/icon.png')).toBe('raster-url');
   });
 
   test('garbage and empty sources fall through to the letter avatar', () => {
@@ -38,36 +41,91 @@ describe('classifyIconSource — every icon format the SDK ships', () => {
   });
 });
 
-describe('decodeBase64 — pure JS, no Buffer/atob dependency', () => {
-  test('known ASCII vectors', () => {
-    expect(decodeBase64('SGVsbG8=')).toBe('Hello');
-    expect(decodeBase64('')).toBe('');
+describe('WALLET_PNG_ICONS — bundled compressed PNG registry', () => {
+  test('covers every core connector whose icon is an SVG', () => {
+    for (const key of ['albedo', 'hot-wallet', 'klever', 'ledger', 'rabet', 'trezor', 'walletconnect']) {
+      expect(WALLET_PNG_ICONS[key]).toBeTruthy();
+    }
   });
 
-  test('decodes the multi-byte UTF-8 inside wallet SVGs', () => {
-    // 'é' = 0xC3 0xA9, '‰' is a single-byte-ish continuation sample
-    expect(decodeBase64(Buffer.from('é', 'utf-8').toString('base64'))).toBe('é');
-    expect(decodeBase64(SVG_B64)).toBe(SVG);
-  });
-
-  test('ignores whitespace/newlines embedded by formatters', () => {
-    expect(decodeBase64(Buffer.from('Stellar', 'utf-8').toString('base64').replace(/(.{2})/g, '$1\n'))).toBe('Stellar');
+  test('every entry is a valid PNG data URI (small enough for bundling)', () => {
+    for (const [key, uri] of Object.entries(WALLET_PNG_ICONS)) {
+      expect(uri.startsWith(`data:image/png;base64,`)).toBe(true);
+      // ~7 KB total budget; a single icon must never balloon past 4 KB.
+      expect(uri.length).toBeLessThan(4 * 1024 + 64);
+    }
   });
 });
 
-describe('decodeSvgDataUri', () => {
-  test('base64 SVG payload round-trips to the XML text', () => {
-    expect(decodeSvgDataUri(`data:image/svg+xml;base64,${SVG_B64}`)).toBe(SVG);
+describe('resolveWalletIconByKey', () => {
+  test('core connector ids resolve to bundled PNGs', () => {
+    expect(resolveWalletIconByKey('albedo')).toBe(WALLET_PNG_ICONS['albedo']);
+    expect(resolveWalletIconByKey('walletconnect')).toBe(WALLET_PNG_ICONS['walletconnect']);
   });
 
-  test('URL-encoded utf8 payload decodes', () => {
-    const encoded = encodeURIComponent(SVG);
-    expect(decodeSvgDataUri(`data:image/svg+xml,${encoded}`)).toBe(SVG);
+  test('mobile wallet ids resolve to the registry icons', () => {
+    expect(resolveWalletIconByKey('freighter-mobile')?.startsWith('data:image/png;base64,')).toBe(true);
+    expect(resolveWalletIconByKey('lobstr-mobile')?.startsWith('data:image/png;base64,')).toBe(true);
   });
 
-  test('non-XML payloads and missing commas return null', () => {
-    expect(decodeSvgDataUri(`data:image/svg+xml;base64,${Buffer.from('hello', 'utf-8').toString('base64')}`)).toBeNull();
-    expect(decodeSvgDataUri('data:image/svg+xml')).toBeNull();
+  test('unknown / null keys return null', () => {
+    expect(resolveWalletIconByKey('does-not-exist')).toBeNull();
+    expect(resolveWalletIconByKey(null)).toBeNull();
+    expect(resolveWalletIconByKey(undefined)).toBeNull();
+    expect(resolveWalletIconByKey('')).toBeNull();
+  });
+});
+
+describe('resolveWalletIconByName — WC peer metadata matching', () => {
+  test('normalization: case, whitespace, and multi-space insensitive', () => {
+    expect(normalizeWalletName('  HOT   Wallet ')).toBe('hot wallet');
+    expect(normalizeWalletName('Freighter')).toBe('freighter');
+  });
+
+  test('peer names resolve to the right logo', () => {
+    expect(resolveWalletIconByName('Freighter')).toBe(resolveWalletIconByKey('freighter-mobile'));
+    expect(resolveWalletIconByName('freighter wallet')).toBe(resolveWalletIconByKey('freighter-mobile'));
+    expect(resolveWalletIconByName('LOBSTR')).toBe(resolveWalletIconByKey('lobstr-mobile'));
+    expect(resolveWalletIconByName('HOT Wallet')).toBe(resolveWalletIconByKey('hot-wallet-mobile'));
+    expect(resolveWalletIconByName('Scopuly')).toBe(resolveWalletIconByKey('scopuly-mobile'));
+    expect(resolveWalletIconByName('WalletConnect')).toBe(WALLET_PNG_ICONS['walletconnect']);
+    expect(resolveWalletIconByName('Albedo')).toBe(WALLET_PNG_ICONS['albedo']);
+    expect(resolveWalletIconByName('Ledger')).toBe(WALLET_PNG_ICONS['ledger']);
+  });
+
+  test('unknown wallets (SafePal, Hana, …) return null → letter avatar', () => {
+    expect(resolveWalletIconByName('SafePal')).toBeNull();
+    expect(resolveWalletIconByName('Hana')).toBeNull();
+    expect(resolveWalletIconByName(null)).toBeNull();
+  });
+});
+
+describe('resolveWalletIcon — resolution order', () => {
+  test('walletKey wins even when the source is an unrenderable SVG', () => {
+    expect(resolveWalletIcon({ source: SVG_DATA_URI, walletKey: 'rabet', name: 'Rabet' }))
+      .toBe(WALLET_PNG_ICONS['rabet']);
+  });
+
+  test('raster sources render as-is when no key is given', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgo=';
+    expect(resolveWalletIcon({ source: png })).toBe(png);
+    const url = 'https://example.com/logo.png';
+    expect(resolveWalletIcon({ source: url, name: 'SafePal' })).toBe(url);
+  });
+
+  test('SVG sources with no key fall back to name matching', () => {
+    expect(resolveWalletIcon({ source: 'https://relay.walletconnect.org/x.svg', name: 'Freighter' }))
+      .toBe(resolveWalletIconByKey('freighter-mobile'));
+  });
+
+  test('SVG sources with no key and unknown name → null (letter avatar)', () => {
+    expect(resolveWalletIcon({ source: SVG_DATA_URI, name: 'SafePal' })).toBeNull();
+    expect(resolveWalletIcon({})).toBeNull();
+  });
+
+  test('mobile wallet keys resolve even over an SVG source (list rows)', () => {
+    expect(resolveWalletIcon({ source: SVG_DATA_URI, walletKey: 'freighter-mobile', name: 'Freighter' }))
+      .toBe(resolveWalletIconByKey('freighter-mobile'));
   });
 });
 

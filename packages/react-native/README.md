@@ -7,7 +7,8 @@ React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-a
 - **Albedo WebView bridge** — Albedo's web confirm flow, reproduced inside an in-app WebView (`window.opener` shim + synthetic MessageEvents — the exact popup protocol).
 - **AsyncStorage persistence** — sessions survive app restarts via a first-class `ConnectStorage` adapter.
 - **Full modal parity** — bottom-sheet modal (`@gorhom/bottom-sheet`), wallet list with live reachability, connecting/signing animations (same v1.9.50 timings as web, reduced-motion aware via `AccessibilityInfo`), account view, error states, i18n (25 locales).
-- **Icons that render** — the `<WalletIcon>` component understands every icon format in the SDK: PNG/JPEG data URIs (native `Image`), SVG data URIs (via `react-native-svg`), remote URLs, and a letter-avatar fallback. This is what fixed “icons not showing” on RN.
+- **Icons that render — no SVG library** — RN's `Image` can't rasterize SVG, so instead of pulling in `react-native-svg` (a large native dependency), every core SVG logo is pre-rasterized as a compressed 128×128 PNG (~7 KB for all of them, bundled as base64 literals). `<WalletIcon>` resolves icons by wallet key → bundled PNG, renders raster sources natively, matches WalletConnect peer names ("Freighter" → Freighter logo), and falls back to a branded letter avatar.
+- **Dependency-free QR** — the WalletConnect pairing QR is rendered by `<QrCodeView>`: a vendored pure-JS QR encoder (matrix core only) drawn with plain React Native Views. No `react-native-qrcode-svg`, no `react-native-svg` — crisp at any size.
 
 ## Install
 
@@ -15,10 +16,11 @@ React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-a
 npm install @saganta/stellar-appkit-react-native \
   @walletconnect/react-native-compat \
   @react-native-async-storage/async-storage \
-  @gorhom/bottom-sheet react-native-svg react-native-qrcode-svg \
+  @gorhom/bottom-sheet \
   buffer react-native-get-random-values
 # only if you use the Albedo WebView bridge:
 npm install react-native-webview
+# (no react-native-svg needed — icons and QR are rendered natively)
 ```
 
 ## Setup

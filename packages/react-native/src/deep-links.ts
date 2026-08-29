@@ -48,8 +48,9 @@ export interface MobileWalletDeepLink {
   /**
    * Wallet icon. Prefer a pre-encoded `data:image/png;base64,...` (or jpeg)
    * literal — RN's `<Image>` renders those natively, no SVG dependency.
-   * SVG data URIs also work when rendered through the modal's `<WalletIcon>`
-   * (react-native-svg). https URLs are supported too (loaded remotely).
+   * (SVG data URIs and https URLs also work through the modal's
+   * `<WalletIcon>`, which resolves known wallets to bundled PNGs and falls
+   * back to a branded letter avatar for anything else.)
    */
   icon: string;
   /**

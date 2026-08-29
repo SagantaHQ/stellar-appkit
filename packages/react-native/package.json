@@ -44,8 +44,6 @@
     "react": ">=18",
     "react-native": ">=0.73",
     "react-native-get-random-values": ">=1.11",
-    "react-native-qrcode-svg": ">=6",
-    "react-native-svg": ">=13",
     "react-native-webview": ">=13"
   },
   "peerDependenciesMeta": {
@@ -64,12 +62,6 @@
     "react-native-get-random-values": {
       "optional": true
     },
-    "react-native-qrcode-svg": {
-      "optional": true
-    },
-    "react-native-svg": {
-      "optional": true
-    },
     "react-native-webview": {
       "optional": true
     }
@@ -79,8 +71,6 @@
     "react": "^19.0.0",
     "react-native": "^0.78.0",
     "@gorhom/bottom-sheet": "^5.0.0",
-    "react-native-svg": "^15.0.0",
-    "react-native-qrcode-svg": "^6.3.0",
     "react-native-webview": "^13.0.0",
     "@react-native-async-storage/async-storage": "^2.0.0"
   },

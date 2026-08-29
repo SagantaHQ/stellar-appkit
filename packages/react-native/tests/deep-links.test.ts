@@ -104,7 +104,7 @@ describe('mobile wallet deep-link registry', () => {
   test('every built-in icon is a raster data URI — renders natively in RN <Image>', () => {
     // Regression guard for "icons not showing": every BUILT-IN wallet icon
     // must be a png/jpeg data URI (RN Image handles those natively) — never
-    // an SVG data URI, which requires the WalletIcon SvgXml path. (Test-added
+    // an SVG data URI, which RN's Image cannot rasterize. (Test-added
     // wallets like TEST_WALLET are deliberately skipped.)
     const builtinIds = ['freighter-mobile', 'lobstr-mobile', 'hot-wallet-mobile', 'scopuly-mobile'];
     for (const id of builtinIds) {

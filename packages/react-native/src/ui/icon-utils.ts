@@ -1,84 +1,75 @@
 /**
- * Pure wallet-icon source utilities — kept separate from the <WalletIcon>
- * component so they're unit-testable without a React Native runtime.
+ * Pure wallet-icon resolution utilities — kept separate from the
+ * <WalletIcon> component so they're unit-testable without a React Native
+ * runtime.
  *
- * Classifies every icon source the SDK produces (core connectors ship SVG
- * data URIs; the mobile wallet registry ships PNG/JPEG data URIs; WC peer
- * metadata ships https URLs) and decodes SVG data URIs to XML for
- * react-native-svg.
+ * Design constraint: the RN package does NOT depend on react-native-svg (a
+ * large native library), and RN's <Image> cannot rasterize SVG. So instead
+ * of *rendering* SVG sources, we *resolve around* them:
+ *
+ *   1. an explicit wallet key (connector id / mobile wallet id) → the
+ *      pre-rasterized PNG registry (./wallet-icons.ts)
+ *   2. a source that is already a raster (PNG/JPEG/GIF/WebP data URI or a
+ *      non-SVG https URL) → used as-is by <Image>
+ *   3. a wallet display name (WalletConnect peer metadata) → the PNG
+ *      registry by name
+ *   4. anything else (SVG data URI / SVG URL with no registry match) →
+ *      null → the branded letter-avatar fallback
  */
 
-const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const b64Lookup = new Map<string, number>();
-for (let i = 0; i < B64_ALPHABET.length; i++) b64Lookup.set(B64_ALPHABET[i]!, i);
+import { resolveWalletIconByKey, resolveWalletIconByName } from './wallet-icons.js';
 
-/** Pure-JS base64 → UTF-8 string. No Buffer/atob dependency (Hermes-safe). */
-export function decodeBase64(input: string): string {
-  const clean = input.replace(/[^A-Za-z0-9+/=]/g, '');
-  let out = '';
-  for (let i = 0; i < clean.length; i += 4) {
-    const c1 = b64Lookup.get(clean[i] ?? '');
-    const c2 = b64Lookup.get(clean[i + 1] ?? '');
-    const c3 = b64Lookup.get(clean[i + 2] ?? '');
-    const c4 = b64Lookup.get(clean[i + 3] ?? '');
-    if (c1 === undefined || c2 === undefined) break;
-    const n = (c1 << 18) | (c2 << 12) | ((c3 ?? 0) << 6) | (c4 ?? 0);
-    out += String.fromCharCode((n >> 16) & 0xff);
-    if (clean[i + 2] && clean[i + 2] !== '=') out += String.fromCharCode((n >> 8) & 0xff);
-    if (clean[i + 3] && clean[i + 3] !== '=') out += String.fromCharCode(n & 0xff);
-  }
-  // UTF-8 decode (wallet SVGs occasionally contain multi-byte chars).
-  try {
-    const bytes = new Uint8Array(out.length);
-    for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 0xff;
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return out;
-  }
-}
-
-/** How an icon source should be rendered. */
-export type IconKind = 'raster-data' | 'svg-data' | 'svg-url' | 'raster-url' | 'none';
+/** How an icon source can be handled without an SVG library. */
+export type IconKind = 'raster-data' | 'raster-url' | 'svg' | 'none';
 
 /**
  * Classifies an icon source:
- * - `data:image/png|jpeg|gif|webp;base64,...` → 'raster-data' (RN Image)
- * - `data:image/svg+xml;base64,...` / `;utf8,` → 'svg-data' (SvgXml)
- * - `https://.../*.svg` → 'svg-url' (SvgUri)
- * - other `https://...` → 'raster-url' (RN Image)
- * - anything else → 'none' (letter-avatar fallback)
+ * - `data:image/png|jpeg|gif|webp;base64,...` → 'raster-data' (RN <Image>)
+ * - `https://.../*.svg` / `data:image/svg+xml,...` → 'svg' (needs registry)
+ * - other `https://...` → 'raster-url' (RN <Image>)
+ * - anything else → 'none'
  */
 export function classifyIconSource(source: string): IconKind {
   if (source.startsWith('data:')) {
-    if (source.startsWith('data:image/svg')) return 'svg-data';
+    if (source.startsWith('data:image/svg')) return 'svg';
     if (/^data:image\/(png|jpe?g|gif|webp|bmp)/i.test(source)) return 'raster-data';
     return 'none';
   }
   if (/^https?:\/\//i.test(source)) {
-    return /\.svg(\?|#|$)/i.test(source) ? 'svg-url' : 'raster-url';
+    return /\.svg(\?|#|$)/i.test(source) ? 'svg' : 'raster-url';
   }
   return 'none';
 }
 
-/** Decodes an SVG data URI (base64 or utf8/URL-encoded) to its XML text. */
-export function decodeSvgDataUri(uri: string): string | null {
-  const commaIndex = uri.indexOf(',');
-  if (commaIndex < 0) return null;
-  const meta = uri.slice(0, commaIndex);
-  const payload = uri.slice(commaIndex + 1);
-  let xml: string;
-  if (meta.includes('base64')) {
-    xml = decodeBase64(payload);
-  } else {
-    // utf8 or URL-encoded payload ("%3Csvg..." → "<svg...")
-    try {
-      xml = decodeURIComponent(payload);
-    } catch {
-      xml = payload;
-    }
+export interface ResolveWalletIconOptions {
+  /** Raw icon source from connector meta / peer metadata — may be SVG. */
+  source?: string | null;
+  /** Explicit wallet key: connector id ("albedo") or mobile wallet id ("freighter-mobile"). */
+  walletKey?: string | null;
+  /** Wallet display name — used to match WC peer metadata to a known logo. */
+  name?: string | null;
+}
+
+/**
+ * Resolves the best renderable image URI for a wallet, or null when only
+ * the letter-avatar fallback can be shown. Resolution order:
+ * key → raster source → name.
+ *
+ * (Key wins over the source: list rows pass the authoritative id even when
+ * the connector's own icon is an unrenderable SVG. The account view passes
+ * no key, so a WalletConnect peer's PNG URL or name matches first.)
+ */
+export function resolveWalletIcon(options: ResolveWalletIconOptions): string | null {
+  const { source, walletKey, name } = options;
+
+  const byKey = resolveWalletIconByKey(walletKey);
+  if (byKey) return byKey;
+
+  if (source && classifyIconSource(source) !== 'none' && classifyIconSource(source) !== 'svg') {
+    return source;
   }
-  const result = xml.trim().startsWith('<') ? xml : null;
-  return result;
+
+  return resolveWalletIconByName(name);
 }
 
 /**

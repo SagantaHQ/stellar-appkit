@@ -17,13 +17,17 @@
  * }
  * ```
  *
- * Requires peer deps: react-native, react, @gorhom/bottom-sheet,
- * react-native-svg + react-native-qrcode-svg.
+ * Requires peer deps: react-native, react, @gorhom/bottom-sheet.
+ *
+ * No SVG library needed — icons are pre-rasterized compressed PNGs and the
+ * pairing QR is rendered with plain Views (QrCodeView).
  */
 
 export { AppKitModal, type AppKitModalProps } from './AppKitModal.js';
 export { useAppKit, type AppKitState } from './useAppKit.js';
 export { WalletIcon, type WalletIconProps } from './WalletIcon.js';
+export { QrCodeView, type QrCodeViewProps } from './qr/QrCodeView.js';
+export { generateQrMatrix, qrMatrixToRects, type QrMatrix, type QrRect, type QrEcLevel } from './qr/qr-matrix.js';
 export {
   minimalDark, minimalLight, stellarDark, stellarLight,
   skyDark, skyLight, oceanDark, oceanLight,
