@@ -149,6 +149,28 @@ const appkit = new StellarAppKit({
 | `.../ui` | `AppKitModal`, `useAppKit`, `WalletIcon`, themes (5 × dark/light) |
 | `.../albedo` | `createAlbedoWebViewBridge` + `AlbedoWebViewScreen` (requires `react-native-webview`) |
 
+## Modal internals (for contributors)
+
+`src/ui/` keeps every screen in its own file for easy management — `AppKitModal.tsx` is only the
+orchestrator (state machine, connect actions, bottom-sheet shell):
+
+```
+src/ui/
+  AppKitModal.tsx        orchestrator — view state machine + deep-link handoff
+  styles.ts              shared design system (port of the web modal's CSS)
+  types.ts               shared view types
+  views/
+    WalletListView.tsx   wallet picker — flat rows, featured + "More wallets" expander
+    WalletRowView.tsx    one wallet row (.wallet-row port: tile | name | status)
+    ConnectingView.tsx   connecting / signing view (+ breathe/spinner animations)
+    AccountView.tsx      connected account
+    ErrorView.tsx        failure + retry
+```
+
+The wallet listing mirrors the web modal's design: 40dp squircle tiles with a soft drop shadow,
+14/500 names, an "Installed" outline badge with an accent dot, accent Install pills for
+not-installed wallets, and 0.55 dimming for unavailable ones.
+
 ## Requirements
 
 React Native ≥ 0.73 · React ≥ 18 · `@walletconnect/react-native-compat` for WalletConnect. See `peerDependencies` for the full list.
