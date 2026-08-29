@@ -140,6 +140,50 @@ const appkit = new StellarAppKit({
 
 `@stellar/stellar-sdk` (v13) needs `Buffer`; ed25519 + WalletConnect need `crypto.getRandomValues`. Neither exists in Hermes/JSC. `installPolyfills()` installs both (plus the WalletConnect AsyncStorage shims) — core itself needs no polyfills at import time since v1.9.51.
 
+## Expo Go development: disable lazy bundle splitting
+
+The core SDK lazy-loads its heavy dependencies (`@walletconnect/sign-client`,
+`@stellar/stellar-sdk`, `@stellar/freighter-api`, …) with dynamic `import()` — great for web
+bundle size, but **React Native 0.86+ / Expo SDK 57 dev clients request bundles with
+`?lazy=true`, which makes Metro split every dynamic import into a separate runtime-fetched
+bundle with its own module-id space**. If Metro restarts or the graph drifts between the main
+bundle and a split bundle (cache clear, `node_modules` churn), the ids no longer line up and
+the app crashes mid-connect with:
+
+```
+ERROR  [Error: Requiring unknown module "1407". If you are sure the module exists,
+try restarting Metro. You may also want to run `yarn` or `npm install`.]
+```
+
+— usually right after a long secondary build like
+`Bundled 30868ms node_modules/@walletconnect/sign-client/dist/index.js (1308 modules)`.
+
+The fix is one line of Metro config — strip `lazy=true` so the whole graph ships as a single
+inline bundle (no runtime bundle fetches, no id contract, and the first connect stops blocking
+on a cold split-bundle build):
+
+```js
+// metro.config.js
+const { getDefaultConfig } = require('expo/metro-config');
+const config = getDefaultConfig(__dirname);
+
+const baseRewriteRequestUrl = config.server.rewriteRequestUrl;
+config.server.rewriteRequestUrl = (url) => {
+  const rewritten = baseRewriteRequestUrl ? baseRewriteRequestUrl(url) : url;
+  if (!/[?&]lazy=true\b/.test(rewritten)) return rewritten;
+  const isRelative = rewritten.startsWith('/');
+  const parsed = new URL(rewritten, isRelative ? 'https://acme.dev' : undefined);
+  if (parsed.searchParams.get('platform') === 'web') return rewritten; // web dev uses split chunks
+  parsed.searchParams.delete('lazy');
+  return isRelative ? parsed.pathname + parsed.search : parsed.href;
+};
+
+module.exports = config;
+```
+
+The [RN demo](https://github.com/SagantaHQ/stellar-appkit-rn-expo-demo) ships this. Production
+builds (`expo export`) are unaffected — splitting is a dev-server behavior.
+
 ## Subpath exports
 
 | Entry | Contents |
