@@ -57,6 +57,7 @@ const fa: LocaleMessages = {
     "scan_with": "با {walletName} اسکن کنید",
     "scan_instructions": "Hana، Lobstr یا Hot Wallet را باز کنید و این کد QR را برای اتصال اسکن کنید.",
     "open_in_wallet": "باز کردن در برنامه کیف پول",
+    open_failed: "باز کردن {walletName} ممکن نبود. اگر نصب نیست، آن را از پایین نصب کنید.",
     "copy_uri": "کپی URI",
     "copied": "کپی شد!",
     "generating_code": "در حال تولید کد جفت…",

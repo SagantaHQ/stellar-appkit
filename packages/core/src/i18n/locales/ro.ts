@@ -57,6 +57,7 @@ const ro: LocaleMessages = {
     "scan_with": "Scanează cu {walletName}",
     "scan_instructions": "Deschide Hana, Lobstr sau Hot Wallet și scanează acest cod QR pentru a te conecta.",
     "open_in_wallet": "Deschide în aplicația portofelului",
+    open_failed: "Nu s-a putut deschide {walletName}. Dacă nu este instalat, descarcă-l mai jos.",
     "copy_uri": "Copiază URI",
     "copied": "Copiat!",
     "generating_code": "Se generează codul de asociere…",

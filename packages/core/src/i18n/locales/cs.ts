@@ -57,6 +57,7 @@ const cs: LocaleMessages = {
     "scan_with": "Naskenujte pomocí {walletName}",
     "scan_instructions": "Otevřete Hana, Lobstr nebo Hot Wallet a naskenujte tento QR kód pro připojení.",
     "open_in_wallet": "Otevřít v aplikaci peněženky",
+    open_failed: "Nelze otevřít {walletName}. Pokud není nainstalovaná, nainstalujte si ji níže.",
     "copy_uri": "Kopírovat URI",
     "copied": "Zkopírováno!",
     "generating_code": "Generování párovacího kódu…",

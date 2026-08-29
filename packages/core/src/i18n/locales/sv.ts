@@ -57,6 +57,7 @@ const sv: LocaleMessages = {
     "scan_with": "Skanna med {walletName}",
     "scan_instructions": "Öppna Hana, Lobstr eller Hot Wallet och skanna denna QR-kod för att ansluta.",
     "open_in_wallet": "Öppna i plånboksapp",
+    open_failed: "Kunde inte öppna {walletName}. Om den inte är installerad, hämta appen nedan.",
     "copy_uri": "Kopiera URI",
     "copied": "Kopierad!",
     "generating_code": "Genererar parningskod…",

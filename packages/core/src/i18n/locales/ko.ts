@@ -57,6 +57,7 @@ const ko: LocaleMessages = {
     "scan_with": "{walletName}으로 스캔",
     "scan_instructions": "Hana, Lobstr 또는 Hot Wallet을 열고 이 QR 코드를 스캔하여 연결하세요.",
     "open_in_wallet": "지갑 앱에서 열기",
+    open_failed: "{walletName}을(를) 열 수 없습니다. 설치되어 있지 않다면 아래에서 설치하세요.",
     "copy_uri": "URI 복사",
     "copied": "복사됨!",
     "generating_code": "페어링 코드 생성 중…",

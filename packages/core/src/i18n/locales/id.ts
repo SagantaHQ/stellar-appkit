@@ -57,6 +57,7 @@ const id: LocaleMessages = {
     "scan_with": "Pindai dengan {walletName}",
     "scan_instructions": "Buka Hana, Lobstr, atau Hot Wallet dan pindai kode QR ini untuk terhubung.",
     "open_in_wallet": "Buka di aplikasi dompet",
+    open_failed: "Tidak dapat membuka {walletName}. Jika belum terpasang, unduh aplikasinya di bawah.",
     "copy_uri": "Salin URI",
     "copied": "Tersalin!",
     "generating_code": "Membuat kode pairing…",

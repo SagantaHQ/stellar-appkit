@@ -256,6 +256,15 @@ export interface WalletConnector {
   selectAccount?(address: string): Promise<void>;
 
   /**
+   * Optional: returns the connected wallet's own identity as reported by
+   * relay-based connectors (WalletConnect) — the real wallet name and icon
+   * ("Freighter", "LOBSTR", "HOT Wallet") rather than the connector's
+   * generic label. Returns null when not connected or unknown. Direct
+   * (non-relay) connectors omit this — their `meta` already IS the wallet.
+   */
+  getSessionPeer?(): { name: string; url: string | null; icon: string | null } | null;
+
+  /**
    * Optional: returns a URL to the connected account's profile picture /
    * avatar, if the wallet supports one. Used by the UI to render an
    * avatar next to the address instead of a generic colored circle.

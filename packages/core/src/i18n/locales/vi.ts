@@ -57,6 +57,7 @@ const vi: LocaleMessages = {
     "scan_with": "Quét bằng {walletName}",
     "scan_instructions": "Mở Hana, Lobstr hoặc Hot Wallet và quét mã QR này để kết nối.",
     "open_in_wallet": "Mở trong ứng dụng ví",
+    open_failed: "Không thể mở {walletName}. Nếu chưa cài đặt, hãy tải ứng dụng bên dưới.",
     "copy_uri": "Sao chép URI",
     "copied": "Đã sao chép!",
     "generating_code": "Đang tạo mã ghép nối…",

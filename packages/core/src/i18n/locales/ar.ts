@@ -57,6 +57,7 @@ const ar: LocaleMessages = {
     "scan_with": "امسح باستخدام {walletName}",
     "scan_instructions": "افتح Hana أو Lobstr أو Hot Wallet وامسح رمز QR هذا للتوصيل.",
     "open_in_wallet": "فتح في تطبيق المحفظة",
+    open_failed: "تعذّر فتح {walletName}. إذا لم يكن مثبّتًا، ثبّته من الرابط بالأسفل.",
     "copy_uri": "نسخ URI",
     "copied": "تم النسخ!",
     "generating_code": "جارٍ إنشاء رمز الاقتران…",

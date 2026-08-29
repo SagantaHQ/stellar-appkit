@@ -57,6 +57,7 @@ const ja: LocaleMessages = {
     "scan_with": "{walletName} でスキャン",
     "scan_instructions": "Hana、Lobstr、または Hot Wallet を開き、この QR コードをスキャンして接続してください。",
     "open_in_wallet": "ウォレットアプリで開く",
+    open_failed: "{walletName} を開けませんでした。未インストールの場合は、下から入手してください。",
     "copy_uri": "URI をコピー",
     "copied": "コピーしました！",
     "generating_code": "ペアリングコードを生成中…",

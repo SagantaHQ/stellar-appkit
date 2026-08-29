@@ -57,6 +57,7 @@ const th: LocaleMessages = {
     "scan_with": "สแกนด้วย {walletName}",
     "scan_instructions": "เปิด Hana, Lobstr หรือ Hot Wallet และสแกนคิวอาร์โค้ดนี้เพื่อเชื่อมต่อ",
     "open_in_wallet": "เปิดในแอปกระเป๋า",
+    open_failed: "ไม่สามารถเปิด {walletName} ได้ หากยังไม่ได้ติดตั้ง ให้ติดตั้งจากด้านล่าง",
     "copy_uri": "คัดลอก URI",
     "copied": "คัดลอกแล้ว!",
     "generating_code": "กำลังสร้างรหัสจับคู่…",

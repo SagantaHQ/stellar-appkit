@@ -57,6 +57,7 @@ const tr: LocaleMessages = {
     "scan_with": "{walletName} ile tara",
     "scan_instructions": "Bağlanmak için Hana, Lobstr veya Hot Wallet'ı açın ve bu QR kodunu tarayın.",
     "open_in_wallet": "Cüzdan uygulamasında aç",
+    open_failed: "{walletName} açılamadı. Yüklü değilse aşağıdan edinebilirsiniz.",
     "copy_uri": "URI'yi kopyala",
     "copied": "Kopyalandı!",
     "generating_code": "Eşleştirme kodu oluşturuluyor…",

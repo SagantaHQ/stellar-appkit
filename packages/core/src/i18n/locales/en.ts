@@ -77,6 +77,7 @@ export const en = {
     scan_with: 'Scan with {walletName}',
     scan_instructions: 'Open Hana, Lobstr, or Hot Wallet and scan this QR code to connect.',
     open_in_wallet: 'Open in wallet app',
+    open_failed: 'Couldn\'t open {walletName}. If it isn\'t installed, get the app below.',
     copy_uri: 'Copy URI',
     copied: 'Copied!',
     generating_code: 'Generating QR Code…',

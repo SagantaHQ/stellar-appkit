@@ -131,6 +131,20 @@ function isFatalRelayError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * The connected wallet's own identity, as reported by the wallet in the
+ * WalletConnect session's `peer` metadata. Lets the UI show "Freighter" /
+ * "LOBSTR" / "HOT Wallet" instead of the generic "WalletConnect" label.
+ */
+export interface WalletConnectPeerMetadata {
+  /** The wallet's display name, e.g. "Freighter". */
+  name: string;
+  /** The wallet's homepage, when provided. */
+  url: string | null;
+  /** The wallet's icon (https URL), when provided. */
+  icon: string | null;
+}
+
 export interface WalletConnectConnectorOptions {
   /** WalletConnect Cloud project ID — get one at cloud.walletconnect.com. */
   projectId: string;
@@ -287,6 +301,13 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let sessionTopic: string | null = null;
   let cachedAddress: string | null = null;
   let cachedNetwork: { network: string; networkPassphrase: string } | null = null;
+  /**
+   * The connected wallet's own metadata (from the WC session's `peer`),
+   * captured when the session settles so the UI can show the real wallet
+   * name — "Freighter", "LOBSTR", "HOT Wallet" — instead of the generic
+   * "WalletConnect" connector name. Null until a session settles.
+   */
+  let peerMetadata: WalletConnectPeerMetadata | null = null;
 
   /**
    * Late-bound URI handler. The constructor-time `opts.onUri` is copied here,
@@ -391,6 +412,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           sessionTopic = null;
           cachedAddress = null;
           cachedNetwork = null;
+          peerMetadata = null;
         }
       });
 
@@ -663,6 +685,22 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
           sessionTopic = session.topic;
 
+          // Capture the peer wallet's metadata — the REAL wallet name and icon
+          // ("Freighter", "LOBSTR", "HOT Wallet", ...), not the generic
+          // "WalletConnect" label. Every WC wallet sends this on session settle;
+          // the UI reads it via getSessionPeer() to brand the connecting/account
+          // views after the user picked a specific wallet.
+          const peer = (session as { peer?: { metadata?: { name?: string; url?: string; icons?: string[] } } }).peer?.metadata;
+          if (peer?.name) {
+            peerMetadata = {
+              name: peer.name,
+              url: peer.url || null,
+              icon: peer.icons?.[0] || null,
+            };
+          } else {
+            peerMetadata = null;
+          }
+
           // Extract the address from the session's namespace accounts.
           // WC account format: "stellar:<networkPassphrase>:<address>"
           const stellarNamespace = session.namespaces?.stellar;
@@ -716,6 +754,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
             await opts.storage.setItem(WC_STORAGE_KEY, JSON.stringify({
               topic: sessionTopic,
               address: cachedAddress,
+              peerMetadata,
             }));
           }
 
@@ -740,6 +779,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       teardownClient();
       cachedAddress = null;
       cachedNetwork = null;
+      peerMetadata = null;
       if (opts.storage) {
         await opts.storage.removeItem(WC_STORAGE_KEY);
       }
@@ -941,6 +981,17 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           }
         }
       });
+    },
+
+    /**
+     * The connected wallet's own metadata (name/icon from the WC session's
+     * `peer`), when a session is settled. Lets UIs show the real wallet name
+     * — "Freighter", "LOBSTR", "HOT Wallet" — instead of the generic
+     * "WalletConnect" connector label. Returns null when not connected or
+     * when the wallet didn't send peer metadata.
+     */
+    getSessionPeer(): WalletConnectPeerMetadata | null {
+      return peerMetadata;
     },
   };
 

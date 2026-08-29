@@ -57,6 +57,7 @@ const zh_TW: LocaleMessages = {
     "scan_with": "使用 {walletName} 掃描",
     "scan_instructions": "打開 Hana、Lobstr 或 Hot Wallet 並掃描此 QR 碼以連接。",
     "open_in_wallet": "在錢包應用中打開",
+    open_failed: "無法開啟 {walletName}。如果尚未安裝，請在下方取得。",
     "copy_uri": "複製 URI",
     "copied": "已複製！",
     "generating_code": "正在產生配對碼…",

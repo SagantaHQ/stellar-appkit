@@ -57,6 +57,7 @@ const he: LocaleMessages = {
     "scan_with": "סרוק עם {walletName}",
     "scan_instructions": "פתח את Hana, Lobstr או Hot Wallet וסרוק קוד QR זה כדי להתחבר.",
     "open_in_wallet": "פתח באפליקציית ארנק",
+    open_failed: "לא ניתן לפתוח את {walletName}. אם האפליקציה לא מותקנת, אפשר להוריד אותה למטה.",
     "copy_uri": "העתק URI",
     "copied": "הועתק!",
     "generating_code": "מייצר קוד ציוות…",

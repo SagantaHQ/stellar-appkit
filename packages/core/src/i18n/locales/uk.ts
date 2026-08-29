@@ -57,6 +57,7 @@ const uk: LocaleMessages = {
     "scan_with": "Сканувати з {walletName}",
     "scan_instructions": "Відкрийте Hana, Lobstr або Hot Wallet і відскануйте цей QR-код для підключення.",
     "open_in_wallet": "Відкрити в додатку гаманця",
+    open_failed: "Не вдалося відкрити {walletName}. Якщо застосунок не встановлено, завантажте його нижче.",
     "copy_uri": "Копіювати URI",
     "copied": "Скопійовано!",
     "generating_code": "Генерування коду зв'язку…",
