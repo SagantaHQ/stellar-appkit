@@ -239,6 +239,93 @@ module.exports = config;
 The [RN demo](https://github.com/SagantaHQ/stellar-appkit-rn-expo-demo) ships this. Production
 builds (`expo export`) are unaffected — splitting is a dev-server behavior.
 
+## Metro deep-import warnings (`@noble/hashes`, `uint8arrays`, `multiformats`)
+
+Every WalletConnect-on-Metro app prints up to five of these on each cold start:
+
+```
+WARN  Attempted to import the module ".../uint8arrays/cjs/src/from-string.js" which is not
+listed in the "exports" of ".../uint8arrays" under the requested subpath
+"./cjs/src/from-string.js". Falling back to file-based resolution.
+```
+
+— the same warning for `multiformats/cjs/src/basics.js`, `@noble/hashes/crypto.js`, and a
+nested `@noble/curves/node_modules/@noble/hashes/crypto.js`. They are **cosmetic** (Metro
+falls back to file-based resolution and lands on the exact file it had already picked), but
+they look like errors.
+
+**Root cause:** those packages publish `exports` maps whose condition targets are nested CJS
+files — `"./from-string" → "./cjs/src/from-string.js"`, `"./crypto" → "./crypto.js"` — that are
+not themselves keys of the `exports` map. Metro expands the target, re-validates it against
+the same map, fails, warns, then falls back. (`@noble/curves` lists both `./ed25519` and
+`./ed25519.js`, which is why it never warns.)
+
+**Fix:** resolve those specifiers straight to their files in `metro.config.js`, skipping the
+exports re-validation entirely — same modules, zero warnings (this also covers older
+WalletConnect releases that request the deep paths literally):
+
+```js
+// metro.config.js — add to your existing config
+const fs = require('node:fs');
+const path = require('node:path');
+
+const DEEP_CJS_PACKAGES = new Set(['@noble/hashes', 'uint8arrays', 'multiformats']);
+
+function splitPkgSub(moduleName) {
+  const parts = moduleName.split('/');
+  if (moduleName.startsWith('@')) {
+    if (parts.length < 3) return null;
+    return { pkg: `${parts[0]}/${parts[1]}`, sub: parts.slice(2).join('/') };
+  }
+  if (parts.length < 2) return null;
+  return { pkg: parts[0], sub: parts.slice(1).join('/') };
+}
+
+function nearestPackageDir(originDir, pkg) {
+  let dir = originDir;
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', pkg);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+function resolveDeepCjs(originModulePath, moduleName) {
+  const split = splitPkgSub(moduleName);
+  if (!split || !DEEP_CJS_PACKAGES.has(split.pkg)) return null;
+  const pkgDir = nearestPackageDir(path.dirname(originModulePath), split.pkg);
+  if (!pkgDir) return null;
+  const withExt = /\.(js|cjs|mjs)$/.test(split.sub) ? split.sub : `${split.sub}.js`;
+  for (const rel of [withExt, path.join('cjs/src', withExt), path.join('esm/src', withExt)]) {
+    const filePath = path.join(pkgDir, rel);
+    if (fs.existsSync(filePath)) return { type: 'sourceFile', filePath };
+  }
+  return null;
+}
+
+// inside your config setup, before the default resolution:
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (context.originModulePath) {
+    const direct = resolveDeepCjs(context.originModulePath, moduleName);
+    if (direct) return direct;
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+```
+
+**Optional dedupe:** `@noble/curves` and `@walletconnect/relay-auth` pin old `@noble/hashes`
+versions (1.7.x), so package managers nest duplicate copies. A single shared 1.8.0 keeps one
+crypto implementation in the bundle:
+
+```jsonc
+// package.json — "overrides" (npm/bun) or "resolutions" (yarn)
+"overrides": { "@noble/hashes": "1.8.0" }
+```
+
+The [RN demo](https://github.com/SagantaHQ/stellar-appkit-rn-expo-demo) ships both.
+
 ## Subpath exports
 
 | Entry | Contents |
