@@ -15,6 +15,10 @@ import { describe, expect, mock, test } from 'bun:test';
 // imports, so every react-native mock in this package provides the union.
 mock.module('react-native', () => ({
   Vibration: { vibrate: () => {} },
+  NativeModules: {
+    SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
+    I18nManager: { localeIdentifier: 'zh_CN' },
+  },
   StyleSheet: {
     create: (sheets: Record<string, unknown>) => sheets,
     hairlineWidth: 0.5,

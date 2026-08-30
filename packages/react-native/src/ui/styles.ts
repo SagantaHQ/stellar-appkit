@@ -301,18 +301,314 @@ export function buildStyles(theme: ConnectThemeRN) {
     textButton: { paddingVertical: 8, marginTop: 2 },
     textButtonText: { color: theme.colorAccent, fontSize: 14, fontWeight: '600' },
 
-    // ---- Account view -------------------------------------------------------
-    accountCard: {
+    // ---- Account view (web .account — 1:1 port of renderConnected) --------
+    // Web .account-header: flex row, gap 12, padding 2px 0.
+    accountHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 2 },
+    // Web .account-avatar: 42×42, radius 12. RN has no zero-dep linear
+    // gradient, so the deterministic two-hue CSS gradient is rendered as a
+    // solid hsl built from the same address hash (see accountData.ts) —
+    // same address → same color, the identity property users rely on.
+    accountAvatar: {
+      width: 42,
+      height: 42,
+      borderRadius: 12,
+      overflow: 'hidden',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    accountInfo: { flex: 1, minWidth: 0 },
+    // Web .account-address-row: flex row, gap 6, cursor pointer.
+    accountAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    // Web .account-address: mono 14px / 500.
+    accountAddress: {
+      color: theme.colorText,
+      fontSize: 14,
+      fontWeight: '500',
+      letterSpacing: 0.2,
+      fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    },
+    accountCopyIcon: { opacity: 0.7 },
+    // Web .account-meta: flex row, gap 8, margin-top 4.
+    accountMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+    // Web .network-pill: inline-flex, gap 5, 11px, capitalize, 2px 8px padding,
+    // radius 9999, surfaceHover background.
+    networkPill: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 14,
-      backgroundColor: theme.colorSurface,
-      borderRadius: theme.radiusMd,
-      padding: 16,
+      gap: 5,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 999,
+      backgroundColor: theme.colorSurfaceHover,
     },
-    walletMeta: { flex: 1, gap: 2 },
-    addressText: { color: theme.colorTextMuted, fontSize: 13, letterSpacing: 0.3 },
-    danger: { color: theme.colorDanger, fontSize: 12, marginTop: 2 },
+    networkPillText: { color: theme.colorTextMuted, fontSize: 11, textTransform: 'capitalize' },
+    networkDot: { width: 6, height: 6, borderRadius: 3 },
+    // Web .explorer-link: opacity 0.5, 14×14 glyph.
+    explorerButton: { padding: 2, opacity: 0.7 },
+    // Web .overflow-menu: column, gap 2, padding 6, radius radiusMd,
+    // surfaceHover background, 1px border. Hidden until toggled (RN: rendered
+    // conditionally).
+    overflowMenu: {
+      gap: 2,
+      padding: 6,
+      borderRadius: theme.radiusMd,
+      backgroundColor: theme.colorSurfaceHover,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+      marginBottom: 12,
+    },
+    overflowItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: theme.radiusSm,
+    },
+    overflowItemPressed: { backgroundColor: theme.colorBg, opacity: 0.9 },
+    overflowItemText: { color: theme.colorText, fontSize: 13, fontWeight: '500' },
+    overflowDangerText: { color: '#ef4444' },
+
+    // Web .pending-banner: row, gap 10, padding 10px 14px, radius radiusMd,
+    // rgba(110,231,183,.08) bg + .2 border, 13px accent text.
+    pendingBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: theme.radiusMd,
+      backgroundColor: 'rgba(110, 231, 183, 0.08)',
+      borderWidth: 1,
+      borderColor: 'rgba(110, 231, 183, 0.2)',
+      marginBottom: 4,
+    },
+    pendingBannerText: { color: theme.colorAccent, fontSize: 13, flex: 1 },
+
+    // Web .balance-section: padding 0 2px. Label: 11px uppercase +0.08em.
+    balanceSection: { paddingHorizontal: 2 },
+    balanceLabel: {
+      color: theme.colorTextMuted,
+      fontSize: 11,
+      fontWeight: '600',
+      letterSpacing: 0.9,
+      textTransform: 'uppercase',
+      marginBottom: 6,
+    },
+    // Web .balance-amount: flex baseline row, gap 6.
+    balanceAmount: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+    // Web .balance-value: 32px / 700 / mono / -0.02em.
+    balanceValue: {
+      color: theme.colorText,
+      fontSize: 32,
+      fontWeight: '700',
+      letterSpacing: -0.64,
+      fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    },
+    balanceUnit: { color: theme.colorTextMuted, fontSize: 15, fontWeight: '500' },
+    // Web .balance-skeleton: 140×32 radius 6 shimmer — RN pulses opacity.
+    balanceSkeleton: {
+      width: 140,
+      height: 32,
+      borderRadius: 6,
+      backgroundColor: theme.colorSurfaceHover,
+    },
+    // Web .friendbot-btn: 12px / 500 accent text, 5px 10px padding, radius
+    // radiusSm, 10% accent bg + 25% accent border.
+    friendbotButton: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      marginTop: 8,
+      borderRadius: theme.radiusSm,
+      borderWidth: 1,
+      borderColor: theme.colorAccent,
+      backgroundColor: 'rgba(110, 231, 183, 0.1)',
+    },
+    friendbotButtonPressed: { opacity: 0.8 },
+    friendbotButtonText: { color: theme.colorAccent, fontSize: 12, fontWeight: '500' },
+    // Web .funds-banner: margin-top 8, padding 6px 10px, 12px accent text,
+    // 8% accent bg, radius radiusSm, 2px accent left border.
+    fundsBanner: {
+      marginTop: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: theme.radiusSm,
+      borderLeftWidth: 2,
+      borderLeftColor: theme.colorAccent,
+      backgroundColor: 'rgba(110, 231, 183, 0.08)',
+    },
+    fundsBannerText: { color: theme.colorAccent, fontSize: 12, lineHeight: 16.8 },
+
+    // Web .tx-history: column. Header: 11px uppercase muted, 4px 0 8px padding.
+    txHistory: { gap: 0 },
+    txHeader: {
+      color: theme.colorTextMuted,
+      fontSize: 11,
+      fontWeight: '600',
+      letterSpacing: 0.9,
+      textTransform: 'uppercase',
+      paddingTop: 4,
+      paddingBottom: 8,
+    },
+    // Web .tx-row: flex row, gap 10, padding 10px 8px, bottom hairline border.
+    txRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colorBorder,
+    },
+    // Web .tx-icon: 24×24 circle, 11px / 700 glyph.
+    txIcon: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    txIconSuccess: { backgroundColor: 'rgba(110, 231, 183, 0.15)' },
+    txIconFailed: { backgroundColor: 'rgba(239, 68, 68, 0.15)' },
+    txIconTextSuccess: { color: theme.colorAccent, fontSize: 11, fontWeight: '700' },
+    txIconTextFailed: { color: '#ef4444', fontSize: 11, fontWeight: '700' },
+    txInfo: { flex: 1, minWidth: 0 },
+    txType: { color: theme.colorText, fontSize: 13, fontWeight: '500', textTransform: 'capitalize' },
+    txDate: { color: theme.colorTextMuted, fontSize: 11, marginTop: 2 },
+    txAmount: {
+      fontSize: 13,
+      fontWeight: '500',
+      fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    },
+    txAmountIn: { color: theme.colorAccent },
+    txAmountOut: { color: theme.colorText },
+    txEmpty: { color: theme.colorTextMuted, fontSize: 13, textAlign: 'center', paddingVertical: 24 },
+
+    // ---- Transaction preview (web .preview — renderTransactionPreview) ----
+    preview: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 20, alignItems: 'center' },
+    // Web .preview-thumbs: row centered, padding 20px 0 16px.
+    previewThumbs: { flexDirection: 'row', alignItems: 'center', paddingTop: 20, paddingBottom: 16 },
+    // Web .preview-thumb: 56×56 radius 14, surface bg, 1px border.
+    previewThumb: {
+      width: 56,
+      height: 56,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      flexShrink: 0,
+      backgroundColor: theme.colorSurface,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+    },
+    previewThumbImg: { width: 36, height: 36, borderRadius: 8, overflow: 'hidden' },
+    previewThumbLetter: { color: theme.colorAccent, fontSize: 20, fontWeight: '700' },
+    // Web .preview-thumb__connector: 24×2 border-colored line between thumbs.
+    previewThumbConnector: { width: 24, height: 2, backgroundColor: theme.colorBorder, flexShrink: 0 },
+    // Web .preview-title: 17px / 600 / -0.015em / lh 1.3.
+    previewTitle: {
+      color: theme.colorText,
+      fontSize: 17,
+      fontWeight: '600',
+      letterSpacing: -0.26,
+      lineHeight: 22,
+      textAlign: 'center',
+      marginBottom: 6,
+    },
+    // Web .preview-subtitle: 13.5px / 1.5 muted, max-width 300, mb 16.
+    previewSubtitle: {
+      color: theme.colorTextMuted,
+      fontSize: 13.5,
+      lineHeight: 20.3,
+      textAlign: 'center',
+      maxWidth: 300,
+      marginBottom: 16,
+    },
+    // Web .preview-ops: column, gap 6, left-aligned, mb 8.
+    previewOps: { gap: 6, alignSelf: 'stretch', marginBottom: 8 },
+    // Web .preview-op: 10px 12px padding, radius radiusMd, colorBg bg + border.
+    previewOp: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: theme.radiusMd,
+      backgroundColor: theme.colorBg,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+    },
+    previewOpSummary: { color: theme.colorText, fontSize: 13, lineHeight: 19.5 },
+    // Web .risk-flag: margin-top 8, padding 8px 10px, radius radiusSm,
+    // 12px / 1.5, 1px border — info/warning/danger variants.
+    riskFlag: {
+      marginTop: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: theme.radiusSm,
+      borderWidth: 1,
+    },
+    riskInfo: {
+      color: theme.colorTextMuted,
+      backgroundColor: theme.colorSurfaceHover,
+      borderColor: theme.colorBorder,
+    },
+    riskWarning: {
+      color: '#B8860B',
+      backgroundColor: 'rgba(184, 134, 11, 0.1)',
+      borderColor: 'rgba(184, 134, 11, 0.3)',
+    },
+    riskDanger: {
+      color: theme.colorDanger,
+      backgroundColor: 'rgba(240, 153, 123, 0.12)',
+      borderColor: 'rgba(240, 153, 123, 0.35)',
+    },
+    riskFlagText: { fontSize: 12, lineHeight: 18 },
+    // Web .preview-meta: row space-between, mono 11.5px muted, padding
+    // 8px 2px 0, top hairline border, margin-top 8, gap 8.
+    previewMeta: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 2,
+      paddingTop: 8,
+      marginTop: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colorBorder,
+      alignSelf: 'stretch',
+    },
+    previewMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    previewMetaText: {
+      color: theme.colorTextMuted,
+      fontSize: 11.5,
+      fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
+    },
+    previewFee: { color: theme.colorText, fontWeight: '500' },
+    // Web .preview-actions: row, gap 8, margin-top 16 — Cancel + Sign/Approve
+    // both flex:1.
+    previewActions: { flexDirection: 'row', gap: 8, marginTop: 16, alignSelf: 'stretch' },
+    previewBtnCancel: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: theme.radiusSm,
+      borderWidth: 1,
+      borderColor: theme.colorBorder,
+      alignItems: 'center',
+    },
+    previewBtnCancelPressed: { backgroundColor: theme.colorSurfaceHover, transform: [{ scale: 0.97 }] },
+    previewBtnCancelText: { color: theme.colorText, fontSize: 14, fontWeight: '600' },
+    previewBtnApprove: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: theme.radiusSm,
+      backgroundColor: theme.colorAccent,
+      alignItems: 'center',
+    },
+    previewBtnApprovePressed: { opacity: 0.9, transform: [{ scale: 0.97 }] },
+    previewBtnApproveText: { color: theme.colorAccentText, fontSize: 14, fontWeight: '600' },
 
     // ---- Error / network-mismatch states (web .error-state) ----------------
     // Web: flex column, center, gap 10, padding 28px 20px; svg 28×28 danger;

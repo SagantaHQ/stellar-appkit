@@ -52,3 +52,9 @@ export {
 } from './deep-links.js';
 
 export { isReactNativeRuntime } from './platform.js';
+
+export {
+  detectDeviceLocale,
+  applyDeviceLocale,
+  normalizeToDeviceLocale,
+} from './locale.js';

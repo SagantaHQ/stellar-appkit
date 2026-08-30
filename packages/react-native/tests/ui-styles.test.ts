@@ -26,6 +26,10 @@ mock.module('react-native', () => ({
   // later imports, so every react-native mock in this package provides
   // the union of what any module under test needs.
   Vibration: { vibrate: () => {} },
+  NativeModules: {
+    SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
+    I18nManager: { localeIdentifier: 'zh_CN' },
+  },
   StyleSheet: {
     create: (sheets: Record<string, unknown>) => sheets,
     hairlineWidth: 0.5,
@@ -148,7 +152,6 @@ describe('modal split structure — shared styles keep serving every view', () =
       'primaryButton',
       'secondaryButton',
       'dangerButton',
-      'accountCard',
       'errorState',
       'btn',
       'header',
@@ -158,6 +161,77 @@ describe('modal split structure — shared styles keep serving every view', () =
     ]) {
       expect(s[key as keyof typeof s]).toBeDefined();
     }
+  });
+
+  test('connected view carries the full web renderConnected style set', () => {
+    const s = buildStyles(minimalDark);
+    // Web .account-header/.network-pill/.balance-section/.tx-history ports.
+    for (const key of [
+      'accountHeader',
+      'accountAvatar',
+      'accountAddress',
+      'networkPill',
+      'networkDot',
+      'overflowMenu',
+      'overflowItem',
+      'pendingBanner',
+      'balanceSection',
+      'balanceLabel',
+      'balanceValue',
+      'balanceUnit',
+      'balanceSkeleton',
+      'friendbotButton',
+      'fundsBanner',
+      'txHistory',
+      'txHeader',
+      'txRow',
+      'txIcon',
+      'txAmount',
+      'txEmpty',
+    ]) {
+      expect(s[key as keyof typeof s]).toBeDefined();
+    }
+    // Web metrics: 42×42 avatar, 32/700 mono balance, 999-radius pill.
+    expect(s.accountAvatar.width).toBe(42);
+    expect(s.accountAvatar.height).toBe(42);
+    expect(s.balanceValue.fontSize).toBe(32);
+    expect(s.balanceValue.fontWeight).toBe('700');
+    expect(s.networkPill.borderRadius).toBe(999);
+  });
+
+  test('transaction preview carries the web renderTransactionPreview style set', () => {
+    const s = buildStyles(minimalDark);
+    // Web .preview-thumbs/.preview-op/.risk-flag/.preview-actions ports.
+    for (const key of [
+      'preview',
+      'previewThumbs',
+      'previewThumb',
+      'previewThumbConnector',
+      'previewTitle',
+      'previewSubtitle',
+      'previewOps',
+      'previewOp',
+      'previewOpSummary',
+      'riskFlag',
+      'riskInfo',
+      'riskWarning',
+      'riskDanger',
+      'previewMeta',
+      'previewFee',
+      'previewActions',
+      'previewBtnCancel',
+      'previewBtnApprove',
+    ]) {
+      expect(s[key as keyof typeof s]).toBeDefined();
+    }
+    // Web metrics: 56×56 thumbs radius 14, 24×2 connector, 17/600 title.
+    expect(s.previewThumb.width).toBe(56);
+    expect(s.previewThumb.height).toBe(56);
+    expect(s.previewThumb.borderRadius).toBe(14);
+    expect(s.previewThumbConnector.width).toBe(24);
+    expect(s.previewThumbConnector.height).toBe(2);
+    expect(s.previewTitle.fontSize).toBe(17);
+    expect(s.previewTitle.fontWeight).toBe('600');
   });
 
   test('every style set follows its theme', () => {

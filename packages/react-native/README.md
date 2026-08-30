@@ -100,6 +100,53 @@ Optional header branding (web `title` / `logo-src` attributes):
 <AppKitModal client={appkit} open={open} onClose={close} title="My Wallet" logo={require('./logo.png')} />
 ```
 
+### Transaction preview (web 1:1)
+
+The modal installs itself as the client's `onPreviewTransaction` handler —
+exactly like the web modal — so every `signTransaction()` / `signMessage()` /
+`signIn()` first shows the decoded preview **before the wallet ever sees the
+request**: app + wallet thumbnails, "Sign message" vs "Review transaction"
+copy, one card per operation with risk flags, the mono source-account + fee
+meta row, and Cancel / Sign / Approve actions.
+
+- **Sign** → the signing view ("Continue in {wallet}") while the wallet prompts.
+- **Cancel** → back to the account view; the sign promise rejects with the
+  standard user-rejected error (the modal doesn't route it to the error view).
+- **Try again** (after a wallet rejection) → re-shows the approved preview.
+
+To bring your own preview UI, set `client.onPreviewTransaction` yourself — the
+modal detects an existing handler at mount, warns, and leaves it in place.
+Apps that want a specific call to skip the preview can pass
+`{ skipPreview: true }` to the sign call.
+
+### Connected account view (web 1:1)
+
+The connected view is the full web account panel: deterministic avatar +
+tap-to-copy address, network pill (amber testnet / green public), explorer
+link, overflow menu (Switch Wallet / Disconnect), pending-signature banner,
+XLM balance with skeleton state and a silent 10s poll, "Get Testnet funds"
+(friendbot, TESTNET only) with the 3s funding banner, and the Recent
+Activity list with per-tx explorer links. Balance + history are fetched with
+plain `fetch` against Horizon REST (no stellar-sdk in the bundle), same
+endpoints and degradation rules as the web modal.
+
+### i18n — all 25 locales
+
+Every string in the modal resolves through the core i18n module and the sheet
+re-renders on `setLocale()`. To follow the device language at app start:
+
+```ts
+import { applyDeviceLocale, detectDeviceLocale } from '@saganta/stellar-appkit-react-native';
+
+// Reads NativeModules (no extra dependency), maps e.g. "fr_FR" → 'fr',
+// "zh_CN" → 'zh-CN'; unsupported languages leave the locale untouched.
+await applyDeviceLocale();
+```
+
+`detectDeviceLocale()` returns the mapped `LocaleCode | null` without
+switching; `normalizeToDeviceLocale(raw)` is the pure mapping if you roll
+your own detection.
+
 ### SIWS — Sign-In With Stellar
 
 Set `siws` on the client config and the modal handles the whole
