@@ -60,6 +60,16 @@
  *   manual pairing fields.
  * - **True wallet names** — connecting/signing/SIWS views carry the
  *   wallet's own name and icon, never a generic "WalletConnect" label.
+ * - **Auto-close on success** — when the operation the app requested
+ *   completes successfully (a connect settles — including the return from
+ *   the wallet app's approval screen — or the sign queue drains cleanly),
+ *   the sheet dismisses itself after a short confirmation flash. The
+ *   mobile deep-link pattern: the user just confirmed in the wallet, the
+ *   round trip is done. The web modal instead stays open on the account
+ *   view; RN deviates on purpose (documented in ARCHITECTURE.md). Success
+ *   is the ONLY trigger — never fires on errors/rejections (web parity:
+ *   the user reads the result and acts on it); opt out with
+ *   `autoCloseOnComplete={false}`. See ui/auto-close.ts.
  *
  * Presentation: @gorhom/bottom-sheet with a backdrop + swipe-to-dismiss
  * (default), or the inline panel. Icons render through `<WalletIcon>` —
@@ -90,6 +100,7 @@ import { buildStyles } from './styles.js';
 import { explorerUrl, fundViaFriendbot, useAccountData, type TxHistoryItem } from './accountData.js';
 import type { ThemedBrowserSession } from '../browser/inapp-browser.js';
 import { VIEW_TITLES, resolveViewOnOpen, type WalletBranding, type WalletRow, type ViewId } from './types.js';
+import { AUTO_CLOSE_DELAY_MS, shouldAutoClose } from './auto-close.js';
 import { defaultTheme, type ConnectThemeRN } from './theme.js';
 import { HeaderView } from './views/HeaderView.js';
 import { WalletListView } from './views/WalletListView.js';
@@ -134,6 +145,18 @@ export interface AppKitModalProps {
    * passkey-needing web wallets must use this surface instead of a WebView.
    */
   browser?: ThemedBrowserSession;
+  /**
+   * Bottom-sheet mode only (default true): when an operation the app
+   * requested completes SUCCESSFULLY — a connect settles (deep-link
+   * handoff included, SIWS run to its end) or the sign queue drains
+   * cleanly — the sheet closes itself after a short confirmation flash
+   * instead of parking on the account view until the user dismisses it.
+   * Success is the only trigger: failures and rejections never auto-close
+   * (web parity: the user reads the result and acts on it), inline panels
+   * are exempt (no sheet to close), and reopening the modal for account
+   * management never self-closes. See ui/auto-close.ts.
+   */
+  autoCloseOnComplete?: boolean;
 }
 
 export function AppKitModal({
@@ -145,6 +168,7 @@ export function AppKitModal({
   title,
   logo,
   browser,
+  autoCloseOnComplete = true,
 }: AppKitModalProps) {
   const state = useAppKit(client);
   const reducedMotion = useReducedMotion();
@@ -190,6 +214,15 @@ export function AppKitModal({
   const pairedMobileWalletId = useRef<string | null>(null);
   /** Set when neither the wallet's scheme nor universal link could open. */
   const [openFailed, setOpenFailed] = useState(false);
+  /**
+   * A modal-driven operation completed successfully (connect settled /
+   * sign queue drained clean) — the armed half of the auto-close behavior
+   * (ui/auto-close.ts). State, not a ref: a completion can land while the
+   * view is already 'account' (the statusChange handler set it first, so
+   * finishConnect's setView is a React bailout), and the auto-close effect
+   * below must re-evaluate for the flag alone.
+   */
+  const [completionArmed, setCompletionArmed] = useState(false);
   /** Re-runs the last connect (web retry-connecting re-selects the same wallet). */
   const lastConnectAction = useRef<(() => Promise<void>) | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -277,6 +310,7 @@ export function AppKitModal({
     if (!pending) return;
     setPendingPreview(null);
     previewJustRejected.current = true;
+    setCompletionArmed(false); // declined — the user stays in the driver's seat
     pending.resolve(false);
     setView(client.session ? 'account' : 'list');
   }, [client]);
@@ -444,9 +478,68 @@ export function AppKitModal({
       }
     } else if (viewRef.current === 'signing' && !connectingErrorRef.current) {
       // Queue drained with no error — back to the account (web parity).
+      // The requested sign also SUCCEEDED → arm the auto-close
+      // (ui/auto-close.ts).
+      setCompletionArmed(true);
       setView(client.session ? 'account' : 'list');
     }
   }, [state.pendingSignCount, client.session, view]);
+
+  // --- auto-close on successful operation completion (ui/auto-close.ts) ---
+  // Mobile deep-link UX: when the operation the app requested completes
+  // SUCCESSFULLY (a connect settles — including the return from the wallet
+  // app's approval screen — or the sign queue drains cleanly), the sheet
+  // closes itself after a short confirmation flash. Failures, rejections
+  // and every view the user must act on never auto-close; the web modal's
+  // stay-on-account behavior is an explicit `autoCloseOnComplete={false}`
+  // away.
+
+  // Armed resets on every sheet open/close transition: a modal reopened
+  // for account management must never self-close off a stale completion,
+  // and a sheet the app force-closed mid-flow leaves nothing armed behind.
+  // Deliberately NOT hooked into the open-transition effect above — that
+  // one also re-runs on `client.session` changes mid-flow, which would
+  // disarm the flag right after the connect completion set it.
+  const prevSheetOpenRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = prevSheetOpenRef.current;
+    prevSheetOpenRef.current = effectiveOpen;
+    if (wasOpen !== effectiveOpen) setCompletionArmed(false);
+  }, [effectiveOpen]);
+
+  // The timer runs only while every shouldAutoClose() condition holds; any
+  // dep change (a SIWS phase or a new sign request moving the view off
+  // 'account', an error, the sheet closing, a disarm) runs the cleanup below
+  // and cancels it. The armed flag itself survives those cancellations, so
+  // a completion interrupted by SIWS phases still auto-closes once the
+  // whole connect+sign-in flow settles on the account view.
+  useEffect(() => {
+    if (
+      !shouldAutoClose({
+        enabled: autoCloseOnComplete,
+        mode,
+        armed: completionArmed,
+        view,
+        hasSession: state.session !== null,
+        sheetOpen: effectiveOpen,
+      })
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      // Animate the sheet down through its own onClose → handleClose → the
+      // app's onClose — the same path a swipe-dismiss takes, so the parent
+      // lands in exactly the state it expects. Whatever the app shows
+      // behind the sheet becomes visible again. (If the app is still
+      // backgrounded — the user hasn't left the wallet app yet — the
+      // dismissal runs as soon as JS can; either way, when they switch
+      // back, the sheet is gone and the app UI is what's waiting.
+      // Foregrounding the app itself is focus-return.ts's job.)
+      setCompletionArmed(false);
+      sheetRef.current?.close();
+    }, AUTO_CLOSE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [autoCloseOnComplete, mode, effectiveOpen, view, state.session, completionArmed]);
 
   // --- deep-link handoff -------------------------------------------------------
   /**
@@ -479,6 +572,10 @@ export function AppKitModal({
 
   /** Web selectWallet() tail: connected view + SIWS trigger when configured. */
   const finishConnect = useCallback(async () => {
+    // The connect the modal drove SUCCEEDED → arm the auto-close
+    // (ui/auto-close.ts). SIWS phases pause the timer; when configured, the
+    // close lands only after the whole connect+sign-in flow finishes.
+    setCompletionArmed(true);
     setView('account');
     if (client.siwsConfig) void siws.start();
   }, [client, siws]);
@@ -567,6 +664,7 @@ export function AppKitModal({
       // Abort is best-effort — the UI reset below is the real contract.
     }
     connectJustCancelled.current = true;
+    setCompletionArmed(false); // the user took the back arrow — they keep control
     setConnectingWallet(null);
     setWcUri(null);
     setConnectingError(null);
@@ -607,6 +705,7 @@ export function AppKitModal({
   }, [wcUri]);
 
   const disconnect = useCallback(async () => {
+    setCompletionArmed(false); // user-initiated — no auto-close afterwards
     await client.disconnect();
     pairedMobileWalletId.current = null;
     setFundsRequested(false);
@@ -638,6 +737,7 @@ export function AppKitModal({
   /** Address tap → one-tap clipboard copy (share-sheet fallback) + check feedback. */
   const copyAddress = useCallback(
     async (address: string) => {
+      setCompletionArmed(false); // the user is working the panel — don't close under them
       setCopiedAddress(true);
       setTimeout(() => setCopiedAddress(false), 1500);
       await copyText(address);
@@ -649,6 +749,7 @@ export function AppKitModal({
   const getTestnetFunds = useCallback(async () => {
     const address = client.session?.address;
     if (!address) return;
+    setCompletionArmed(false); // the user is working the panel (the banner lives here)
     setFundsRequested(true);
     await fundViaFriendbot(address);
     // friendbot typically credits within a few seconds — refresh at 2s and
@@ -660,12 +761,14 @@ export function AppKitModal({
 
   /** Overflow → Switch Wallet: back to the picker (web data-action). */
   const switchWallet = useCallback(() => {
+    setCompletionArmed(false); // user navigation — they keep the sheet
     setView('list');
   }, []);
 
   /** Tx row / explorer link — opens the external explorer (themed tab when available). */
   const openExplorer = useCallback(
     (path: string) => {
+      setCompletionArmed(false); // the user is working the panel
       const network = client.session?.network ?? 'TESTNET';
       openHttpUrl(explorerUrl(path, network));
     },
@@ -696,6 +799,9 @@ export function AppKitModal({
       }
       connectJustCancelled.current = true;
     }
+    // A user-initiated dismissal cancels any pending auto-close; the
+    // sheet-transition reset above is the backstop for programmatic closes.
+    setCompletionArmed(false);
     // Web close(): a preview still awaiting the decision resolves as
     // rejected, so the sign queue never hangs on a settled promise. The
     // follow-up "user rejected" error is suppressed via the same ref a
@@ -844,6 +950,7 @@ export function AppKitModal({
           onRetry={() => {
             // Web retry-signing: re-show the approved preview so the user
             // can approve again; without one, fall back to the account view.
+            setCompletionArmed(false); // the user is working the error — no auto-close
             setConnectingError(null);
             const last = lastApprovedPreview.current;
             if (last) {
@@ -854,6 +961,8 @@ export function AppKitModal({
             }
           }}
           onCancel={() => {
+            setCompletionArmed(false); // ditto — landing on 'account' after a
+            // failed sign must not kick the user off the sheet
             setConnectingError(null);
             setView(client.session ? 'account' : 'list');
           }}
@@ -872,6 +981,7 @@ export function AppKitModal({
           error={siws.state.error}
           walletConnected={state.session !== null}
           onCancel={() => {
+            setCompletionArmed(false); // explicit SIWS cancel — user keeps the sheet
             siws.cancel();
             setView('list');
           }}

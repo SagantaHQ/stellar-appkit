@@ -108,6 +108,45 @@ Optional header branding (web `title` / `logo-src` attributes):
 <AppKitModal client={appkit} open={open} onClose={close} title="My Wallet" logo={require('./logo.png')} />
 ```
 
+### Auto-close on success
+
+Bottom-sheet mode **closes itself when — and only when — the operation your
+app requested completes successfully**. The user approves in the wallet app
+(HOT Wallet, Freighter, …), returns to your app, gets a short "connected"
+flash on the account view (~0.9s), and the sheet slides away — no extra
+dismissal tap:
+
+- **Connect** settles (including the deep-link return, and the SIWS
+  sign-in run to its end when `siwsConfig` is set) → sheet closes.
+- **Signing** completes (the sign queue drains cleanly) → sheet closes.
+- **Never on failure** — rejected connects/signs, expired requests and
+  network mismatches keep web parity: the user reads the error variant and
+  picks Cancel / Try again. Success is the ONLY trigger.
+- **Never while the user is driving** — switching wallets, the back arrow,
+  declining a preview, cancelling SIWS, or even tapping into the account
+  panel (copy address, Get Testnet funds, explorer links) all cancel the
+  auto-close: taking control means keeping control.
+- **Reopening never self-closes** — the completion flag resets on every
+  sheet open/close, so a modal reopened later for account management stays
+  put.
+
+The sheet closing is the whole mechanism: whatever your app shows behind it
+becomes visible again. Getting the *app itself* foregrounded when the user
+is still sitting in the wallet app is a separate, cooperating feature — see
+[Returning focus to your app after the operation](#returning-focus-to-your-app-after-the-operation).
+
+Want the web modal's behavior instead (stay open on the account view)?
+Opt out per instance:
+
+```tsx
+<AppKitModal client={appkit} open={open} onClose={close} autoCloseOnComplete={false} />
+```
+
+Inline panels are exempt automatically (there's no sheet to close). If the
+app is still backgrounded when the operation settles, the dismissal runs
+the moment the sheet can — either way, when the user switches back, the
+sheet is gone and your app's UI is what's waiting.
+
 ### Transaction preview (web 1:1)
 
 The modal installs itself as the client's `onPreviewTransaction` handler —
