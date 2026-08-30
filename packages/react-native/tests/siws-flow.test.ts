@@ -8,50 +8,17 @@
  * comes from the workspace's @saganta/stellar-appkit.
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { installReactNativeMock, resetRnState } from './helpers/rn-mock.js';
 
-// Must stay surface-compatible with ui-styles.test.ts's mock — bun runs all
-// test files in one process and the last mock.module() wins for later
-// imports, so every react-native mock in this package provides the union.
-mock.module('react-native', () => ({
-  Vibration: { vibrate: () => {} },
-  Linking: {
-    openURL: async () => undefined,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  AppState: {
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  NativeModules: {
-    SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
-    I18nManager: { localeIdentifier: 'zh_CN' },
-  },
-  StyleSheet: {
-    create: (sheets: Record<string, unknown>) => sheets,
-    hairlineWidth: 0.5,
-  },
-  Platform: {
-    OS: 'ios',
-    select: (opts: Record<string, unknown>) => opts.ios ?? opts.default ?? opts.android,
-  },
-  Animated: {
-    Value: class {},
-    loop: () => ({ start: () => {}, stop: () => {} }),
-    timing: () => ({}),
-    parallel: () => ({ start: () => {}, stop: () => {} }),
-    sequence: () => ({}),
-  },
-  AccessibilityInfo: {
-    isReduceMotionEnabled: async () => false,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  Easing: {
-    linear: (x: number) => x,
-    inOut: (x: number) => x,
-    quad: (x: number) => x,
-    bezier: () => (x: number) => x,
-  },
-}));
+// Shared mock registry (tests/helpers/rn-mock.ts) — one stable object for
+// every test file, so cross-file mock.module ordering can't swap the
+// react-native surface out from under a first-evaluating module.
+installReactNativeMock();
+
+// iOS defaults (this suite's platform); resetRnState also clears whatever
+// an earlier test file left in the shared registry.
+beforeEach(() => resetRnState());
 
 const { extractSiwsErrorMessage, siwsSessionIsValid } = await import('../src/ui/useSiws.js');
 

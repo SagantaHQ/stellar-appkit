@@ -75,6 +75,11 @@ const ko: LocaleMessages = {
     "disconnect": "연결 해제",
     "connect_wallet": "지갑 연결"
   },
+  "browser": {
+    "reload": "새로 고침",
+    "open_in_browser": "브라우저에서 열기",
+    "copy_link": "링크 복사"
+  },
   "wallet": {
     "fallback_name": "지갑",
     "fallback_your_wallet": "내 지갑"

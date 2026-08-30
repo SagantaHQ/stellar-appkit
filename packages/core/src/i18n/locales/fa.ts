@@ -75,6 +75,11 @@ const fa: LocaleMessages = {
     "disconnect": "قطع اتصال",
     "connect_wallet": "اتصال کیف پول"
   },
+  "browser": {
+    "reload": "بارگذاری مجدد",
+    "open_in_browser": "باز کردن در مرورگر",
+    "copy_link": "کپی لینک"
+  },
   "wallet": {
     "fallback_name": "کیف پول",
     "fallback_your_wallet": "کیف پول شما"

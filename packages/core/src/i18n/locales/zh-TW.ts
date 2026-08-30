@@ -75,6 +75,11 @@ const zh_TW: LocaleMessages = {
     "disconnect": "斷開連接",
     "connect_wallet": "連接錢包"
   },
+  "browser": {
+    "reload": "重新整理",
+    "open_in_browser": "在瀏覽器中開啟",
+    "copy_link": "複製連結"
+  },
   "wallet": {
     "fallback_name": "錢包",
     "fallback_your_wallet": "您的錢包"

@@ -75,6 +75,11 @@ const ar: LocaleMessages = {
     "disconnect": "قطع الاتصال",
     "connect_wallet": "توصيل المحفظة"
   },
+  "browser": {
+    "reload": "تحديث",
+    "open_in_browser": "فتح في المتصفح",
+    "copy_link": "نسخ الرابط"
+  },
   "wallet": {
     "fallback_name": "المحفظة",
     "fallback_your_wallet": "محفظتك"

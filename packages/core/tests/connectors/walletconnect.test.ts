@@ -1,5 +1,6 @@
 import { test, expect, describe, mock, beforeEach } from 'bun:test';
 import { createWalletConnectConnector } from '../../src/connectors/walletconnect.js';
+import { StellarAppKit } from '../../src/client.js';
 
 /**
  * Regression tests for the WalletConnect session-proposal / request flow.
@@ -57,21 +58,49 @@ let requestResponses: Record<string, unknown> = {};
 /** When set, every wc.request() rejects with this error. */
 let requestError: Error | null = null;
 
+// --- relayer mock (refreshTransport tests) ---------------------------------
+
+/** When set, the fake approval() promise blocks on this — in-flight connect tests release it. */
+let approvalBlocker: Promise<void> | null = null;
+/** When set, relayer.restartTransport() rejects with this error. */
+let restartError: Error | null = null;
+/** When false, the fake relayer hides restartTransport() (fallback-path tests). */
+let relayerHasRestart = true;
+let restartCount = 0;
+let transportDisconnectCount = 0;
+let transportOpenCount = 0;
+
+const fakeRelayer = {
+  restartTransport: async () => {
+    restartCount++;
+    if (restartError) throw restartError;
+  },
+  transportDisconnect: async () => {
+    transportDisconnectCount++;
+  },
+  transportOpen: async () => {
+    transportOpenCount++;
+  },
+};
+
 const fakeClient = {
   connect: async (opts: WCConnectCall) => {
     connectCalls.push(opts);
     return {
       uri: 'wc:9c4b0d13a1f97a15a7c43f6d1b0e2f8c7d5a4b3e2f1d0c9b8a7f6e5d4c3b2a1@2?relay=%7B%22protocol%22%3A%22irn%22%7D',
-      approval: async () => ({
-        topic: 'test-topic',
-        namespaces: {
-          stellar: {
-            accounts: sessionAccounts,
-            methods: sessionMethods,
+      approval: async () => {
+        if (approvalBlocker) await approvalBlocker;
+        return {
+          topic: 'test-topic',
+          namespaces: {
+            stellar: {
+              accounts: sessionAccounts,
+              methods: sessionMethods,
+            },
           },
-        },
-        peer: { metadata: { name: 'Freighter', url: 'https://freighter.app', icons: [] } },
-      }),
+          peer: { metadata: { name: 'Freighter', url: 'https://freighter.app', icons: [] } },
+        };
+      },
     };
   },
   request: async (opts: WCRequestCall) => {
@@ -86,6 +115,15 @@ const fakeClient = {
     get: () => undefined,
     keys: () => [] as string[],
     delete: async () => {},
+  },
+  // The relayer surface refreshTransport() drives — exposed under
+  // core.relayer exactly like the real SignClient.
+  get core() {
+    return {
+      relayer: relayerHasRestart
+        ? fakeRelayer
+        : { transportDisconnect: fakeRelayer.transportDisconnect, transportOpen: fakeRelayer.transportOpen },
+    };
   },
 };
 
@@ -116,6 +154,12 @@ beforeEach(() => {
   initCount = 0;
   initError = null;
   initBlocker = null;
+  approvalBlocker = null;
+  restartError = null;
+  relayerHasRestart = true;
+  restartCount = 0;
+  transportDisconnectCount = 0;
+  transportOpenCount = 0;
 });
 
 describe('createWalletConnectConnector — session proposal', () => {
@@ -304,5 +348,303 @@ describe('createWalletConnectConnector — warmUp() (cold-start off the tap)', (
 
     expect(initCount).toBe(1);
     expect(connectCalls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// refreshTransport() — the React Native zombie-socket fix
+//
+// On RN the app is backgrounded the instant a wallet deep link fires; the OS
+// kills the relay WebSocket and the WC SDK's own recovery paths never fire
+// (Node-only ping watchdog, browser-only online listeners). The wallet
+// approves, `session_settled` queues on the relay, approval() hangs forever,
+// and the modal stays on "Continue in {wallet}" — the user-reported HOT
+// Wallet stuck-loading bug. refreshTransport() is what the RN modal calls on
+// every AppState 'active': a forced relay restart + resubscribe, which makes
+// the relay re-deliver the queued message and settles the connect.
+// ---------------------------------------------------------------------------
+
+describe('createWalletConnectConnector — refreshTransport() (RN zombie-socket fix)', () => {
+  test('THE HOT WALLET REGRESSION: restarts the relay while a pairing approval wait is in flight', async () => {
+    // Block the wallet approval — the app is "in the wallet" backgrounded.
+    let unblock!: () => void;
+    approvalBlocker = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    const pending = connector.connect();
+
+    // Let the proposal + deep link handoff complete (microtasks + a poll tick).
+    await new Promise((resolve) => setTimeout(resolve, 260));
+
+    // Foreground transition: refreshTransport() must fire while the
+    // approval wait is live — connectInFlight is the gate.
+    connector.refreshTransport!();
+    expect(restartCount).toBe(1);
+    expect(transportDisconnectCount).toBe(0); // restartTransport path, not the fallback
+
+    unblock();
+    const account = await pending;
+    expect(account.address).toBe(ADDRESS);
+  });
+
+  test('restarts the relay when a session is settled (sign-request zombie)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    connector.refreshTransport!();
+    expect(restartCount).toBe(1);
+  });
+
+  test('no-ops on a cold connector (never initializes the SignClient)', () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    // Must not throw and must not pay an init just to "refresh".
+    connector.refreshTransport!();
+    expect(initCount).toBe(0);
+    expect(restartCount).toBe(0);
+  });
+
+  test('no-ops after warmUp() with nothing in flight — an idle app does not churn its socket', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.warmUp!();
+
+    connector.refreshTransport!();
+    expect(restartCount).toBe(0);
+  });
+
+  test('no-ops again after disconnect() tears the client down', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    await connector.disconnect();
+
+    connector.refreshTransport!();
+    expect(restartCount).toBe(0);
+  });
+
+  test('falls back to transportDisconnect() + transportOpen() when the SDK has no restartTransport()', async () => {
+    relayerHasRestart = false;
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    connector.refreshTransport!();
+    // Sequenced fallback — both hops, no restartTransport call counted.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(transportDisconnectCount).toBe(1);
+    expect(transportOpenCount).toBe(1);
+  });
+
+  test('never throws when the relayer restart rejects (offline foreground)', async () => {
+    restartError = new Error('No internet connection detected');
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    expect(() => connector.refreshTransport!()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  test('repeated foreground transitions restart repeatedly (idempotent, never crashes)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    connector.refreshTransport!();
+    connector.refreshTransport!();
+    connector.refreshTransport!();
+    expect(restartCount).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session persistence — cold-start rehydration (getAddress() reads back
+// what connect() wrote to WC_STORAGE_KEY)
+//
+// Without this, a persisted WalletConnect session was silently dropped on
+// every app restart: StellarAppKit.restore() validates sessions through
+// connector.getAddress(), which threw while the connector was cold — so
+// users re-paired their HOT Wallet / Freighter on every cold start even
+// though connect() had dutifully persisted the session topic.
+// ---------------------------------------------------------------------------
+
+/** In-memory ConnectStorage for the restore round-trip tests. */
+function makeStorage(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+  const removed: string[] = [];
+  return {
+    storage: {
+      getItem: async (key: string) => store.get(key) ?? null,
+      setItem: async (key: string, value: string) => void store.set(key, value),
+      removeItem: async (key: string) => {
+        store.delete(key);
+        removed.push(key);
+      },
+    },
+    removed,
+  };
+}
+
+function persistedRecord(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    topic: 'test-topic',
+    address: ADDRESS,
+    peerMetadata: { name: 'HOT Wallet', url: 'https://hot-labs.org', icon: null },
+    ...overrides,
+  });
+}
+
+describe('createWalletConnectConnector — session restore (cold-start rehydration)', () => {
+
+  test('getAddress() rehydrates a persisted session through the SDK session store', async () => {
+    const { storage } = makeStorage({ 'saganta-appkit:walletconnect-session': persistedRecord() });
+    // The SDK still knows the session (persisted in its own store).
+    const storedSessions: Record<string, unknown> = {
+      'test-topic': {
+        topic: 'test-topic',
+        namespaces: {
+          stellar: {
+            accounts: [`stellar:testnet:${ADDRESS}`],
+            methods: ['stellar_signXDR', 'stellar_signMessage'],
+          },
+        },
+        peer: { metadata: { name: 'HOT Wallet', url: 'https://hot-labs.org', icons: [] } },
+      },
+    };
+    (fakeClient.session as { get: (t: string) => unknown }).get = (t: string) => storedSessions[t];
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+
+    // Cold connector — must rehydrate instead of throwing.
+    const { address } = await connector.getAddress();
+    expect(address).toBe(ADDRESS);
+
+    // The connector is fully re-armed: network fallback, peer branding,
+    // approved methods (signMessage guarded below by an unapproved one).
+    const network = await connector.getNetwork();
+    expect(network.network).toBe('TESTNET');
+    expect(connector.getSessionPeer?.()).toEqual({
+      name: 'HOT Wallet',
+      url: 'https://hot-labs.org',
+      icon: null,
+    });
+    // stellar_signXDR was approved → signTransaction passes the guard.
+    requestResponses['stellar_signXDR'] = { signedXDR: 'AAAA-signed' };
+    const signed = await connector.signTransaction('AAAA-tx');
+    expect(signed.signedTxXdr).toBe('AAAA-signed');
+    // stellar_signAuthEntry was NOT approved → clean guard error, no request.
+    await expect(connector.signAuthEntry('AAAA-entry')).rejects.toThrow(/stellar_signAuthEntry/);
+    expect(requestCalls.filter((c) => c.request.method === 'stellar_signAuthEntry')).toHaveLength(0);
+
+    // A restored session re-arms the refreshTransport gate too — a
+    // foregrounding app must restart the relay for sign requests.
+    connector.refreshTransport!();
+    expect(restartCount).toBe(1);
+
+    (fakeClient.session as { get: (t: string) => unknown }).get = () => undefined;
+  });
+
+  test('a session the SDK no longer knows is dropped AND the persisted record cleared', async () => {
+    const { storage, removed } = makeStorage({ 'saganta-appkit:walletconnect-session': persistedRecord() });
+    // session.get returns undefined (wallet deleted / expired).
+    const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+
+    await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
+    expect(removed).toContain('saganta-appkit:walletconnect-session');
+  });
+
+  test('a corrupt persisted record is cleared and treated as no session', async () => {
+    const { storage, removed } = makeStorage({ 'saganta-appkit:walletconnect-session': '{not-json' });
+    const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+
+    await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
+    expect(removed).toContain('saganta-appkit:walletconnect-session');
+  });
+
+  test('no storage configured → getAddress() stays the plain cold error (no init paid)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
+    expect(initCount).toBe(0); // never initialized the SDK just to answer
+  });
+
+  test('a missing persisted record pays no SDK init either (fast cold path)', async () => {
+    const { storage } = makeStorage(); // empty
+    const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+
+    await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
+    expect(initCount).toBe(0);
+  });
+
+  test('connect() → cold restart round trip: the record connect() writes rehydrates a fresh connector', async () => {
+    const { storage } = makeStorage();
+    // First connector: connect() and persist the session.
+    const first = createWalletConnectConnector({ projectId: 'test-project', storage });
+    await first.connect();
+    const record = await storage.getItem('saganta-appkit:walletconnect-session');
+    expect(record).toBeTruthy();
+
+    // The SDK still holds the settled session (same relay client session
+    // store, as it would after an app restart with persisted SDK storage).
+    const settled: Record<string, unknown> = {
+      'test-topic': {
+        topic: 'test-topic',
+        namespaces: { stellar: { accounts: sessionAccounts, methods: sessionMethods } },
+        peer: { metadata: { name: 'Freighter', url: 'https://freighter.app', icons: [] } },
+      },
+    };
+    (fakeClient.session as { get: (t: string) => unknown }).get = (t: string) => settled[t];
+
+    // Second connector, sharing the storage: cold start, no connect() call.
+    const second = createWalletConnectConnector({ projectId: 'test-project', storage });
+    const { address } = await second.getAddress();
+    expect(address).toBe(ADDRESS);
+    expect(second.getSessionPeer?.()?.name).toBe('Freighter');
+
+    (fakeClient.session as { get: (t: string) => unknown }).get = () => undefined;
+  });
+});
+
+describe('StellarAppKit.restore() — WC sessions survive a cold restart end to end', () => {
+  test('a second client sharing the storage restores the WC session without reconnecting', async () => {
+    const { storage } = makeStorage();
+
+    // App run #1: connect, persisting BOTH the client-level session and the
+    // connector-level WC record.
+    const app1 = new StellarAppKit({
+      connectors: [createWalletConnectConnector({ projectId: 'test-project', storage })],
+      network: 'TESTNET',
+      storage,
+    });
+    const session = await app1.connect('walletconnect');
+    expect(session.address).toBe(ADDRESS);
+
+    // The relay's session store outlives the app process (the SDK persists
+    // it — localStorage on web, AsyncStorage on RN).
+    const settled: Record<string, unknown> = {
+      'test-topic': {
+        topic: 'test-topic',
+        namespaces: { stellar: { accounts: sessionAccounts, methods: sessionMethods } },
+        peer: { metadata: { name: 'HOT Wallet', url: 'https://app.hot-labs.org', icons: [] } },
+      },
+    };
+    (fakeClient.session as { get: (t: string) => unknown }).get = (t: string) => settled[t];
+
+    // App run #2: a brand-new client + connector sharing the storage.
+    const app2 = new StellarAppKit({
+      connectors: [createWalletConnectConnector({ projectId: 'test-project', storage })],
+      network: 'TESTNET',
+      storage,
+    });
+    const restored = await app2.restore();
+
+    // THE regression: the WC session is kept, not silently dropped — the
+    // user doesn't re-pair their HOT Wallet on every app restart.
+    expect(restored.map((s) => s.walletId)).toEqual(['walletconnect']);
+    expect(app2.session?.address).toBe(ADDRESS);
+    expect(app2.status).toBe('connected');
+    // Peer branding survived the restart (account view shows the wallet's
+    // own name, not the generic "WalletConnect"). The fake wallet settles
+    // with peer name "Freighter" — that's what connect() persisted.
+    expect(app2.activeConnector?.getSessionPeer?.()?.name).toBe('Freighter');
+
+    (fakeClient.session as { get: (t: string) => unknown }).get = () => undefined;
   });
 });

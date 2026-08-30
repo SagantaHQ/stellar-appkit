@@ -43,6 +43,13 @@ describe('i18n — default state', () => {
     expect(t('wallet_list.loading')).toBe('Loading wallets…');
   });
 
+  test('t() resolves the RN WebView browser-toolbar keys', () => {
+    // The Albedo/xBull screens' toolbar labels — used by WebViewToolbar.tsx.
+    expect(t('browser.reload')).toBe('Reload');
+    expect(t('browser.open_in_browser')).toBe('Open in browser');
+    expect(t('browser.copy_link')).toBe('Copy link');
+  });
+
   test('t() returns the key itself for unknown keys (fallback)', () => {
     expect(t('nonexistent.key')).toBe('nonexistent.key');
     expect(t('title.nonexistent')).toBe('title.nonexistent');
@@ -119,6 +126,17 @@ describe('i18n — setLocale + lazy loading', () => {
     expect(getLocale()).toBe('zh-CN');
     expect(t('title.connect_wallet')).toBe('连接钱包');
     expect(t('action.cancel')).toBe('取消');
+  });
+
+  test('the browser-toolbar keys translate too (zh-CN + de spot check)', async () => {
+    await setLocale('zh-CN');
+    expect(t('browser.reload')).toBe('刷新');
+    expect(t('browser.open_in_browser')).toBe('在浏览器中打开');
+    expect(t('browser.copy_link')).toBe('复制链接');
+    await setLocale('de');
+    expect(t('browser.reload')).toBe('Neu laden');
+    expect(t('browser.copy_link')).toBe('Link kopieren');
+    await setLocale('en');
   });
 
   test('setLocale("ja") switches to Japanese', async () => {

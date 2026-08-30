@@ -75,6 +75,11 @@ const cs: LocaleMessages = {
     "disconnect": "Odpojit",
     "connect_wallet": "Připojit peněženku"
   },
+  "browser": {
+    "reload": "Znovu načíst",
+    "open_in_browser": "Otevřít v prohlížeči",
+    "copy_link": "Kopírovat odkaz"
+  },
   "wallet": {
     "fallback_name": "Peněženka",
     "fallback_your_wallet": "vaší peněžence"

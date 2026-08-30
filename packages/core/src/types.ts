@@ -269,6 +269,29 @@ export interface WalletConnector {
   warmUp?(): Promise<void>;
 
   /**
+   * Optional: forces a relay transport restart — disconnect the socket,
+   * reconnect, and resubscribe every stored topic so the relay re-delivers
+   * any messages that queued while the connection was down.
+   *
+   * Only the WalletConnect connector implements this. WHY it exists: on
+   * React Native the app is backgrounded the moment a wallet deep link
+   * fires (connect pairing, sign request), and the OS kills or zombifies
+   * the relay WebSocket. The WC SDK's own recovery paths are browser/Node
+   * shaped — its ping watchdog only runs under Node (`process.versions.node`)
+   * and its disconnect listener depends on `navigator.onLine` events, neither
+   * of which exist on RN. When the wallet then approves, `session_settled`
+   * (or the sign response) sits queued on the relay and never arrives —
+   * `approval()` hangs forever and the modal stays on "Continue in wallet".
+   *
+   * The app (or the RN modal, which does this automatically) calls this on
+   * AppState 'active'; the restart + resubscribe re-delivers the queued
+   * message and the in-flight promise resolves. Implementations must be
+   * fire-and-forget safe: never throw, never initialize a cold client, and
+   * no-op when nothing relay-related is in flight.
+   */
+  refreshTransport?(): void;
+
+  /**
    * Optional: returns the connected wallet's own identity as reported by
    * relay-based connectors (WalletConnect) — the real wallet name and icon
    * ("Freighter", "LOBSTR", "HOT Wallet") rather than the connector's

@@ -13,6 +13,11 @@
  *     `window.open(...).postMessage(params, '*')` would have delivered.
  *  3. The user confirms in Albedo's own UI; the result arrives at our shim.
  *
+ * The screen carries a browser toolbar (WebViewToolbar): the current URL
+ * chip with tap-to-copy, Reload, and Open-in-browser — the browser
+ * affordances a bare WebView lacks. Reload restarts the handshake: the
+ * fresh page re-signals readiness and the intent params are re-delivered.
+ *
  * Security notes:
  * - The WebView is locked to `https://albedo.link/` (navigation guard).
  * - `origin` is sent with the intent so Albedo can display the requesting
@@ -21,10 +26,11 @@
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewNavigation, type WebViewMessageEvent } from 'react-native-webview';
 import type { AlbedoWebViewBridge } from '../connectors/albedo-webview.js';
 import { ALBEDO_FRONTEND_URL } from '../connectors/albedo-webview.js';
+import { WebViewToolbar } from '../browser/WebViewToolbar.js';
 
 /**
  * Creates the bridge object to pass to `createAlbedoWebViewConnector()` /
@@ -73,6 +79,7 @@ export interface AlbedoWebViewScreenProps {
 
 export function AlbedoWebViewScreen({ url, params, onResult, onFail, dark = true }: AlbedoWebViewScreenProps) {
   const [ready, setReady] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState(url);
   const sentRef = useRef(false);
   const webviewRef = useRef<React.ComponentRef<typeof WebView>>(null);
 
@@ -136,24 +143,38 @@ export function AlbedoWebViewScreen({ url, params, onResult, onFail, dark = true
     []
   );
 
+  // Navigation tracking feeds the toolbar's URL chip, and a fresh page load
+  // (reload button, internal redirect) restarts the handshake: readiness
+  // resets and the intent params are re-delivered when Albedo re-pings.
+  const handleNavigationState = useCallback((nav: { url: string; loading: boolean }) => {
+    setCurrentUrl(nav.url);
+    if (nav.loading) {
+      sentRef.current = false;
+      setReady(false);
+    }
+  }, []);
+
   return (
     <Modal visible animationType="slide" onRequestClose={() => onFail(new Error('Albedo confirmation was closed before completing.'))}>
       <View style={[styles.container, { backgroundColor: bg }]}>
-        <View style={styles.header}>
-          <Pressable onPress={() => onFail(new Error('Albedo confirmation was cancelled.'))} hitSlop={12}>
-            <Text style={{ color: fg, fontSize: 15, fontWeight: '600' }}>Cancel</Text>
-          </Pressable>
-        </View>
+        <WebViewToolbar
+          url={currentUrl}
+          dark={dark}
+          onCancel={() => onFail(new Error('Albedo confirmation was cancelled.'))}
+          onReload={() => webviewRef.current?.reload()}
+        />
         <WebView
           ref={webviewRef}
           source={{ uri: url }}
           injectedJavaScriptBeforeContentLoaded={openerShim}
           onMessage={handleMessage}
           onShouldStartLoadWithRequest={guardNavigation}
+          onNavigationStateChange={handleNavigationState}
           javaScriptEnabled
           domStorageEnabled
           setSupportMultipleWindows={false}
           allowsBackForwardNavigationGestures={false}
+          textInteractionEnabled
           renderLoading={() => (
             <View style={[styles.loader, { backgroundColor: bg }]}>
               <ActivityIndicator />
@@ -173,6 +194,5 @@ export function AlbedoWebViewScreen({ url, params, onResult, onFail, dark = true
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, paddingVertical: 12 },
   loader: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
 });

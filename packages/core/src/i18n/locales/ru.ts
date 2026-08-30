@@ -75,6 +75,11 @@ const ru: LocaleMessages = {
     "disconnect": "Отключить",
     "connect_wallet": "Подключить кошелёк"
   },
+  "browser": {
+    "reload": "Обновить",
+    "open_in_browser": "Открыть в браузере",
+    "copy_link": "Копировать ссылку"
+  },
   "wallet": {
     "fallback_name": "Кошелёк",
     "fallback_your_wallet": "вашем кошельке"

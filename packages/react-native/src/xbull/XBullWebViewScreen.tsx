@@ -26,12 +26,17 @@
  *  see the connector); the WebView never sees plaintext requests.
  * - One operation per screen instance — the connector closes the WebView
  *  after each request cycle, mirroring the web SDK's popup lifecycle.
+ *
+ * The screen carries a browser toolbar (WebViewToolbar): the current URL
+ * chip with tap-to-copy, Reload, and Open-in-browser — the browser
+ * affordances a bare WebView lacks.
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewNavigation, type WebViewMessageEvent } from 'react-native-webview';
 import type { XBullWebViewBridge, XBullWalletHandle, XBullWalletMessage } from '../connectors/xbull-webview.js';
+import { WebViewToolbar } from '../browser/WebViewToolbar.js';
 
 /**
  * Creates the bridge object to pass to `createXBullWebViewConnector()` /
@@ -89,6 +94,7 @@ export function XBullWebViewScreen({
 }: XBullWebViewScreenProps) {
   const webviewRef = useRef<React.ComponentRef<typeof WebView>>(null);
   const [loaded, setLoaded] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState(url);
   /** Guard: dismissal (user cancel, connector close) must fire exactly once. */
   const dismissedRef = useRef(false);
   /** Guard: the handle is published exactly once per screen instance. */
@@ -170,16 +176,22 @@ export function XBullWebViewScreen({
     []
   );
 
+  // Navigation tracking feeds the toolbar's URL chip (and re-arms the
+  // loading veil on every fresh page load).
+  const handleNavigationState = useCallback((nav: { url: string; loading: boolean }) => {
+    setCurrentUrl(nav.url);
+    if (nav.loading) setLoaded(false);
+  }, []);
+
   return (
     <Modal visible animationType="slide" onRequestClose={() => dismiss(true)}>
       <View style={[styles.container, { backgroundColor: bg }]}>
-        <View style={styles.header}>
-          <Pressable onPress={() => dismiss(true)} hitSlop={12}>
-            <Text style={{ color: fg, fontSize: 15, fontWeight: '600' }}>Cancel</Text>
-          </Pressable>
-          <Text style={{ color: fg, fontSize: 15, fontWeight: '700' }}>xBull Wallet</Text>
-          <View style={{ width: 48 }} />
-        </View>
+        <WebViewToolbar
+          url={currentUrl}
+          dark={dark}
+          onCancel={() => dismiss(true)}
+          onReload={() => webviewRef.current?.reload()}
+        />
         <WebView
           ref={(r) => {
             webviewRef.current = r;
@@ -189,12 +201,14 @@ export function XBullWebViewScreen({
           injectedJavaScriptBeforeContentLoaded={openerShim}
           onMessage={handleMessage}
           onShouldStartLoadWithRequest={guardNavigation}
+          onNavigationStateChange={handleNavigationState}
           onLoadStart={() => publishHandle()}
           onLoadEnd={() => setLoaded(true)}
           javaScriptEnabled
           domStorageEnabled
           setSupportMultipleWindows={false}
           allowsBackForwardNavigationGestures={false}
+          textInteractionEnabled
           renderLoading={() => (
             <View style={[styles.loader, { backgroundColor: bg }]}>
               <ActivityIndicator />
@@ -214,12 +228,5 @@ export function XBullWebViewScreen({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   loader: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
 });

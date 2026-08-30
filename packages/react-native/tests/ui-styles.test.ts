@@ -14,38 +14,19 @@
  *   .body padding               → styles.content
  *
  * react-native can't be imported under bun (Flow syntax in its index), so the
- * suite installs a minimal mock first — styles.ts only uses StyleSheet.create,
- * StyleSheet.hairlineWidth and Platform.select, which makes it mockable.
+ * suite installs the shared mock registry (tests/helpers/rn-mock.ts), which
+ * carries the union of every react-native export any module under test
+ * links against.
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
+import { installReactNativeMock, resetRnState } from './helpers/rn-mock.js';
 
-mock.module('react-native', () => ({
-  // Must stay surface-compatible with siws-flow.test.ts's mock — bun runs
-  // all test files in one process and the last mock.module() wins for
-  // later imports, so every react-native mock in this package provides
-  // the union of what any module under test needs.
-  Vibration: { vibrate: () => {} },
-  Linking: {
-    openURL: async () => undefined,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  AppState: {
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  NativeModules: {
-    SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
-    I18nManager: { localeIdentifier: 'zh_CN' },
-  },
-  StyleSheet: {
-    create: (sheets: Record<string, unknown>) => sheets,
-    hairlineWidth: 0.5,
-  },
-  Platform: {
-    OS: 'ios',
-    select: (opts: Record<string, unknown>) => opts.ios ?? opts.default ?? opts.android,
-  },
-}));
+installReactNativeMock();
+
+// iOS defaults (this suite's platform); resetRnState also clears whatever
+// an earlier test file left in the shared registry.
+beforeEach(() => resetRnState());
 
 const { buildStyles } = await import('../src/ui/styles.js');
 const { minimalDark, minimalLight, stellarDark } = await import('../src/ui/theme.js');

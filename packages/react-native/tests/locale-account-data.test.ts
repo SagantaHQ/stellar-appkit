@@ -4,51 +4,20 @@
  * refreshAccountData).
  *
  * react-native can't run under bun (Flow syntax), so the suite installs the
- * package-standard mock first — same surface as the other suites plus
- * NativeModules, which locale.ts reads for the raw device locale.
+ * shared mock registry (tests/helpers/rn-mock.ts) — its NativeModules carry
+ * the AppleLocale/I18nManager values locale.ts reads for the raw device
+ * locale.
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { installReactNativeMock, resetRnState } from './helpers/rn-mock.js';
 
-mock.module('react-native', () => ({
-  Vibration: { vibrate: () => {} },
-  Linking: {
-    openURL: async () => undefined,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  AppState: {
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  StyleSheet: {
-    create: (sheets: Record<string, unknown>) => sheets,
-    hairlineWidth: 0.5,
-  },
-  Platform: {
-    OS: 'ios',
-    select: (opts: Record<string, unknown>) => opts.ios ?? opts.default ?? opts.android,
-  },
-  Animated: {
-    Value: class {},
-    loop: () => ({ start: () => {}, stop: () => {} }),
-    timing: () => ({}),
-    parallel: () => ({ start: () => {}, stop: () => {} }),
-    sequence: () => ({}),
-  },
-  AccessibilityInfo: {
-    isReduceMotionEnabled: async () => false,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  Easing: {
-    linear: (x: number) => x,
-    inOut: (x: number) => x,
-    quad: (x: number) => x,
-    bezier: () => (x: number) => x,
-  },
-  NativeModules: {
-    SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
-    I18nManager: { localeIdentifier: 'zh_CN' },
-  },
-}));
+installReactNativeMock();
+
+// iOS defaults (this suite's platform — detectDeviceLocale reads the iOS
+// AppleLocale path); resetRnState also clears whatever an earlier test
+// file left in the shared registry.
+beforeEach(() => resetRnState());
 
 const { normalizeToDeviceLocale, detectDeviceLocale } = await import('../src/locale.js');
 const {

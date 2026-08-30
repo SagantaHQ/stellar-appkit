@@ -4,57 +4,21 @@
  * over the WebView whenever it exists.
  *
  * react-native can't run under bun (Flow syntax), so the suite installs the
- * package-standard mock first — same union surface as the other suites plus
- * Linking/AppState, which inapp-browser.ts uses for the external fallback.
+ * shared react-native mock registry (tests/helpers/rn-mock.ts) — Android,
+ * because the Custom-Tabs detection paths under test only exist there
+ * (iOS short-circuits: SFSafariViewController always ships with the OS).
  */
 
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { emitLinkingUrl, installReactNativeMock, resetRnState, rnState } from './helpers/rn-mock.js';
 
-const linkingListeners: Record<string, Array<(event: { url: string }) => void>> = {};
-const appStateListeners: Array<(state: string) => void> = [];
+rnState.os = 'android';
+installReactNativeMock();
 
-mock.module('react-native', () => ({
-  Vibration: { vibrate: () => {} },
-  StyleSheet: {
-    create: (sheets: Record<string, unknown>) => sheets,
-    hairlineWidth: 0.5,
-  },
-  Platform: {
-    OS: 'android',
-    select: (opts: Record<string, unknown>) => opts.android ?? opts.default ?? opts.ios,
-  },
-  Animated: {
-    Value: class {},
-    loop: () => ({ start: () => {}, stop: () => {} }),
-    timing: () => ({}),
-    parallel: () => ({ start: () => {}, stop: () => {} }),
-    sequence: () => ({}),
-  },
-  AccessibilityInfo: {
-    isReduceMotionEnabled: async () => false,
-    addEventListener: () => ({ remove: () => {} }),
-  },
-  Easing: {
-    linear: (x: number) => x,
-    inOut: (x: number) => x,
-    quad: (x: number) => x,
-    bezier: () => (x: number) => x,
-  },
-  NativeModules: {},
-  Linking: {
-    openURL: mock(async () => undefined),
-    addEventListener: (type: string, handler: (event: { url: string }) => void) => {
-      linkingListeners[type] = [...(linkingListeners[type] ?? []), handler];
-      return { remove: () => {} };
-    },
-  },
-  AppState: {
-    addEventListener: (handler: (state: string) => void) => {
-      appStateListeners.push(handler);
-      return { remove: () => {} };
-    },
-  },
-}));
+beforeEach(() => {
+  resetRnState();
+  rnState.os = 'android';
+});
 
 const {
   createThemedBrowserSession,
@@ -268,9 +232,7 @@ describe('openAuth — redirect-intercepting sessions', () => {
     const pending = session.openAuth('https://wallet.example/connect', 'myapp://cb');
     // Simulate the OS delivering the redirect back into the app.
     await new Promise((r) => setTimeout(r, 5));
-    for (const handler of linkingListeners['url'] ?? []) {
-      handler({ url: 'myapp://cb?signed=xyz' });
-    }
+    emitLinkingUrl('myapp://cb?signed=xyz');
     expect(await pending).toEqual({ surface: 'external', type: 'success', url: 'myapp://cb?signed=xyz' });
   });
 });

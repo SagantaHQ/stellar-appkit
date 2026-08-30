@@ -75,6 +75,11 @@ const es: LocaleMessages = {
     "disconnect": "Desconectar",
     "connect_wallet": "Conectar billetera"
   },
+  "browser": {
+    "reload": "Recargar",
+    "open_in_browser": "Abrir en el navegador",
+    "copy_link": "Copiar enlace"
+  },
   "wallet": {
     "fallback_name": "Billetera",
     "fallback_your_wallet": "tu billetera"

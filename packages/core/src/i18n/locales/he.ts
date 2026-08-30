@@ -75,6 +75,11 @@ const he: LocaleMessages = {
     "disconnect": "נתק",
     "connect_wallet": "חבר ארנק"
   },
+  "browser": {
+    "reload": "רענן",
+    "open_in_browser": "פתח בדפדפן",
+    "copy_link": "העתק קישור"
+  },
   "wallet": {
     "fallback_name": "ארנק",
     "fallback_your_wallet": "הארנק שלך"

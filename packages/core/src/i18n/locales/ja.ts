@@ -75,6 +75,11 @@ const ja: LocaleMessages = {
     "disconnect": "切断",
     "connect_wallet": "ウォレットを接続"
   },
+  "browser": {
+    "reload": "再読み込み",
+    "open_in_browser": "ブラウザで開く",
+    "copy_link": "リンクをコピー"
+  },
   "wallet": {
     "fallback_name": "ウォレット",
     "fallback_your_wallet": "お使いのウォレット"

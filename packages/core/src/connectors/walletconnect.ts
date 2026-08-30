@@ -42,9 +42,16 @@ import { withNormalizedError } from './error-utils.js';
  * ## Session persistence
  *
  * The WC session topic is persisted via the injected `ConnectStorage`
- * (same as the session for Freighter/Albedo/xBull). On `restore()`,
- * the connector checks if the session is still active via
- * `client.session.get(topic)` and reconnects if so.
+ * (same as the session for Freighter/Albedo/xBull). On a cold connector,
+ * `getAddress()`/`getNetwork()` lazily rehydrate: the persisted topic is
+ * checked against the SignClient's own session store
+ * (`client.session.get(topic)` — persisted by the SDK in localStorage on
+ * web / AsyncStorage via @walletconnect/react-native-compat on RN), and a
+ * session that still exists re-arms the connector in place (topic, address,
+ * peer metadata, approved methods). A session the wallet deleted (or that
+ * expired) clears the persisted record and reports not-connected.
+ * StellarAppKit.restore() drives this — it validates persisted sessions
+ * through getAddress().
  *
  * ## Dependency
  *
@@ -351,6 +358,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    *  can include it in the thrown ConnectError. */
   let fatalErrorMessage: string | null = null;
 
+  /**
+   * True while a connect()'s pairing is waiting for the wallet to approve.
+   * refreshTransport() checks this: a foregrounding app must restart the
+   * relay while the approval wait is live (the wallet may have settled the
+   * session while we were suspended), not just when a session already
+   * exists.
+   */
+  let connectInFlight = false;
+
   /** Timeout for waiting for the wallet to approve the pairing — 60s. */
 
   /**
@@ -415,6 +431,117 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       });
     }
     return clientInitPromise;
+  }
+
+  /**
+   * In-flight (or settled) cold-start rehydration — memoized so concurrent
+   * getAddress()/getNetwork() calls (StellarAppKit.restore() can fire both)
+   * share ONE rehydration instead of racing each other. Nulled when it
+   * settles so a failed attempt can retry later.
+   */
+  let rehydratePromise: Promise<void> | null = null;
+
+  /**
+   * Rehydrates a persisted WC session on a cold connector — the read half
+   * of the `WC_STORAGE_KEY` persistence connect() writes.
+   *
+   * WHY THIS IS LAZY (and not a restore() method): StellarAppKit.restore()
+   * validates every persisted session through `connector.getAddress()` —
+   * there is no connector-level restore hook. So getAddress()/getNetwork()
+   * call this when their cached state is empty, BEFORE deciding they're not
+   * connected. On success the connector is fully usable again (sign
+   * requests, peer metadata, approved methods); StellarAppKit.restore()
+   * then keeps the session it already has on file.
+   *
+   * What makes it SAFE:
+   * - Storage first, SDK second: without a persisted topic this returns
+   *   without ever paying the SignClient init (the multi-second RN
+   * cold-start stays a warmUp()/connect()-only cost).
+   * - The SDK's own session store decides liveness: `session.get(topic)`
+   *   returns the session only if it still exists (the WC SDK persists its
+   *   store — localStorage on web, AsyncStorage via
+   *   @walletconnect/react-native-compat on RN — and expires sessions
+   *   server-side after ~7 days). A missing session clears our persisted
+   *   key and returns: the caller throws its normal "not connected".
+   * - Best-effort by design — any error just leaves the connector cold.
+   */
+  async function restoreFromStorage(): Promise<void> {
+    if (cachedAddress) return; // already live (or rehydrated)
+    if (!opts.storage) return; // never persisted — nothing to restore
+    if (!rehydratePromise) {
+      rehydratePromise = (async () => {
+        let raw: string | null;
+        try {
+          raw = await opts.storage!.getItem(WC_STORAGE_KEY);
+        } catch {
+          return; // storage unavailable — stay cold
+        }
+        if (!raw) return;
+
+        let saved: {
+          topic?: string;
+          address?: string;
+          peerMetadata?: WalletConnectPeerMetadata | null;
+        };
+        try {
+          saved = JSON.parse(raw);
+        } catch {
+          try { await opts.storage!.removeItem(WC_STORAGE_KEY); } catch { /* best-effort */ }
+          return; // corrupt record — drop it
+        }
+        if (!saved.topic || !saved.address) return;
+
+        try {
+          // The SDK init is the expensive part — only paid when a persisted
+          // session actually exists (see doc). Shares the memoized
+          // clientInitPromise with warmUp()/connect().
+          const wc = await ensureClient();
+
+          const session = wc.session.get(saved.topic) as {
+            topic?: string;
+            namespaces?: { stellar?: { accounts?: string[]; methods?: string[] } };
+            peer?: { metadata?: { name?: string; url?: string; icons?: string[] } };
+          } | undefined;
+
+          if (!session || session.topic !== saved.topic) {
+            // Wallet deleted the session / it expired — drop our record so
+            // the next restore doesn't repeat this lookup.
+            try { await opts.storage!.removeItem(WC_STORAGE_KEY); } catch { /* best-effort */ }
+            return;
+          }
+
+          sessionTopic = saved.topic;
+          cachedAddress = saved.address;
+
+          // Peer metadata: prefer our stored copy, fall back to the SDK's.
+          if (saved.peerMetadata?.name) {
+            peerMetadata = saved.peerMetadata;
+          } else {
+            const peer = session.peer?.metadata;
+            peerMetadata = peer?.name
+              ? { name: peer.name, url: peer.url || null, icon: peer.icons?.[0] || null }
+              : null;
+          }
+
+          grantedMethods = new Set(session.namespaces?.stellar?.methods ?? []);
+
+          // Network: the wallet reported it at settle time, but that answer
+          // wasn't persisted — adopt the app's configured network, exactly
+          // like connect() does when the wallet didn't approve
+          // stellar_getNetwork.
+          cachedNetwork = {
+            network: appkitNetwork ?? 'TESTNET',
+            networkPassphrase: resolveNetworkPassphrase(),
+          };
+        } catch {
+          // Init failed (offline, bad projectId, …) — leave the record in
+          // place; a later call retries the rehydration.
+        }
+      })().finally(() => {
+        rehydratePromise = null;
+      });
+    }
+    await rehydratePromise;
   }
 
   /** The one-shot init: dynamic import + SignClient.init + event wiring. */
@@ -599,8 +726,101 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       }
     },
 
+    /**
+     * Forces a relay transport restart: disconnect the socket, reconnect,
+     * resubscribe every stored topic. The relay (IRN) keeps messages queued
+     * for subscribed topics (~24h TTL), so a restart re-delivers anything
+     * published while the connection was dead.
+     *
+     * WHY THIS EXISTS — the React Native zombie socket. The moment a wallet
+     * deep link fires (connect pairing or a sign request handoff), the OS
+     * backgrounds this app and kills or zombifies the relay WebSocket. The
+     * WC SDK's own recovery paths never fire on RN:
+     *
+     *   - its ping watchdog only starts under Node
+     *     (`typeof process.versions.node === 'string'` — false on Hermes),
+     *   - its online/offline listener depends on `navigator.onLine` /
+     *     `global.NetInfo`, neither of which exists on a bare RN runtime,
+     *   - and RN's WebSocket doesn't always surface the OS-level socket
+     *     death, so the JS object can keep reporting readyState OPEN while
+     *     the TCP connection is long gone.
+     *
+     * The wallet then approves in its own app, the relay queues
+     * `session_settle` (or the sign response) for the pairing topic, and
+     * nothing delivers it: `approval()` hangs forever and the modal stays on
+     * "Continue in {wallet}" with a spinner — even though the wallet side
+     * shows a successful connection.
+     *
+     * The fix is driven from the outside: the RN modal (or a headless app
+     * via `attachWalletConnectForegroundRefresh()`) calls this on every
+     * AppState 'active'. `restartTransport()` is the SDK's own
+     * disconnect→reconnect→resubscribe path; on reconnect the subscriber
+     * batch-subscribes all stored topics and the relay re-delivers the
+     * queued message, which resolves the in-flight approval()/request().
+     *
+     * Fire-and-forget by design: never throws, never initializes a cold
+     * client (a warm-up is a separate concern), and no-ops when nothing
+     * relay-related is live — an idle connector has nothing to resubscribe
+     * (transportOpen is even a no-op without topics).
+     */
+    refreshTransport(): void {
+      // No client yet (or torn down) — nothing to refresh. Deliberately do
+      // NOT ensureClient() here: a cold connector has no subscriptions, so
+      // a restart would be a pure cost.
+      if (!client) return;
+      // Nothing WalletConnect-related in flight: no pairing approval wait,
+      // no live session (and therefore no sign requests either). Skip —
+      // restarting here would only churn a healthy socket for nothing.
+      if (!connectInFlight && !sessionTopic) return;
+
+      const relayer = (client as {
+        core?: {
+          relayer?: {
+            restartTransport?: () => Promise<void>;
+            transportDisconnect?: () => Promise<void>;
+            transportOpen?: () => Promise<void>;
+          };
+        };
+      }).core?.relayer;
+      if (!relayer) return;
+
+      try {
+        if (typeof relayer.restartTransport === 'function') {
+          // The SDK's own restart path — confirmOnlineStateOrThrow (a no-op
+          // on RN without global.NetInfo) → resetTransport → transportOpen →
+          // subscriber.start() resubscribes everything. Its rejections are
+          // expected under transient offline foregrounds — swallow them; the
+          // SDK's internal reconnect machinery keeps retrying either way.
+          void relayer.restartTransport().catch(() => undefined);
+          return;
+        }
+        // Older SDK without restartTransport: manual equivalent. The two
+        // hops are sequenced (not parallel) on purpose — transportOpen()
+        // connects AND resubscribes; firing it before the old socket is
+        // closed would race two providers on one subscriber set.
+        void (async () => {
+          try {
+            await relayer.transportDisconnect?.();
+            await relayer.transportOpen?.();
+          } catch {
+            // Best-effort — the SDK retries on its own schedules.
+          }
+        })();
+      } catch {
+        // Never let a liveness nudge become a user-visible error.
+      }
+    },
+
     async connect(_connectOpts?: ConnectOptions): Promise<WalletAccount> {
-      return withNormalizedError(meta.id, async () => {
+      // connectInFlight gates refreshTransport(): while a pairing approval
+      // wait is live, a foregrounding app must restart the relay even though
+      // no session exists yet (see refreshTransport).
+      connectInFlight = true;
+      // Retires the abort-poll loop below when this attempt settles — the
+      // inner callback closes over this flag.
+      let stopAbortPoll = false;
+      try {
+        return await withNormalizedError(meta.id, async () => {
         // Reset abort flag at the start of each connect attempt
         connectAborted = false;
         fatalErrorMessage = null;
@@ -620,12 +840,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // wc.connect() can hang if the relay is unreachable (e.g. invalid
         // projectId). The fatal error fires asynchronously during wc.connect(),
         // and without racing against the abort promise, we'd hang forever.
+        //
+        // The poll stops via stopAbortPoll (connect()-scoped) once the
+        // attempt settles either way — without it the loop reschedules
+        // itself forever, leaking one immortal timer per connect() (on RN
+        // that's a 200ms wakeup for the rest of the app's life, per attempt).
         const abortPromise = new Promise<never>((_, reject) => {
           const checkAbort = () => {
             if (connectAborted) {
               reject(new Error('__WC_ABORTED__'));
               return;
             }
+            if (stopAbortPoll) return;
             setTimeout(checkAbort, 200);
           };
           checkAbort();
@@ -854,7 +1080,11 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           }
 
           return { address: cachedAddress!, walletId: meta.id };
-      });
+        });
+      } finally {
+        stopAbortPoll = true;
+        connectInFlight = false;
+      }
     },
 
     async disconnect() {
@@ -883,12 +1113,21 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
     async getAddress(): Promise<GetAddressResult> {
       if (!cachedAddress) {
+        // Cold start — a persisted session may exist (see restoreFromStorage).
+        // Rehydrate before deciding we're not connected; StellarAppKit's
+        // restore() validates sessions through this very call.
+        await restoreFromStorage();
+      }
+      if (!cachedAddress) {
         throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
       }
       return { address: cachedAddress };
     },
 
     async getNetwork(): Promise<GetNetworkResult> {
+      if (!cachedNetwork) {
+        await restoreFromStorage();
+      }
       if (!cachedNetwork) {
         throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
       }

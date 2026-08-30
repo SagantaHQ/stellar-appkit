@@ -75,6 +75,11 @@ const vi: LocaleMessages = {
     "disconnect": "Ngắt kết nối",
     "connect_wallet": "Kết nối ví"
   },
+  "browser": {
+    "reload": "Tải lại",
+    "open_in_browser": "Mở trong trình duyệt",
+    "copy_link": "Sao chép liên kết"
+  },
   "wallet": {
     "fallback_name": "Ví",
     "fallback_your_wallet": "ví của bạn"

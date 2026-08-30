@@ -75,6 +75,11 @@ const uk: LocaleMessages = {
     "disconnect": "Відключити",
     "connect_wallet": "Підключити гаманець"
   },
+  "browser": {
+    "reload": "Перезавантажити",
+    "open_in_browser": "Відкрити у браузері",
+    "copy_link": "Копіювати посилання"
+  },
   "wallet": {
     "fallback_name": "Гаманець",
     "fallback_your_wallet": "вашому гаманці"

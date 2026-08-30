@@ -68,7 +68,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, Share, Text, Vibration, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetFooter, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { ImageSourcePropType } from 'react-native';
 import { ConnectError, NetworkMismatchError, onLocaleChange, t } from '@saganta/stellar-appkit';
@@ -82,6 +82,8 @@ import {
 } from '../deep-links.js';
 import { useAppKit } from './useAppKit.js';
 import { useReducedMotion } from './animations.js';
+import { useWalletConnectForegroundRefresh } from '../wc-foreground.js';
+import { copyText } from '../clipboard.js';
 import { useSiwsFlow } from './useSiws.js';
 import { buildStyles } from './styles.js';
 import { explorerUrl, fundViaFriendbot, useAccountData, type TxHistoryItem } from './accountData.js';
@@ -146,6 +148,13 @@ export function AppKitModal({
   const state = useAppKit(client);
   const reducedMotion = useReducedMotion();
   const styles = useMemo(() => buildStyles(theme), [theme]);
+
+  // Zombie-socket antidote: every return to 'active' (i.e. back from the
+  // wallet app after approving a pairing or a sign request) restarts the
+  // WalletConnect relay so queued relay messages get delivered — without
+  // this the approval never lands and the flow below stays stuck on the
+  // connecting view. See wc-foreground.ts.
+  useWalletConnectForegroundRefresh(client);
 
   // All copy is `t()`-resolved at render time — re-render when the app
   // switches the locale so the sheet translates instantly (web parity:
@@ -543,9 +552,9 @@ export function AppKitModal({
     setOpenFailed(!ok);
   }, [wcUri, openWalletDeepLink]);
 
-  /** Shares the raw pairing URI — for wallets with a manual "paste code" field. */
+  /** Copies the raw pairing URI — for wallets with a manual "paste code" field. */
   const sharePairingUri = useCallback(async () => {
-    if (wcUri) await Share.share({ message: wcUri });
+    if (wcUri) await copyText(wcUri);
   }, [wcUri]);
 
   const disconnect = useCallback(async () => {
@@ -577,16 +586,12 @@ export function AppKitModal({
 
   // --- account view actions (web connected-view handlers) ---------------------
 
-  /** Address tap → share sheet (the RN copy surface) + check feedback. */
+  /** Address tap → one-tap clipboard copy (share-sheet fallback) + check feedback. */
   const copyAddress = useCallback(
     async (address: string) => {
       setCopiedAddress(true);
       setTimeout(() => setCopiedAddress(false), 1500);
-      try {
-        await Share.share({ message: address });
-      } catch {
-        /* the user dismissed the sheet — the address is still shown */
-      }
+      await copyText(address);
     },
     []
   );

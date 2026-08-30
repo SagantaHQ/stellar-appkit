@@ -75,6 +75,11 @@ const tr: LocaleMessages = {
     "disconnect": "Bağlantıyı kes",
     "connect_wallet": "Cüzdan bağla"
   },
+  "browser": {
+    "reload": "Yeniden yükle",
+    "open_in_browser": "Tarayıcıda aç",
+    "copy_link": "Bağlantıyı kopyala"
+  },
   "wallet": {
     "fallback_name": "Cüzdan",
     "fallback_your_wallet": "cüzdanınız"

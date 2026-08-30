@@ -75,6 +75,11 @@ const hi: LocaleMessages = {
     "disconnect": "डिस्कनेक्ट करें",
     "connect_wallet": "वॉलेट कनेक्ट करें"
   },
+  "browser": {
+    "reload": "पुनः लोड करें",
+    "open_in_browser": "ब्राउज़र में खोलें",
+    "copy_link": "लिंक कॉपी करें"
+  },
   "wallet": {
     "fallback_name": "वॉलेट",
     "fallback_your_wallet": "आपका वॉलेट"

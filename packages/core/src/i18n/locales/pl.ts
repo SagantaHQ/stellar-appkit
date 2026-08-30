@@ -75,6 +75,11 @@ const pl: LocaleMessages = {
     "disconnect": "Rozłącz",
     "connect_wallet": "Połącz portfel"
   },
+  "browser": {
+    "reload": "Odśwież",
+    "open_in_browser": "Otwórz w przeglądarce",
+    "copy_link": "Kopiuj link"
+  },
   "wallet": {
     "fallback_name": "Portfel",
     "fallback_your_wallet": "twoim portfelu"

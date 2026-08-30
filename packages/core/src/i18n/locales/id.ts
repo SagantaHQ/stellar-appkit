@@ -75,6 +75,11 @@ const id: LocaleMessages = {
     "disconnect": "Putuskan",
     "connect_wallet": "Hubungkan dompet"
   },
+  "browser": {
+    "reload": "Muat ulang",
+    "open_in_browser": "Buka di peramban",
+    "copy_link": "Salin tautan"
+  },
   "wallet": {
     "fallback_name": "Dompet",
     "fallback_your_wallet": "dompet Anda"
