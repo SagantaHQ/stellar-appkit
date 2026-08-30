@@ -86,20 +86,21 @@ export interface BrowserThemeTokens {
 /**
  * The `react-native-inappbrowser-reborn` module surface this package uses —
  * structurally typed so the app injects whatever it has installed.
+ * (Return types are intentionally loose: the session normalizes them.)
  */
 export interface RebornBrowserLike {
-  open(url: string, options?: Record<string, unknown>): Promise<{ type: 'cancel' | 'dismiss' }>;
+  open(url: string, options?: Record<string, unknown>): Promise<{ type: string }>;
   openAuth(
     url: string,
     redirectUrl: string,
     options?: Record<string, unknown>
-  ): Promise<AuthSessionShape>;
+  ): Promise<{ type: string; url?: string }>;
   close(): void;
   closeAuth(): void;
   /** False when no Custom Tabs provider exists (Android) — the Chrome Tab detection. */
   isAvailable(): Promise<boolean>;
-  warmup?(): Promise<void>;
-  mayLaunchUrl?(url: string, extras?: unknown): Promise<void>;
+  warmup?(): Promise<unknown>;
+  mayLaunchUrl?(url: string, extras?: unknown): void | Promise<unknown>;
 }
 
 /** The `expo-web-browser` module surface this package uses. */
@@ -109,7 +110,7 @@ export interface ExpoWebBrowserLike {
     url: string,
     redirectUrl?: string | null,
     options?: Record<string, unknown>
-  ): Promise<AuthSessionShape>;
+  ): Promise<{ type: string; url?: string }>;
   dismissBrowser(): Promise<unknown>;
   /** Expo Go-compatible Chrome Tab detection (Android). */
   getCustomTabsSupportingBrowsersAsync?(): Promise<{
@@ -307,7 +308,7 @@ export function createThemedBrowserSession(
     if (!(await rebornReady())) return null;
     const result = await soft(() => adapters.reborn!.open(url, options));
     if (!result) return null;
-    return { surface: 'reborn', type: result.type };
+    return { surface: 'reborn', type: result.type === 'dismiss' ? 'dismiss' : 'cancel' };
   }
 
   async function openViaExpo(url: string, options: Record<string, unknown>): Promise<BrowserOpenResult | null> {
@@ -331,8 +332,10 @@ export function createThemedBrowserSession(
     if (!(await rebornReady())) return null;
     const result = await soft(() => adapters.reborn!.openAuth(url, redirectUrl, options));
     if (!result) return null;
-    if (result.type === 'success') return { surface: 'reborn', type: 'success', url: result.url };
-    return { surface: 'reborn', type: result.type };
+    if (result.type === 'success' && typeof result.url === 'string') {
+      return { surface: 'reborn', type: 'success', url: result.url };
+    }
+    return { surface: 'reborn', type: result.type === 'dismiss' ? 'dismiss' : 'cancel' };
   }
 
   async function openAuthViaExpo(
