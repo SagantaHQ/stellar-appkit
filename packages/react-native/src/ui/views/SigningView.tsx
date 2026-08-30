@@ -6,11 +6,18 @@
  *    connecting's 2s, signaling "work in progress"]
  *   Continue in {Wallet}                     (17/600)
  *   Approve the request in your wallet to continue (14/1.5 muted)
+ *   [Open in wallet app]                      ← mobile-only affordance
  *
  * Error variant (`signing-view--error`): the logo disappears, a 40px
  * danger circle-X glyph takes over, the title becomes "Signing rejected",
  * the subtitle carries the error, and a Cancel + Try again action row
  * appears (web `.signing-view__actions`).
+ *
+ * The "Open in wallet app" button is an RN-specific affordance (documented
+ * deviation): browser wallets pop up over the page automatically, but a
+ * WalletConnect mobile wallet sits in the background until the user
+ * switches apps — the button fires the same deep link the connect flow
+ * uses so the user lands directly in the wallet's sign prompt.
  */
 
 import React from 'react';
@@ -35,13 +42,19 @@ export interface SigningViewProps {
   error: string | null;
   onRetry: () => void;
   onCancel: () => void;
+  /**
+   * Set when a paired mobile wallet is waiting in the background — renders
+   * the "Open in wallet app" deep-link handoff (browser-extension wallets
+   * don't need it: their prompt pops up on its own).
+   */
+  onOpenWallet?: () => void;
 }
 
 export function SigningView(props: SigningViewProps) {
-  const { styles, theme, reducedMotion, walletName, walletIcon, walletKey, error, onRetry, onCancel } = props;
+  const { styles, theme, reducedMotion, walletName, walletIcon, walletKey, error, onRetry, onCancel, onOpenWallet } = props;
   const hasError = error !== null;
   const breathe = useBreathe(reducedMotion);
-  const entrance = useEntranceStagger(hasError ? 3 : 3, reducedMotion);
+  const entrance = useEntranceStagger(hasError || !onOpenWallet ? 3 : 4, reducedMotion);
 
   if (hasError) {
     return (
@@ -105,6 +118,19 @@ export function SigningView(props: SigningViewProps) {
       <Animated.View style={{ opacity: entrance[2]!.opacity, transform: [{ translateY: entrance[2]!.translateY }] }}>
         <Text style={styles.connectingSubtitle}>{t('signing.subtitle')}</Text>
       </Animated.View>
+      {onOpenWallet && (
+        <Animated.View
+          style={{ opacity: entrance[3]!.opacity, transform: [{ translateY: entrance[3]!.translateY }] }}
+        >
+          <Pressable
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+            onPress={onOpenWallet}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryButtonText}>{t('wc.open_in_wallet')}</Text>
+          </Pressable>
+        </Animated.View>
+      )}
     </View>
   );
 }

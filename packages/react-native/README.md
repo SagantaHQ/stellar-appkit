@@ -110,9 +110,28 @@ copy, one card per operation with risk flags, the mono source-account + fee
 meta row, and Cancel / Sign / Approve actions.
 
 - **Sign** → the signing view ("Continue in {wallet}") while the wallet prompts.
+  When the session was paired with a mobile wallet (deep-link handoff), the
+  signing view also shows an **"Open in wallet app"** button — the same deep
+  link the connect flow uses — because a WalletConnect mobile wallet sits in
+  the background until the user switches apps (browser wallets pop their
+  prompt over the page by themselves).
 - **Cancel** → back to the account view; the sign promise rejects with the
   standard user-rejected error (the modal doesn't route it to the error view).
 - **Try again** (after a wallet rejection) → re-shows the approved preview.
+
+While a sign is in flight the sheet can't be swiped or backdrop-dismissed —
+web `close()` parity: the user should see the result before the modal closes
+(the signing view's error variant re-enables dismissal with its own Cancel /
+Try-again actions). And a preview pending when the sheet goes away resolves
+as **rejected** (never a hung sign queue) — again mirroring the web.
+
+The open transition is flow-aware the same way the web `open()` is: a modal
+that (re-)opens while a preview awaits the user's decision lands on the
+**preview**, a sign already in flight lands on the **signing view**, and a
+running SIWS phase is restored — only a quiet modal resets to the account
+view / wallet list. This matters because apps typically auto-open the modal
+when `pendingSignCount` rises; an unconditional reset would orphan the
+preview and hang the sign queue forever.
 
 To bring your own preview UI, set `client.onPreviewTransaction` yourself — the
 modal detects an existing handler at mount, warns, and leaves it in place.

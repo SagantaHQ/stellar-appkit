@@ -86,7 +86,7 @@ import { useSiwsFlow } from './useSiws.js';
 import { buildStyles } from './styles.js';
 import { explorerUrl, fundViaFriendbot, useAccountData, type TxHistoryItem } from './accountData.js';
 import type { ThemedBrowserSession } from '../browser/inapp-browser.js';
-import { VIEW_TITLES, type WalletBranding, type WalletRow, type ViewId } from './types.js';
+import { VIEW_TITLES, resolveViewOnOpen, type WalletBranding, type WalletRow, type ViewId } from './types.js';
 import { defaultTheme, type ConnectThemeRN } from './theme.js';
 import { HeaderView } from './views/HeaderView.js';
 import { WalletListView } from './views/WalletListView.js';
@@ -282,7 +282,22 @@ export function AppKitModal({
   const effectiveOpen = mode === 'inline' ? true : open;
   useEffect(() => {
     if (effectiveOpen) {
-      setView(client.session ? 'account' : 'list');
+      // Web open() parity: in-flight flows own the view — see
+      // resolveViewOnOpen. A sign request can arrive from anywhere in the
+      // app (the modal is often opening BECAUSE of it via the app's
+      // auto-open on pendingSignCount), so the default account/list reset
+      // must never clobber a preview awaiting the user's decision, a sign
+      // the wallet is processing, or a running SIWS phase — resetting would
+      // orphan the flow and hang the sign queue forever.
+      setView(
+        resolveViewOnOpen({
+          pendingPreview: pendingPreviewRef.current !== null,
+          pendingSignCount: state.pendingSignCount,
+          siwsPhase: siws.state.phase,
+          siwsBusy: siwsBusyRef.current,
+          hasSession: client.session !== null,
+        })
+      );
       setWcUri(null);
       setShowMoreWallets(false);
       setConnectingError(null);
@@ -295,7 +310,23 @@ export function AppKitModal({
       // WebSocket handshake then never land on the tap. (Warm-up is
       // idempotent; apps that already warmed at app start no-op here.)
       void wcConnector?.warmUp?.();
+    } else if (pendingPreviewRef.current) {
+      // Web close() parity: a preview still awaiting the user's decision
+      // resolves as REJECTED when the modal goes away (the app set
+      // open={false}) — otherwise its promise never settles and the sign
+      // queue stays stuck at 1 forever. The follow-up "user rejected"
+      // error is suppressed exactly like a manual preview Cancel.
+      const pending = pendingPreviewRef.current;
+      setPendingPreview(null);
+      previewJustRejected.current = true;
+      pending.resolve(false);
     }
+  // Deps note: state.pendingSignCount / siws.state.phase are read from the
+  // closure without being deps ON PURPOSE — this effect must only fire on
+  // open transitions. Re-running it when the sign queue drains would wipe
+  // the signing-view error the user is still reading; the closure values are
+  // already current whenever the effect fires (React runs it after the render
+  // in which effectiveOpen flipped).
   }, [effectiveOpen, client, client.session, refreshWallets, wcConnector]);
 
   // --- client event → view wiring (mirrors the web modal's client setter) ----
@@ -355,6 +386,11 @@ export function AppKitModal({
   // the preview approval; on RN the modal surfaces incoming sign requests
   // itself. Never hijacks the connecting flow, the preview awaiting the
   // user's decision, the SIWS phases, or an error the user is still reading.
+  // `view` is a dependency so the entry is self-healing: if any other code
+  // path moves the view while a sign is queued (e.g. the open-reset above
+  // landing between queue-change and preview render), this re-enters the
+  // signing view instead of leaving the user on a view that can't resolve
+  // the request.
   useEffect(() => {
     if (state.pendingSignCount > 0) {
       const v = viewRef.current;
@@ -375,7 +411,7 @@ export function AppKitModal({
       // Queue drained with no error — back to the account (web parity).
       setView(client.session ? 'account' : 'list');
     }
-  }, [state.pendingSignCount, client.session]);
+  }, [state.pendingSignCount, client.session, view]);
 
   // --- deep-link handoff -------------------------------------------------------
   /**
@@ -583,8 +619,25 @@ export function AppKitModal({
   );
   const openTxExplorer = useCallback((tx: TxHistoryItem) => openExplorer(`tx/${tx.hash}`), [openExplorer]);
 
-  /** Sheet dismissal — web close(): SIWS that never succeeded disconnects (disconnectOnFail). */
+  /** Sheet dismissal — web close() parity (veto during signing; a pending
+   * preview resolves as rejected; SIWS that never succeeded disconnects). */
   const handleClose = useCallback(() => {
+    // Web close(): "Don't close during signing — the user should see the
+    // result (success or error) before the modal closes. If they want to
+    // cancel, they can click Cancel on the preview or reject in their
+    // wallet." An error variant is exempt — the user is reading it and has
+    // Cancel/Try-again actions right there.
+    if (viewRef.current === 'signing' && !connectingErrorRef.current) return;
+    // Web close(): a preview still awaiting the decision resolves as
+    // rejected, so the sign queue never hangs on a settled promise. The
+    // follow-up "user rejected" error is suppressed via the same ref a
+    // manual preview Cancel uses.
+    const pending = pendingPreviewRef.current;
+    if (pending) {
+      setPendingPreview(null);
+      previewJustRejected.current = true;
+      pending.resolve(false);
+    }
     if (
       siws.state.pending &&
       client.siwsConfig &&
@@ -715,6 +768,11 @@ export function AppKitModal({
           walletIcon={state.walletIcon}
           walletKey={connectingWallet?.key ?? pairedMobileWalletId.current}
           error={connectingError}
+          // Mobile handoff: the paired wallet waits in the background while
+          // the WC sign request is in flight — one tap re-opens it right at
+          // the pending prompt (browser-extension wallets don't need this;
+          // their prompt pops up over the page by itself).
+          onOpenWallet={pairedMobileWalletId.current ? reopenPairedWallet : undefined}
           onRetry={() => {
             // Web retry-signing: re-show the approved preview so the user
             // can approve again; without one, fall back to the account view.
@@ -817,15 +875,27 @@ export function AppKitModal({
   }
 
   // --- bottom-sheet mode (default) ---------------------------------------------
+  // Web close() parity: while a sign request is in flight the sheet can't
+  // be swiped or backdrop-dismissed — the user should see the result before
+  // the modal closes (the signing view's error variant re-enables dismissal
+  // with its own Cancel / Try-again actions). The header close button is
+  // vetoed in handleClose the same way.
+  const lockSheetWhileSigning = view === 'signing' && connectingError === null;
   return (
     <BottomSheet
       ref={sheetRef}
       index={0}
       snapPoints={['82%']}
-      enablePanDownToClose
+      enablePanDownToClose={!lockSheetWhileSigning}
       onClose={handleClose}
       backdropComponent={(props) => (
-        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} pressBehavior="close" opacity={0.6} />
+        <BottomSheetBackdrop
+          {...props}
+          disappearsOnIndex={-1}
+          appearsOnIndex={0}
+          pressBehavior={lockSheetWhileSigning ? 'none' : 'close'}
+          opacity={0.6}
+        />
       )}
       backgroundStyle={{ backgroundColor: theme.colorSurface, borderTopLeftRadius: theme.radiusLg, borderTopRightRadius: theme.radiusLg }}
       handleIndicatorStyle={{ backgroundColor: theme.colorTextMuted }}

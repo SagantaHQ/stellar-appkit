@@ -61,7 +61,7 @@ const { message, signedMessage, signedData, signerAddress } = await appkit.signI
 - **`defaultConnectors()`** — returns the 4 browser-side wallets (Freighter, Albedo, xBull, Ledger). WalletConnect is excluded (requires `projectId`).
 - **`SorobanConnection`** — simulate → prepare → sign → submit as one `invoke()` call. Typed contract clients, RPC failover, fee estimation.
 - **SIWS** — `signIn()` for manual sign-in, or pass a `SiwsConfig` for automatic sign-in flow with session persistence.
-- **i18n** — 25 locales (English bundled, 24 lazy-loaded). `setLocale()`, `getLocale()`, `t()`, `onLocaleChange()`.
+- **i18n** — 25 locales (English bundled, 24 lazy-loaded). `setLocale()`, `getLocale()`, `t()`, `onLocaleChange()`. `t()` runs on `intl-messageformat` and falls back to a built-in zero-dependency ICU formatter on engines without `Intl.PluralRules` (Hermes / React Native) — plural messages never leak their raw `{count, plural, …}` pattern.
 - **`Networks`** — `Networks.PUBLIC`, `Networks.TESTNET`, `Networks.FUTURENET`, `Networks.STANDALONE`.
 
 ## Framework wrappers
