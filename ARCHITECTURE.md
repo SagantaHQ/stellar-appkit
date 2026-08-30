@@ -82,7 +82,7 @@ interface WalletConnector {
 }
 ```
 
-Errors are normalized into a single `ConnectError` class carrying the SEP-43 `code` (`-1..-4`), a human `message`, and optional `ext[]` — so UI code never branches on wallet identity to decide how to render a failure.
+Errors are normalized into a single `ConnectError` class carrying the SEP-43 `code` (`-1..-4`), a human `message`, and optional `ext[]` — so UI code never branches on wallet identity to decide how to render a failure. The WalletConnect adapter additionally *classifies* every SDK rejection before mapping it: wallet-side cancellations ("Transaction cancelled by the user") become `code -4` errors that preserve the wallet's own wording, and the SDK's 5-minute TTL lapse ("Request expired. Please try again.") becomes a plain-language `-1` explanation — the classifier (`classifyWalletConnectError`) is exported for apps that build their own error UX. The same adapter tracks each connect attempt's pairing topic and disconnects it on every abandonment path (user cancel via `abort()`, wallet rejection, expiry, post-settle validation failure), which stops the WC SDK's `No matching key. proposal: …` / `Pending session not found` ERROR-log cascade a late wallet approval used to produce.
 
 **Adapters ship in v1** (mirroring the ecosystem's actual coverage): Freighter (extension + mobile), xBull (PWA + extension), Albedo (no-install, web-based signer), Rabet, Lobstr (via WalletConnect), Hana (via WalletConnect), Hot Wallet, and a generic WalletConnect v2/Reown relay adapter that covers any wallet supporting the Stellar WC namespace. Hardware (Ledger) is a Phase-2 adapter since it needs a different transport model (WebHID/WebUSB, no RN support yet).
 

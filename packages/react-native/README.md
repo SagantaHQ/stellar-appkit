@@ -493,6 +493,43 @@ crypto implementation in the bundle:
 
 The [RN demo](https://github.com/SagantaHQ/stellar-appkit-rn-expo-demo) ships both.
 
+## WalletConnect error logs — what they mean and what the library does with them
+
+Testing against HOT Wallet or LOBSTR you'll see lines like these in the Metro terminal:
+
+```
+ERROR {"level": 50, "msg": "No matching key. proposal: 1788082186770263"}
+ERROR {"level": 50, "msg": "onRelayMessage() -> failed to process an inbound message: <base64>"}
+ERROR {"level": 50, "msg": "Pending session not found for topic e98b1781…"}
+ERROR {"level": 50, "msg": "Request expired. Please try again."}
+ERROR {"level": 50, "msg": "Transaction cancelled by the user"}
+```
+
+These are the WC SDK's **internal pino logger**, not exceptions from the library — but each one
+has a precise meaning, and the library now handles all of them:
+
+| Log line | What actually happened | What the library does |
+|---|---|---|
+| `No matching key. proposal: <id>` | A message arrived for a proposal this side already discarded — the SDK's crypto keychain has no key for its pairing topic | Mostly eliminated at the source: abandoned connect attempts now **disconnect their pairing** (`abort()` + every failure path), so late wallet answers die at the relay instead of crashing against a missing key |
+| `onRelayMessage() -> failed to process…` | The decrypt/processing failure for that same stale delivery | Same — vanishes with the ghost pairing |
+| `Pending session not found for topic …` | The settle message for that orphaned proposal | Same |
+| `Request expired. Please try again.` | The SDK's 5-minute delayed-promise TTL lapsed — the wallet never answered (this rejection is *thrown* to `signClient.request()`/`approval()`, not just logged) | Classified: `connect()`/`signTransaction()`/`signMessage()`/`signAuthEntry()` reject with a plain-language `ConnectError` (code -1) — *"Request expired — the wallet did not respond within WalletConnect's 5-minute window. Open the wallet, then try again."* — which the modal shows on its connecting/signing error variant |
+| `Transaction cancelled by the user` | The wallet's JSON-RPC rejection (you tapped Cancel/Reject in the wallet — LOBSTR's exact wording) | Classified: the sign/connect call rejects with a code -4 `ConnectError` carrying **the wallet's own message**, so the app sees *what the user actually did* instead of a generic "user rejected" |
+
+Two behavior changes back the table:
+
+- **Cancelling the connect actually cancels it.** The connecting view's back arrow (and closing
+  the sheet mid-connect) now calls the WalletConnect connector's `abort()`: the in-flight
+  `connect()` rejects within ~200 ms with a suppressed code -4 (no surprise error view later),
+  and the pairing is disconnected — which also dismisses the wallet's still-pending approval
+  prompt. Before, the attempt kept running silently and died five minutes later as a
+  "Request expired" error on whatever screen you were on by then.
+- **The SDK's console noise is now optional.** `createWalletConnectConnector({ logger })`
+  accepts a WC logger level; `logger: 'silent'` hides every SDK log line (including the
+  ERROR-level chatter above) without affecting the typed `ConnectError`s your app receives.
+  Headless apps can also use the exported `classifyWalletConnectError()` /
+  `walletConnectErrorMessage()` helpers to build their own error UX on top.
+
 ## Subpath exports
 
 | Entry | Contents |

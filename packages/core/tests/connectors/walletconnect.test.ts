@@ -1,5 +1,6 @@
 import { test, expect, describe, mock, beforeEach } from 'bun:test';
-import { createWalletConnectConnector } from '../../src/connectors/walletconnect.js';
+import { createWalletConnectConnector, classifyWalletConnectError, walletConnectErrorMessage } from '../../src/connectors/walletconnect.js';
+import { ConnectError } from '../../src/types.js';
 import { StellarAppKit } from '../../src/client.js';
 
 /**
@@ -27,6 +28,8 @@ import { StellarAppKit } from '../../src/client.js';
 const ADDRESS = 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA';
 const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
 const PUBNET_PASSPHRASE = 'Public Global Stellar Network ; September 2015';
+/** Pairing topic embedded in the fake wc.connect() URI below. */
+const PAIRING_TOPIC = '9c4b0d13a1f97a15a7c43f6d1b0e2f8c7d5a4b3e2f1d0c9b8a7f6e5d4c3b2a1';
 
 type WCRequestCall = {
   topic: string;
@@ -57,6 +60,12 @@ let initBlocker: Promise<void> | null = null;
 let requestResponses: Record<string, unknown> = {};
 /** When set, every wc.request() rejects with this error. */
 let requestError: Error | null = null;
+/** When set, the fake approval() rejects with this value (wallet-side reject / SDK expiry). */
+let approvalError: unknown = null;
+/** Captured fake-client event handlers — initClient subscribes session_delete. */
+let eventHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
+/** disconnect() calls recorded on the fake client (pairing/session cleanup assertions). */
+let disconnectCalls: Array<{ topic?: string; reason?: { code?: number; message?: string } }> = [];
 
 // --- relayer mock (refreshTransport tests) ---------------------------------
 
@@ -90,6 +99,7 @@ const fakeClient = {
       uri: 'wc:9c4b0d13a1f97a15a7c43f6d1b0e2f8c7d5a4b3e2f1d0c9b8a7f6e5d4c3b2a1@2?relay=%7B%22protocol%22%3A%22irn%22%7D',
       approval: async () => {
         if (approvalBlocker) await approvalBlocker;
+        if (approvalError !== null) throw approvalError;
         return {
           topic: 'test-topic',
           namespaces: {
@@ -108,8 +118,12 @@ const fakeClient = {
     if (requestError) throw requestError;
     return requestResponses[opts.request.method] ?? null;
   },
-  disconnect: async () => {},
-  on: () => {},
+  disconnect: async (opts: { topic?: string; reason?: { code?: number; message?: string } } = {}) => {
+    disconnectCalls.push(opts);
+  },
+  on: (event: string, handler: (...args: unknown[]) => void) => {
+    (eventHandlers[event] ??= []).push(handler);
+  },
   removeListener: () => {},
   session: {
     get: () => undefined,
@@ -155,6 +169,9 @@ beforeEach(() => {
   initError = null;
   initBlocker = null;
   approvalBlocker = null;
+  approvalError = null;
+  eventHandlers = {};
+  disconnectCalls = [];
   restartError = null;
   relayerHasRestart = true;
   restartCount = 0;
@@ -646,5 +663,218 @@ describe('StellarAppKit.restore() — WC sessions survive a cold restart end to 
     expect(app2.activeConnector?.getSessionPeer?.()?.name).toBe('Freighter');
 
     (fakeClient.session as { get: (t: string) => unknown }).get = () => undefined;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WalletConnect error classification + ghost-pairing cleanup.
+//
+// The regression these pin: every WalletConnect failure used to surface as
+// either a generic "The user rejected this request." (discarding the
+// wallet's own words — Lobstr's "Transaction cancelled by the user" only
+// ever appeared as a level-50 SDK console log) or an opaque internal error,
+// while an abandoned connect() left its pairing alive so the wallet's late
+// approval crashed against a discarded record — the SDK's
+//   "No matching key. proposal: …" / "Pending session not found" cascade —
+// and the retried attempt died with "Request expired. Please try again."
+// ---------------------------------------------------------------------------
+const tick = () => new Promise((r) => setTimeout(r, 10));
+
+async function connectErrorOf(p: Promise<unknown>): Promise<ConnectError> {
+  try {
+    await p;
+    throw new Error('expected the call to reject');
+  } catch (err) {
+    if (!(err instanceof ConnectError)) throw err;
+    return err;
+  }
+}
+
+describe('classifyWalletConnectError — the WC error taxonomy', () => {
+  test('wallet-speak for "the user said no" classifies as user-rejected', () => {
+    expect(classifyWalletConnectError({ code: 4900, message: 'Transaction cancelled by the user' }).kind).toBe('user-rejected');
+    expect(classifyWalletConnectError({ message: 'User rejected the request.' }).kind).toBe('user-rejected');
+    expect(classifyWalletConnectError(new Error('Request denied')).kind).toBe('user-rejected');
+    expect(classifyWalletConnectError('Declined by user').kind).toBe('user-rejected');
+  });
+
+  test('the SDK delayed-promise timeout classifies as request-expired', () => {
+    expect(classifyWalletConnectError(new Error('Request expired. Please try again.')).kind).toBe('request-expired');
+    expect(classifyWalletConnectError('Request expired').kind).toBe('request-expired');
+    expect(classifyWalletConnectError({ message: 'Expired. Try again.' }).kind).toBe('request-expired');
+  });
+
+  test('namespace validation / relay errors stay "other"', () => {
+    expect(classifyWalletConnectError(new Error('Missing or invalid. request() method: stellar_getNetwork')).kind).toBe('other');
+    expect(classifyWalletConnectError({ code: 3000, message: 'Project not found' }).kind).toBe('other');
+  });
+
+  test('walletConnectErrorMessage extracts from every thrown shape', () => {
+    expect(walletConnectErrorMessage(new Error('boom'))).toBe('boom');
+    expect(walletConnectErrorMessage('plain')).toBe('plain');
+    expect(walletConnectErrorMessage({ message: 'obj-msg' })).toBe('obj-msg');
+    expect(walletConnectErrorMessage({ reason: 'obj-reason' })).toBe('obj-reason');
+    expect(walletConnectErrorMessage({ error: { message: 'nested' } })).toBe('nested');
+    expect(walletConnectErrorMessage(42)).toBe('42');
+  });
+});
+
+describe('createWalletConnectConnector — sign failures are classified, not swallowed', () => {
+  test('wallet rejection ("Transaction cancelled by the user") → code -4 with the wallet\u2019s own message', async () => {
+    requestError = { code: 4900, message: 'Transaction cancelled by the user' } as unknown as Error;
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    const err = await connectErrorOf(connector.signTransaction('AAAA-tx'));
+    expect(err.code).toBe(-4);
+    expect(err.message).toBe('Transaction cancelled by the user');
+  });
+
+  test('SDK request expiry → code -1 with a plain-language explanation (NOT a rejection)', async () => {
+    requestError = new Error('Request expired. Please try again.');
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    const err = await connectErrorOf(connector.signTransaction('AAAA-tx'));
+    expect(err.code).toBe(-1);
+    expect(err.message).toMatch(/expired/i);
+    expect(err.message).toMatch(/try again/i);
+  });
+
+  test('in-band { error } results classify the same as thrown rejections', async () => {
+    requestResponses['stellar_signXDR'] = { error: { code: 4900, message: 'Transaction cancelled by the user' } };
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    const err = await connectErrorOf(connector.signTransaction('AAAA-tx'));
+    expect(err.code).toBe(-4);
+    expect(err.message).toBe('Transaction cancelled by the user');
+  });
+
+  test('signMessage rejections classify too (wallet cancel → -4, expiry → -1)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    requestError = { message: 'Transaction cancelled by the user' } as unknown as Error;
+    const cancelled = await connectErrorOf(connector.signMessage('hello'));
+    expect(cancelled.code).toBe(-4);
+    expect(cancelled.message).toBe('Transaction cancelled by the user');
+
+    requestError = new Error('Request expired. Please try again.');
+    const expired = await connectErrorOf(connector.signMessage('hello'));
+    expect(expired.code).toBe(-1);
+    expect(expired.message).toMatch(/expired/i);
+  });
+
+  test('signAuthEntry rejections classify too', async () => {
+    requestError = { message: 'User declined the request' } as unknown as Error;
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    const err = await connectErrorOf(connector.signAuthEntry('AAAA-entry'));
+    expect(err.code).toBe(-4);
+  });
+});
+
+describe('createWalletConnectConnector — ghost-pairing cleanup (the "No matching key" cascade)', () => {
+  test('a successful connect NEVER disconnects its pairing', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    expect(disconnectCalls.map((c) => c.topic)).not.toContain(PAIRING_TOPIC);
+  });
+
+  test('an expired approval rejects with a clear error AND disconnects the abandoned pairing', async () => {
+    approvalError = new Error('Request expired. Please try again.');
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    const err = await connectErrorOf(connector.connect());
+    expect(err.code).toBe(-1);
+    expect(err.message).toMatch(/expired/i);
+
+    await tick(); // cleanup is fire-and-forget
+    expect(disconnectCalls.map((c) => c.topic)).toContain(PAIRING_TOPIC);
+  });
+
+  test('a wallet-side proposal rejection → code -4 with the wallet\u2019s message AND pairing cleanup', async () => {
+    approvalError = { message: 'User rejected the pairing' };
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    const err = await connectErrorOf(connector.connect());
+    expect(err.code).toBe(-4);
+    expect(err.message).toBe('User rejected the pairing');
+
+    await tick();
+    expect(disconnectCalls.map((c) => c.topic)).toContain(PAIRING_TOPIC);
+  });
+
+  test('a session that settles without a Stellar account also abandons the pairing', async () => {
+    sessionAccounts = []; // wallet approved but sent no accounts
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    await connectErrorOf(connector.connect());
+    await tick();
+    expect(disconnectCalls.map((c) => c.topic)).toContain(PAIRING_TOPIC);
+  });
+});
+
+describe('createWalletConnectConnector — abort() (user cancels the connect)', () => {
+  test('abort() rejects the in-flight connect() as a -4 cancellation AND disconnects the pairing', async () => {
+    approvalBlocker = new Promise(() => undefined); // wallet never answers
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    const pending = connector.connect();
+    await new Promise((r) => setTimeout(r, 30)); // let wc.connect() settle + pairing topic latch
+
+    connector.abort?.();
+    // The pairing disconnect is immediate (abort() calls it synchronously).
+    expect(disconnectCalls.map((c) => c.topic)).toContain(PAIRING_TOPIC);
+
+    const err = await connectErrorOf(pending);
+    expect(err.code).toBe(-4);
+    expect(err.message).toMatch(/cancelled/i);
+  });
+
+  test('abort() with nothing in flight is a no-op', () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    expect(() => connector.abort?.()).not.toThrow();
+    expect(disconnectCalls).toHaveLength(0);
+  });
+
+  test('after an abort, a fresh connect() still works (flags reset, no stale rejection)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    // First attempt: user cancels while the wallet is silent.
+    approvalBlocker = new Promise(() => undefined);
+    const first = connector.connect();
+    await new Promise((r) => setTimeout(r, 30));
+    connector.abort?.();
+    const firstErr = await connectErrorOf(first);
+    expect(firstErr.code).toBe(-4);
+
+    // Second attempt: wallet approves normally.
+    approvalBlocker = null;
+    const account = await connector.connect();
+    expect(account.address).toBe(ADDRESS);
+    expect(account.walletId).toBe('walletconnect');
+  });
+});
+
+describe('createWalletConnectConnector — wallet-initiated session_delete', () => {
+  test('session_delete clears ALL connector state including the persisted record', async () => {
+    const { storage, removed } = makeStorage();
+    const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+    await connector.connect();
+    expect(await storage.getItem('saganta-appkit:walletconnect-session')).toBeTruthy();
+
+    // The wallet removed the session on its side → the SDK fires session_delete.
+    const handlers = eventHandlers['session_delete'] ?? [];
+    expect(handlers.length).toBeGreaterThan(0);
+    handlers[0]!({ topic: 'test-topic' });
+
+    await tick(); // storage removal is fire-and-forget
+    expect(removed).toContain('saganta-appkit:walletconnect-session');
+    // The connector no longer claims to be connected.
+    await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
   });
 });

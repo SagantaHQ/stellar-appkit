@@ -208,6 +208,13 @@ export function AppKitModal({
    * promise rejects with "user rejected" — the user already declined on
    * purpose, so the generic error view would be noise, not information). */
   const previewJustRejected = useRef(false);
+  /** Suppresses the code -4 error event that follows a USER-initiated connect
+   * cancel (back arrow / sheet close on the connecting view). The connector
+   * abort() makes connect() reject promptly — without this latch that
+   * rejection would route to the generic error view right after the user
+   * deliberately walked away, which reads as the library "yelling" at them.
+   * Same shape as previewJustRejected. */
+  const connectJustCancelled = useRef(false);
 
   // ---- Account view data (web refreshAccountData + balance polling) ------
   const accountData = useAccountData(client, view === 'account' && state.session !== null);
@@ -351,6 +358,9 @@ export function AppKitModal({
     const offs = [
       client.on('statusChange', (status) => {
         if (status === 'connected') {
+          // A connect settling successfully retires any stale cancel latch
+          // (see connectJustCancelled) — nothing is in flight anymore.
+          connectJustCancelled.current = false;
           setView('account');
           // SIWS after a RESTORED session: a wallet that came back from
           // storage still needs sign-in when SIWS is configured and no valid
@@ -371,7 +381,15 @@ export function AppKitModal({
           previewJustRejected.current = false;
           return;
         }
+        // Same for a user-initiated connect cancel — the connector's
+        // abort() rejects the in-flight connect() with a code -4 "cancelled"
+        // within one poll tick; that's the chosen outcome, not an error.
+        if (connectJustCancelled.current && err instanceof ConnectError && err.code === -4) {
+          connectJustCancelled.current = false;
+          return;
+        }
         previewJustRejected.current = false;
+        connectJustCancelled.current = false;
         Vibration.vibrate([30, 50, 30]);
         const isMismatch = err instanceof NetworkMismatchError;
         // Web parity: a failed connect stays on the connecting view (error
@@ -510,6 +528,9 @@ export function AppKitModal({
         setConnectingWallet({ name: connector.meta.name, icon: connector.meta.icon ?? null, key: walletId });
         setConnectingError(null);
         setOpenFailed(false);
+        // A fresh attempt opens a fresh cancel window — a stale latch from
+        // a previous cancel must never swallow a genuine error later.
+        connectJustCancelled.current = false;
         setView('connecting');
         try {
           await client.connect(walletId);
@@ -524,14 +545,34 @@ export function AppKitModal({
     [client, finishConnect]
   );
 
-  /** Web cancel-connecting: back arrow — abandon the state, keep the promise running. */
+  /**
+   * Web cancel-connecting: back arrow — abandon the state AND cancel the
+   * underlying attempt.
+   *
+   * RN goes one step further than web's "keep the promise running": the
+   * WalletConnect connector's abort() (a) rejects the in-flight connect()
+   * within one 200ms poll tick — so no surprise "Request expired" error
+   * view pops up minutes later on an unrelated screen — and (b)
+   * disconnects the attempt's pairing, which dismisses the wallet's
+   * still-pending approval prompt and prevents the SDK's
+   * "No matching key. proposal: …" ERROR-log cascade when the wallet
+   * answers a pairing this side already abandoned. The follow-up code -4
+   * rejection is suppressed via connectJustCancelled.
+   */
   const cancelConnecting = useCallback(() => {
+    const walletId = connectingWalletRef.current?.key;
+    try {
+      if (walletId) client.registry.get(walletId)?.abort?.();
+    } catch {
+      // Abort is best-effort — the UI reset below is the real contract.
+    }
+    connectJustCancelled.current = true;
     setConnectingWallet(null);
     setWcUri(null);
     setConnectingError(null);
     setOpenFailed(false);
     setView('list');
-  }, []);
+  }, [client]);
 
   /** Web retry-connecting: re-run the exact same connect action. */
   const retryConnect = useCallback(() => {
@@ -633,7 +674,8 @@ export function AppKitModal({
   const openTxExplorer = useCallback((tx: TxHistoryItem) => openExplorer(`tx/${tx.hash}`), [openExplorer]);
 
   /** Sheet dismissal — web close() parity (veto during signing; a pending
-   * preview resolves as rejected; SIWS that never succeeded disconnects). */
+   * preview resolves as rejected; SIWS that never succeeded disconnects;
+   * an in-flight connect is aborted so no ghost pairing outlives the sheet). */
   const handleClose = useCallback(() => {
     // Web close(): "Don't close during signing — the user should see the
     // result (success or error) before the modal closes. If they want to
@@ -641,6 +683,19 @@ export function AppKitModal({
     // wallet." An error variant is exempt — the user is reading it and has
     // Cancel/Try-again actions right there.
     if (viewRef.current === 'signing' && !connectingErrorRef.current) return;
+    // Closing the sheet while a connect is still in flight = cancelling it
+    // — same treatment as the connecting view's back arrow (see
+    // cancelConnecting): abort the connector attempt, disconnect the
+    // pairing, suppress the follow-up code -4 rejection.
+    if (viewRef.current === 'connecting') {
+      const walletId = connectingWalletRef.current?.key;
+      try {
+        if (walletId) client.registry.get(walletId)?.abort?.();
+      } catch {
+        // Best-effort — see cancelConnecting.
+      }
+      connectJustCancelled.current = true;
+    }
     // Web close(): a preview still awaiting the decision resolves as
     // rejected, so the sign queue never hangs on a settled promise. The
     // follow-up "user rejected" error is suppressed via the same ref a

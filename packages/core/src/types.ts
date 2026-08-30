@@ -292,6 +292,23 @@ export interface WalletConnector {
   refreshTransport?(): void;
 
   /**
+   * Optional: cancels an in-flight `connect()` attempt on the user's
+   * behalf (modal back arrow / sheet close while the connecting view is
+   * up). Only the WalletConnect connector implements this.
+   *
+   * WHAT IT MUST DO beyond settling the connect() promise quickly with a
+   * code -4 "cancelled" rejection: tear down the attempt's WalletConnect
+   * PAIRING (signClient.disconnect on the pairing topic), which sends
+   * wc_pairingDelete to the wallet — dismissing its still-pending approval
+   * prompt — and prevents the wallet's late answer from arriving against a
+   * record this side already discarded (the SDK's
+   * "No matching key. proposal: …" ERROR-log cascade).
+   *
+   * Must be a no-op (never throw) when nothing is in flight.
+   */
+  abort?(reason?: unknown): void;
+
+  /**
    * Optional: returns the connected wallet's own identity as reported by
    * relay-based connectors (WalletConnect) — the real wallet name and icon
    * ("Freighter", "LOBSTR", "HOT Wallet") rather than the connector's
