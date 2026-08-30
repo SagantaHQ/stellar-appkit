@@ -288,6 +288,12 @@ export function AppKitModal({
       client.on('statusChange', (status) => {
         if (status === 'connected') {
           setView('account');
+          // SIWS after a RESTORED session: a wallet that came back from
+          // storage still needs sign-in when SIWS is configured and no valid
+          // session exists (the fresh-connect path triggers it via
+          // finishConnect; useSiwsFlow's in-flight guard makes this a no-op
+          // when both fire).
+          if (client.siwsConfig && !client.siwsSession) void siws.start();
         } else if (status === 'idle' && client.sessions.length === 0) {
           // Disconnected back to idle — mirror the web 'disconnect' handler.
           setView('list');
@@ -327,7 +333,7 @@ export function AppKitModal({
       client.on('accountSwitch', () => setView('account')),
     ];
     return () => offs.forEach((off) => off());
-  }, [client]);
+  }, [client, siws.start]);
 
   // Signing view while sign requests are queued — web enters it only via
   // the preview approval; on RN the modal surfaces incoming sign requests
