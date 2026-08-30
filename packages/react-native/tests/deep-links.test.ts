@@ -29,16 +29,29 @@ describe('mobile wallet deep-link registry', () => {
     expect(freighter).toBeDefined();
     expect(freighter!.name).toBe('Freighter');
     expect(freighter!.scheme).toBe('freighterwallet');
+    // Freighter's WC-Explorer-registered native link — NOT the bare scheme.
+    // freighter-mobile's deep-link handler drops any URL that doesn't
+    // contain its Reown-registered redirect (freighterwallet://wc-redirect),
+    // so a `freighterwallet://wc?uri=` link opens the app and then does
+    // NOTHING (no pairing prompt — the exact bug this pins against).
+    expect(freighter!.link).toBe('freighterwallet://wc-redirect');
     expect(freighter!.installUrl.ios).toContain('apps.apple.com');
     expect(freighter!.installUrl.android).toContain('play.google.com');
   });
 
-  test('builds the freighterwallet://wc?uri= deep link — the format stellar/freighter-mobile uses', () => {
+  test('builds the freighterwallet://wc-redirect/wc?uri= deep link — passes freighter-mobile\'s redirect gate', () => {
     const link = buildWalletConnectDeepLink('freighter-mobile', WC_URI);
-    // Format confirmed in freighter-mobile's mock-dapp:
-    //   freighterdev://wc?uri=${encodeURIComponent(uri)}
-    expect(link).toBe(`freighterwallet://wc?uri=${ENC}`);
-    expect(link.startsWith('freighterwallet://wc?uri=wc%3A')).toBe(true);
+    // Byte-identical to what WalletConnect's own modal builds from Freighter's
+    // Explorer registration (CoreUtil.formatNativeUrl appends /wc?uri=):
+    //   freighterwallet://wc-redirect/wc?uri=${encodeURIComponent(uri)}
+    // freighter-mobile's useWalletKitEventsManager.onDeepLink only processes
+    // URLs containing WALLET_KIT_MT_REDIRECT_NATIVE (= the registered
+    // `freighterwallet://wc-redirect`) and then reads the `uri` query param.
+    expect(link).toBe(`freighterwallet://wc-redirect/wc?uri=${ENC}`);
+    // The registered redirect prefix MUST be embedded — regression guard for
+    // the "wallet opens but never prompts" silent drop.
+    expect(link.includes('freighterwallet://wc-redirect')).toBe(true);
+    expect(link.startsWith('freighterwallet://wc-redirect/wc?uri=wc%3A')).toBe(true);
   });
 
   test('ships LOBSTR, HOT Wallet and Scopuly — the Stellar wallets with WC-registered mobile apps', () => {
@@ -84,7 +97,7 @@ describe('mobile wallet deep-link registry', () => {
   });
 
   test('formatWalletConnectLink mirrors CoreUtil.formatNativeUrl', () => {
-    expect(formatWalletConnectLink('freighterwallet://', WC_URI)).toBe(`freighterwallet://wc?uri=${ENC}`);
+    expect(formatWalletConnectLink('freighterwallet://wc-redirect', WC_URI)).toBe(`freighterwallet://wc-redirect/wc?uri=${ENC}`);
     expect(formatWalletConnectLink('scopuly://wc', WC_URI)).toBe(`scopuly://wc/wc?uri=${ENC}`);
     // Bare scheme strings are normalized to scheme:// first.
     expect(formatWalletConnectLink('testwallet', WC_URI)).toBe(`testwallet://wc?uri=${ENC}`);
@@ -221,7 +234,7 @@ describe('mobile wallet deep-link registry', () => {
   });
 
   test('findWalletByDeepLink reverse-resolves every registered scheme', () => {
-    expect(findWalletByDeepLink('freighterwallet://wc?uri=abc')?.id).toBe('freighter-mobile');
+    expect(findWalletByDeepLink('freighterwallet://wc-redirect/wc?uri=abc')?.id).toBe('freighter-mobile');
     expect(findWalletByDeepLink('lobstr://wc?uri=abc')?.id).toBe('lobstr-mobile');
     expect(findWalletByDeepLink('hotwallet://wc?uri=abc')?.id).toBe('hot-wallet-mobile');
     expect(findWalletByDeepLink('scopuly://wc?uri=abc')?.id).toBe('scopuly-mobile');

@@ -17,7 +17,9 @@
  * chains=stellar:pubnet) with a native mobile link:
  *
  * Featured (Stellar-first):
- * - Freighter   — freighterwallet://  (confirmed in stellar/freighter-mobile)
+ * - Freighter   — freighterwallet://wc-redirect  (the wallet's Explorer-
+ *   registered native link — freighter-mobile's deep-link handler silently
+ *   ignores any URL that doesn't contain it; see the Freighter note below)
  * - LOBSTR      — lobstr://           (universal: https://lobstr.co/uni/wc)
  * - HOT Wallet  — hotwallet://        (universal: https://app.hot-labs.org)
  * - Scopuly     — scopuly://wc        (universal: https://app.scopuly.com/wc)
@@ -40,7 +42,22 @@
  *
  *     <native-link>/wc?uri=<encodeURIComponent(wc:...)>
  *
- * e.g. `freighterwallet://wc?uri=wc%3Aabc123%402%3Frelay-protocol%3Dirn...`
+ * e.g. `freighterwallet://wc-redirect/wc?uri=wc%3Aabc123%402%3Frelay-protocol%3Dirn...`
+ *
+ * ## Why the wallet's REGISTERED link (not its bare scheme)
+ *
+ * Wallets validate the URLs they're asked to open. Freighter Mobile's deep-
+ * link handler (stellar/freighter-mobile, useWalletKitEventsManager.ts) starts
+ * with `if (!url.includes(WALLET_KIT_MT_REDIRECT_NATIVE)) return;` — the
+ * wallet's Reown-registered native redirect, `freighterwallet://wc-redirect`.
+ * A bare `freighterwallet://wc?uri=...` link OPENS the app (the OS matches the
+ * scheme) but is then silently dropped: no pairing, no connect prompt. The
+ * mock dApp inside the freighter-mobile repo only exercises the DEV scheme
+ * (`freighterdev://wc?uri=`), which is why the bare-scheme shape looks right
+ * there but never worked against the production app. Every entry below uses
+ * the exact `mobile.native` value from the WalletConnect Explorer
+ * registration, so the built link is byte-identical to what WalletConnect's
+ * own modal would open for that wallet.
  *
  * Every registered wallet may also be re-opened for later sign requests by
  * launching its bare scheme (the WalletConnect "sign request flow" — the
@@ -96,8 +113,8 @@ export interface MobileWalletDeepLink {
  * in @walletconnect/modal-core), so every Explorer-registered wallet gets
  * exactly the link shape it was tested against:
  *
- * - `freighterwallet://` → `freighterwallet://wc?uri=<encoded>`
- * - `scopuly://wc`       → `scopuly://wc/wc?uri=<encoded>`
+ * - `freighterwallet://wc-redirect` → `freighterwallet://wc-redirect/wc?uri=<encoded>`
+ * - `scopuly://wc`        → `scopuly://wc/wc?uri=<encoded>`
  *
  * (Wallets read the `uri` query param; the path is theirs to ignore.)
  */
@@ -179,7 +196,7 @@ register({
   id: 'freighter-mobile',
   name: 'Freighter',
   icon: FREIGHTER_ICON,
-  link: 'freighterwallet://',
+  link: 'freighterwallet://wc-redirect',
   scheme: 'freighterwallet',
   installUrl: {
     ios: 'https://apps.apple.com/us/app/freighter/id6743947720',
@@ -515,7 +532,7 @@ export function getMobileWallet(id: string): MobileWalletDeepLink | undefined {
 
 /**
  * Builds the WalletConnect pairing deep link for a registered wallet —
- * `freighterwallet://wc?uri=wc%3A...` — ready for `Linking.openURL()`.
+ * `freighterwallet://wc-redirect/wc?uri=wc%3A...` — ready for `Linking.openURL()`.
  * Throws for unknown wallet ids so typos surface in development.
  */
 export function buildWalletConnectDeepLink(walletId: string, wcUri: string): string {

@@ -2,7 +2,7 @@
 
 React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-appkit) — the same client, the same connectors, the same modal UX as the web SDK, adapted to native.
 
-- **Deep-link-only pairing, full wallet registry** — every consumer wallet registered against WalletConnect's Stellar namespace ships built-in: the featured **Freighter, LOBSTR, HOT Wallet, Scopuly** plus 17 multichain wallets (SafePal, Blockchain.com, Arculus, Atomic Wallet, COCA, Trustee, MaxWallet, Zypto, Hero, UKey, ECOIN, SwiftEx, Panaroma, Kotai, Cryptokara, UKISS Hub, SOC) under a collapsible "More wallets" section. Tap one and we embed the pairing URI into its deep link (`freighterwallet://wc?uri=...`, WalletConnect-modal compatible) and hand off to the wallet app, Solana-Mobile-Adapter style — branded with the wallet's own name and icon throughout. On a phone the same device would have to scan a QR code, so the modal never renders one; a "Copy pairing code" fallback covers wallets with manual pairing fields.
+- **Deep-link-only pairing, full wallet registry** — every consumer wallet registered against WalletConnect's Stellar namespace ships built-in: the featured **Freighter, LOBSTR, HOT Wallet, Scopuly** plus 17 multichain wallets (SafePal, Blockchain.com, Arculus, Atomic Wallet, COCA, Trustee, MaxWallet, Zypto, Hero, UKey, ECOIN, SwiftEx, Panaroma, Kotai, Cryptokara, UKISS Hub, SOC) under a collapsible "More wallets" section. Tap one and we embed the pairing URI into its deep link (`freighterwallet://wc-redirect/wc?uri=...`, byte-identical to WalletConnect's own modal) and hand off to the wallet app, Solana-Mobile-Adapter style — branded with the wallet's own name and icon throughout. On a phone the same device would have to scan a QR code, so the modal never renders one; a "Copy pairing code" fallback covers wallets with manual pairing fields.
 - **True wallet names** — WalletConnect sessions capture the peer wallet's metadata, so the connecting and account views show "Freighter" or "HOT Wallet", never a generic "WalletConnect" label.
 - **Albedo WebView bridge** — Albedo's web confirm flow, reproduced inside an in-app WebView (`window.opener` shim + synthetic MessageEvents — the exact popup protocol).
 - **xBull WebView bridge** — xBull's web wallet (wallet.xbull.app), same trick: the nacl-box popup protocol reproduced inside an in-app WebView. xBull has no native app and isn't in the WalletConnect Explorer's Stellar namespace, so this is its only mobile surface — and it restores wallet-list parity with the web modal, where xBull is a featured connector.
@@ -142,7 +142,7 @@ The built-in registry (verified against the WalletConnect Explorer, `chains=stel
 
 | Wallet | Native link | Universal link |
 |---|---|---|
-| Freighter | `freighterwallet://` | — |
+| Freighter | `freighterwallet://wc-redirect` | — |
 | LOBSTR | `lobstr://` | `https://lobstr.co/uni/wc` |
 | HOT Wallet | `hotwallet://` | `https://app.hot-labs.org` |
 | Scopuly | `scopuly://wc` | `https://app.scopuly.com/wc` |
@@ -180,7 +180,9 @@ registerMobileWallet({
 });
 ```
 
-`buildWalletConnectDeepLink(id, uri)` then produces `mywallet://wc?uri=<encoded>` — byte-compatible with WalletConnect's own modal (`CoreUtil.formatNativeUrl`), the format every Explorer-registered wallet is tested against. Pass `link` for wallets whose registered native entry includes a path (like Scopuly's `scopuly://wc`) and `universal` for an https fallback.
+`buildWalletConnectDeepLink(id, uri)` then produces `<registered-link>/wc?uri=<encoded>` — byte-compatible with WalletConnect's own modal (`CoreUtil.formatNativeUrl`), the format every Explorer-registered wallet is tested against. Pass `link` for wallets whose registered native entry includes a path (like Scopuly's `scopuly://wc` or Freighter's `freighterwallet://wc-redirect`) and `universal` for an https fallback.
+
+> **Use the wallet's REGISTERED link, not its bare scheme.** Some wallets validate the URL they're asked to open: Freighter Mobile's deep-link handler silently ignores anything that doesn't contain its Reown-registered redirect (`freighterwallet://wc-redirect`), so a `freighterwallet://wc?uri=...` link opens the app and then does nothing — no pairing prompt. The Explorer entry (`mobile.native`) is the source of truth; every built-in wallet ships its exact value.
 
 ## Headless usage (no modal)
 

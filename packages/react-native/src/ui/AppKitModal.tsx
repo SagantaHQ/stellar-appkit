@@ -41,7 +41,7 @@
  * - **Deep-link-only pairing**: on a phone the same device would have to
  *   scan a QR code, so the RN modal never renders one. Every wallet row
  *   embeds the WalletConnect pairing URI into the wallet's own deep link
- *   (`freighterwallet://wc?uri=...`) and hands off to the OS,
+ *   (`freighterwallet://wc-redirect/wc?uri=...`) and hands off to the OS,
  *   Solana-Mobile-Adapter style. "Copy pairing code" covers wallets with
  *   manual pairing fields.
  * - **True wallet names** — connecting/signing/SIWS views carry the

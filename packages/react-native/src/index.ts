@@ -6,7 +6,7 @@
  *
  * - `defaultReactNativeConnectors()` — WC + optional Albedo(WebView) set
  * - `createAsyncStorage()` — AsyncStorage-backed `ConnectStorage`
- * - deep-link registry — MWA-style wallet handoff (`freighterwallet://wc?uri=...`)
+ * - deep-link registry — MWA-style wallet handoff (`freighterwallet://wc-redirect/wc?uri=...`)
  * - `isReactNativeRuntime()` — real RN detection (RN defines `window`!)
  *
  * UI (modal) lives in `@saganta/stellar-appkit-react-native/ui`, polyfills in
