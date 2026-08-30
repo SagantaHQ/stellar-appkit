@@ -26,6 +26,13 @@ mock.module('react-native', () => ({
   // later imports, so every react-native mock in this package provides
   // the union of what any module under test needs.
   Vibration: { vibrate: () => {} },
+  Linking: {
+    openURL: async () => undefined,
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  AppState: {
+    addEventListener: () => ({ remove: () => {} }),
+  },
   NativeModules: {
     SettingsManager: { settings: { AppleLocale: 'fr_FR' } },
     I18nManager: { localeIdentifier: 'zh_CN' },

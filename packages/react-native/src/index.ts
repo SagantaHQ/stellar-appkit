@@ -58,3 +58,18 @@ export {
   applyDeviceLocale,
   normalizeToDeviceLocale,
 } from './locale.js';
+
+export {
+  createThemedBrowserSession,
+  buildRebornOptions,
+  buildExpoOptions,
+  type BrowserThemeTokens,
+  type BrowserSurface,
+  type BrowserOpenResult,
+  type BrowserAuthResult,
+  type ThemedBrowserOptions,
+  type ThemedBrowserSession,
+  type RebornBrowserLike,
+  type ExpoWebBrowserLike,
+  type AuthSessionShape,
+} from './browser/inapp-browser.js';

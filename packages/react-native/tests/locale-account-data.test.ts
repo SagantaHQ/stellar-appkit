@@ -12,6 +12,13 @@ import { describe, expect, mock, test } from 'bun:test';
 
 mock.module('react-native', () => ({
   Vibration: { vibrate: () => {} },
+  Linking: {
+    openURL: async () => undefined,
+    addEventListener: () => ({ remove: () => {} }),
+  },
+  AppState: {
+    addEventListener: () => ({ remove: () => {} }),
+  },
   StyleSheet: {
     create: (sheets: Record<string, unknown>) => sheets,
     hairlineWidth: 0.5,

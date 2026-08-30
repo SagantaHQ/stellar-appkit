@@ -85,6 +85,7 @@ import { useReducedMotion } from './animations.js';
 import { useSiwsFlow } from './useSiws.js';
 import { buildStyles } from './styles.js';
 import { explorerUrl, fundViaFriendbot, useAccountData, type TxHistoryItem } from './accountData.js';
+import type { ThemedBrowserSession } from '../browser/inapp-browser.js';
 import { VIEW_TITLES, type WalletBranding, type WalletRow, type ViewId } from './types.js';
 import { defaultTheme, type ConnectThemeRN } from './theme.js';
 import { HeaderView } from './views/HeaderView.js';
@@ -116,6 +117,20 @@ export interface AppKitModalProps {
   title?: string;
   /** Header logo (web `logo-src` attribute). 22×22, radius 6. */
   logo?: ImageSourcePropType;
+  /**
+   * Themed in-app browser for plain http(s) handoffs — explorer links,
+   * wallet install pages and the footer link open in a themed Chrome
+   * Custom Tab / SFSafariViewController (modal pageSheet on iOS) instead
+   * of bouncing the user out to the external browser. Wallet deep links
+   * (custom schemes) always go through `Linking` — Custom Tabs only
+   * handle web URLs. Optional: without it every URL opens via `Linking`
+   * exactly as before.
+   *
+   * Build one with `createThemedBrowserSession({ reborn, expo }, { theme })`
+   * — see browser/inapp-browser.ts for the preference chain and why
+   * passkey-needing web wallets must use this surface instead of a WebView.
+   */
+  browser?: ThemedBrowserSession;
 }
 
 export function AppKitModal({
@@ -126,6 +141,7 @@ export function AppKitModal({
   mode = 'bottomsheet',
   title,
   logo,
+  browser,
 }: AppKitModalProps) {
   const state = useAppKit(client);
   const reducedMotion = useReducedMotion();
@@ -504,6 +520,25 @@ export function AppKitModal({
     void refreshWallets();
   }, [client, refreshWallets]);
 
+  // --- themed browser handoffs (http(s) only) --------------------------------
+  /**
+   * Opens a web URL in the themed in-app browser when the modal was given
+   * one (Chrome Custom Tab / SFSafariViewController, themed from the active
+   * theme, modal pageSheet on iOS) — otherwise the external browser via
+   * `Linking`, exactly like before. Custom-scheme wallet deep links never
+   * route through here: Custom Tabs only handle web URLs.
+   */
+  const openHttpUrl = useCallback(
+    (url: string) => {
+      if (browser) {
+        void browser.open(url).catch(() => undefined);
+        return;
+      }
+      void Linking.openURL(url).catch(() => undefined);
+    },
+    [browser]
+  );
+
   // --- account view actions (web connected-view handlers) ---------------------
 
   /** Address tap → share sheet (the RN copy surface) + check feedback. */
@@ -538,13 +573,13 @@ export function AppKitModal({
     setView('list');
   }, []);
 
-  /** Tx row / explorer link — opens the external explorer. */
+  /** Tx row / explorer link — opens the external explorer (themed tab when available). */
   const openExplorer = useCallback(
     (path: string) => {
       const network = client.session?.network ?? 'TESTNET';
-      void Linking.openURL(explorerUrl(path, network));
+      openHttpUrl(explorerUrl(path, network));
     },
-    [client]
+    [client, openHttpUrl]
   );
   const openTxExplorer = useCallback((tx: TxHistoryItem) => openExplorer(`tx/${tx.hash}`), [openExplorer]);
 
@@ -594,7 +629,7 @@ export function AppKitModal({
   const footer = (
     <Pressable
       style={styles.footer}
-      onPress={() => void Linking.openURL('https://github.com/sagantaHQ/stellar-appkit')}
+      onPress={() => openHttpUrl('https://github.com/sagantaHQ/stellar-appkit')}
       accessibilityRole="link"
     >
       <Text style={styles.footerText}>
@@ -622,7 +657,7 @@ export function AppKitModal({
               ios: row.connector.meta.installUrl?.ios,
               android: row.connector.meta.installUrl?.android,
             });
-            if (url) void Linking.openURL(url);
+            if (url) openHttpUrl(url);
           }}
         />
       )}
@@ -642,7 +677,7 @@ export function AppKitModal({
           onInstallFailedWallet={() => {
             const wallet = pairedMobileWalletId.current ? getMobileWallet(pairedMobileWalletId.current) : undefined;
             const url = wallet && Platform.select({ ios: wallet.installUrl.ios, android: wallet.installUrl.android });
-            if (url) void Linking.openURL(url);
+            if (url) openHttpUrl(url);
           }}
           onRetryConnect={retryConnect}
           onRetryOpen={retryOpenWallet}
