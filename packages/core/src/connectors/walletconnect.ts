@@ -302,6 +302,15 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let cachedAddress: string | null = null;
   let cachedNetwork: { network: string; networkPassphrase: string } | null = null;
   /**
+   * The methods the wallet actually approved in the settled session's
+   * Stellar namespace. Newer @walletconnect/sign-client releases (>= 2.17)
+   * validate every request() method against the session namespaces and log
+   * ERROR-level output ("Missing or invalid. request() method: ...") before
+   * throwing — so we track what the session granted and only send requests
+   * it can satisfy.
+   */
+  let grantedMethods = new Set<string>();
+  /**
    * The connected wallet's own metadata (from the WC session's `peer`),
    * captured when the session settles so the UI can show the real wallet
    * name — "Freighter", "LOBSTR", "HOT Wallet" — instead of the generic
@@ -413,6 +422,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           cachedAddress = null;
           cachedNetwork = null;
           peerMetadata = null;
+          grantedMethods = new Set();
         }
       });
 
@@ -590,26 +600,31 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         try {
           const result = await Promise.race([
             wc.connect({
-              requiredNamespaces: {
-                stellar: {
-                  chains: [resolveWcChainId()],
-                  // Only require the base signing method — wallets that
-                  // strictly advertise stellar_signXDR won't reject the
-                  // pairing. Other methods are proposed as optional.
-                  methods: ['stellar_signXDR'],
-                  events: ['accountsChanged'],
-                },
-              },
+              // NOTE: `requiredNamespaces` is deprecated in
+              // @walletconnect/sign-client >= 2.17 — it prints
+              // "requiredNamespaces are deprecated and are automatically
+              // assigned to optionalNamespaces" and merges the two (union)
+              // before proposing anyway, so we propose everything as optional
+              // namespaces directly. On the wire this is identical to the
+              // old required + optional split.
+              //
+              // The method list is the documented Stellar WalletConnect set
+              // (Freighter Mobile, LOBSTR, Hana, HOT Wallet — see
+              // docs.freighter.app/mobile-walletconnect):
+              //   stellar_signXDR / stellar_signAndSubmitXDR /
+              //   stellar_signMessage / stellar_signAuthEntry
+              // plus stellar_getNetwork, which only some wallets implement.
+              // Wallets approve the subset they support; we verify what made
+              // it through after the session settles (below).
               optionalNamespaces: {
                 stellar: {
                   chains: [resolveWcChainId()],
-                  // These are nice-to-have — the wallet may or may not
-                  // support them. If it does, we can use them; if not,
-                  // we fall back to stellar_signXDR or throw a clear error.
                   methods: [
+                    'stellar_signXDR',
                     'stellar_signAndSubmitXDR',
                     'stellar_signMessage',
                     'stellar_signAuthEntry',
+                    'stellar_getNetwork',
                   ],
                   events: ['accountsChanged'],
                 },
@@ -715,38 +730,69 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           const parts = accountStr.split(':');
           cachedAddress = parts[parts.length - 1] ?? null; // last segment is the address
 
-          // Try to get the network from the wallet. Many WC wallets don't
-          // support stellar_getNetwork (it's not part of the core WC Stellar
-          // namespace) — in that case, fall back to the app's configured
-          // network. This prevents a false "network mismatch" error when
-          // the wallet simply doesn't expose its network via WC.
+          // Capture the methods the wallet actually approved — every request()
+          // below is pre-checked against this set so we never trigger the
+          // sign-client's namespace-validation errors.
+          grantedMethods = new Set(stellarNamespace.methods ?? []);
+
+          // Verify the wallet approved the base signing method.
+          // signTransaction() speaks stellar_signXDR; a session without it
+          // can't sign anything for us, so fail now with a clear error
+          // instead of a cryptic namespace-validation error on the first
+          // sign request. (Recommended by the Freighter Mobile WC docs.)
+          if (!grantedMethods.has('stellar_signXDR')) {
+            throw ConnectError.internal(
+              'WalletConnect session established but the wallet did not approve the ' +
+              `stellar_signXDR method (approved methods: ${[...grantedMethods].join(', ') || 'none'}). ` +
+              'Reconnect with a wallet that supports Stellar WalletConnect signing.',
+              undefined,
+              meta.id
+            );
+          }
+
+          // Try to get the network from the wallet — but only when the
+          // settled session actually approved stellar_getNetwork. Most
+          // Stellar WC wallets (Freighter Mobile included — see
+          // docs.freighter.app) implement only the four signing methods, and
+          // newer sign-client releases validate every request() method
+          // against the session namespaces, logging ERROR + throwing
+          // "Missing or invalid. request() method: stellar_getNetwork" for
+          // methods that were never approved. When the method wasn't
+          // approved we skip the request entirely and fall back to the
+          // app's configured network — same outcome, zero error noise.
           const configuredPassphrase = resolveNetworkPassphrase();
           const configuredNetwork = appkitNetwork ?? 'TESTNET';
-          try {
-            const networkResult = await wc.request({
-              topic: sessionTopic,
-              chainId: resolveWcChainId(),
-              request: { method: 'stellar_getNetwork', params: {} },
-            }) as { network?: string; networkPassphrase?: string };
-            if (networkResult?.networkPassphrase) {
-              cachedNetwork = {
-                network: networkResult.network ?? configuredNetwork,
-                networkPassphrase: networkResult.networkPassphrase,
-              };
-            } else {
-              // Wallet responded but didn't include networkPassphrase
-              cachedNetwork = {
-                network: configuredNetwork,
-                networkPassphrase: configuredPassphrase,
-              };
-            }
-          } catch {
-            // Wallet doesn't support stellar_getNetwork — use the app's
-            // configured network. This is the most common case.
+          const useConfiguredNetwork = () => {
             cachedNetwork = {
               network: configuredNetwork,
               networkPassphrase: configuredPassphrase,
             };
+          };
+          if (!grantedMethods.has('stellar_getNetwork')) {
+            // Wallet didn't approve stellar_getNetwork — use the app's
+            // configured network. This is the most common case.
+            useConfiguredNetwork();
+          } else {
+            try {
+              const networkResult = await wc.request({
+                topic: sessionTopic,
+                chainId: resolveWcChainId(),
+                request: { method: 'stellar_getNetwork', params: {} },
+              }) as { network?: string; networkPassphrase?: string };
+              if (networkResult?.networkPassphrase) {
+                cachedNetwork = {
+                  network: networkResult.network ?? configuredNetwork,
+                  networkPassphrase: networkResult.networkPassphrase,
+                };
+              } else {
+                // Wallet responded but didn't include networkPassphrase
+                useConfiguredNetwork();
+              }
+            } catch {
+              // The method was approved but the round-trip failed (timeout,
+              // wallet error) — fall back to the app's configured network.
+              useConfiguredNetwork();
+            }
           }
 
           // Persist the session topic for restore on reload
@@ -780,6 +826,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       cachedAddress = null;
       cachedNetwork = null;
       peerMetadata = null;
+      grantedMethods = new Set();
       if (opts.storage) {
         await opts.storage.removeItem(WC_STORAGE_KEY);
       }
@@ -803,6 +850,16 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       return withNormalizedError(meta.id, async () => {
         if (!client || !sessionTopic) {
           throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+        }
+        // Pre-check the approved methods — newer sign-client releases log
+        // ERROR and throw for methods the session didn't approve.
+        if (!grantedMethods.has('stellar_signXDR')) {
+          throw ConnectError.invalidRequest(
+            'WalletConnect wallet does not support stellar_signXDR ' +
+            `(approved methods: ${[...grantedMethods].join(', ') || 'none'}).`,
+            undefined,
+            meta.id
+          );
         }
         const result = await client.request({
           topic: sessionTopic,
@@ -841,6 +898,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
       return withNormalizedError(meta.id, async () => {
         if (!client || !sessionTopic) {
           throw ConnectError.invalidRequest('WalletConnect is not connected — call connect() first.', undefined, meta.id);
+        }
+
+        // Optional method — only call it when the session approved it, so
+        // wallets without support get a clean error instead of triggering
+        // the sign-client's namespace validation ERROR logs.
+        if (!grantedMethods.has('stellar_signAuthEntry')) {
+          throw ConnectError.invalidRequest(
+            'WalletConnect wallet does not support stellar_signAuthEntry ' +
+            '(this method is optional — the wallet did not approve it during pairing).',
+            undefined,
+            meta.id
+          );
         }
 
         // stellar_signAuthEntry — supported by Freighter Mobile and other
@@ -890,6 +959,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // stellar_signMessage — an optional WC method (not in the Reown-published
         // spec, but supported by Freighter Mobile, Hana, Lobstr, etc.).
         //
+        // Optional method — only call it when the session approved it, so
+        // wallets without support get a clean error instead of triggering
+        // the sign-client's namespace validation ERROR logs.
+        if (!grantedMethods.has('stellar_signMessage')) {
+          throw ConnectError.invalidRequest(
+            'WalletConnect wallet does not support stellar_signMessage ' +
+            '(this method is optional — the wallet did not approve it during pairing).',
+            undefined,
+            meta.id
+          );
+        }
+
         // Per SWK's implementation, params should be { message } only —
         // no publicKey field. SWK sends exactly { message: string }.
         // Response: { signature: string, signerAddress?: string }
