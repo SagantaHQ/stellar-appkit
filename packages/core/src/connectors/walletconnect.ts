@@ -169,13 +169,19 @@ export interface WalletConnectConnectorOptions {
    *   description: 'A Stellar dApp',
    *   url: 'https://saganta.com',
    *   icons: ['https://saganta.com/icon.png'],
+   *   redirect: { native: 'myapp://', universal: 'https://myapp.com' },
    * }
    * ```
    * The `url` field is also used as the `uri` in SIWS messages.
    * The `icons[0]` field is used as the signing/preview app icon.
    * The `name` field is used as the app name in the connecting view.
+   *
+   * The `redirect` field (WalletConnect metadata standard) tells cooperating
+   * mobile wallets which deep link re-opens THIS app — the wallet opens it
+   * after the user approves/rejects, backgrounding itself and returning
+   * focus to the dapp. Ignored by wallets that don't support it.
    */
-  metadata?: { name: string; description: string; url: string; icons: string[] };
+  metadata?: { name: string; description: string; url: string; icons: string[]; redirect?: { native?: string; universal?: string } };
   /**
    * Called with the WC pairing URI when a new connection is initiated.
    *
@@ -210,10 +216,22 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   // App metadata injected by StellarAppKit constructor — same object as
   // appMetadata in the config (WC metadata shape). When set, used directly
   // as the WC metadata (no need for opts.metadata).
-  let appkitAppMetadata: { name: string; description?: string; url?: string; icons?: string[] } | undefined;
+  let appkitAppMetadata: {
+    name: string;
+    description?: string;
+    url?: string;
+    icons?: string[];
+    redirect?: { native?: string; universal?: string };
+  } | undefined;
 
   // Resolve metadata — priority: opts.metadata > appkitAppMetadata > window.location
-  function resolveMetadata(): { name: string; description: string; url: string; icons: string[] } {
+  function resolveMetadata(): {
+    name: string;
+    description: string;
+    url: string;
+    icons: string[];
+    redirect?: { native?: string; universal?: string };
+  } {
     if (opts.metadata) return opts.metadata;
     // Use the appMetadata from StellarAppKit config if available
     if (appkitAppMetadata) {
@@ -222,6 +240,7 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         description: appkitAppMetadata.description || `${appkitAppMetadata.name} — Stellar dApp`,
         url: appkitAppMetadata.url || 'https://example.com',
         icons: appkitAppMetadata.icons || [],
+        ...(appkitAppMetadata.redirect ? { redirect: appkitAppMetadata.redirect } : {}),
       };
     }
     // Derive from window.location
@@ -1391,7 +1410,19 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    * appMetadata (WC metadata shape) so the connector can use it directly
    * as the WC metadata when opts.metadata is not provided.
    */
-  (connector as WalletConnector & { _setAppMetadata?: (meta: { name: string; description?: string; url?: string; icons?: string[] }) => void })._setAppMetadata = (meta: { name: string; description?: string; url?: string; icons?: string[] }) => {
+  (connector as WalletConnector & { _setAppMetadata?: (meta: {
+    name: string;
+    description?: string;
+    url?: string;
+    icons?: string[];
+    redirect?: { native?: string; universal?: string };
+  }) => void })._setAppMetadata = (meta: {
+    name: string;
+    description?: string;
+    url?: string;
+    icons?: string[];
+    redirect?: { native?: string; universal?: string };
+  }) => {
     appkitAppMetadata = meta;
   };
 

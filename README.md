@@ -248,7 +248,7 @@ That's a working wallet connect flow. Everything past here is what you reach for
 
 **Zero-config defaults:**
 - **`connectors`** — omit to auto-register Freighter, Albedo, xBull, and Ledger. Use `defaultConnectors()` to extend the set with WalletConnect.
-- **`** `appMetadata` follows the WC metadata standard ** — `{ name, description?, url?, icons? }`. The same object is fed directly to WalletConnect. `domain` for SIWS is derived from `url` (strip protocol+path), `uri` = `url`. When `url` is omitted, auto-derived from `window.location.origin`.
+- **`** `appMetadata` follows the WC metadata standard ** — `{ name, description?, url?, icons?, redirect? }`. The same object is fed directly to WalletConnect. `domain` for SIWS is derived from `url` (strip protocol+path), `uri` = `url`. When `url` is omitted, auto-derived from `window.location.origin`. `redirect` (`{ native?, universal? }`) is your app's own deep link — carried in WC session proposals so cooperating mobile wallets re-focus your app after approve/reject, and used by the React Native modal as its best-effort self-open target when an operation settles while the app is backgrounded (see the RN README's "Returning focus to your app").
 - **Modal animations** — `scale-blur` for desktop modal, `slide-up` for mobile bottom-sheet, out of the box. Override via the `animation` attribute or `modal.animation` config.
 
 See [The `<stellar-appkit-modal>` element](#the-stellar-appkit-modal-element) for the full list of animation presets.

@@ -75,8 +75,31 @@ export interface StellarAppKitConfig {
    * `window.location.origin` (browser). `domain` for SIWS is derived
    * from `url` by stripping the protocol and path. `description` and
    * `icons` are optional but recommended for WalletConnect.
+   *
+   * `redirect` (optional, mobile focus-return): your app's own deep-link
+   * target, following the WalletConnect/Reown metadata standard. It is
+   * included verbatim in every WalletConnect session proposal, where a
+   * cooperating mobile wallet reads it after the user approves or rejects
+   * and opens it — which backgrounds the wallet and re-focuses your app
+   * automatically (the standard mobile round trip). On React Native, the
+   * `@saganta/stellar-appkit-react-native` modal also uses it as the
+   * best-effort self-open target when an operation settles while your app
+   * is backgrounded. Ignored on web. Example:
+   * ```ts
+   * appMetadata: {
+   *   name: 'My App',
+   *   url: 'https://myapp.com',
+   *   redirect: { native: 'myapp://', universal: 'https://myapp.com' },
+   * }
+   * ```
    */
-  appMetadata?: { name: string; description?: string; url?: string; icons?: string[] };
+  appMetadata?: {
+    name: string;
+    description?: string;
+    url?: string;
+    icons?: string[];
+    redirect?: { native?: string; universal?: string };
+  };
   /** Set false to disable cross-tab session sync (on by default, no-ops where BroadcastChannel isn't available anyway). */
   syncAcrossTabs?: boolean;
   /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
@@ -177,24 +200,37 @@ export function defaultConnectors(): WalletConnector[] {
   ];
 }
 
+/** The mobile focus-return piece of `appMetadata` — WC/Reown metadata standard. */
+export type AppMetadataRedirect = { native?: string; universal?: string };
+
+/** The full resolved `appMetadata` shape used internally (WC metadata standard). */
+export type AppKitAppMetadata = {
+  name: string;
+  description?: string;
+  url?: string;
+  icons?: string[];
+  redirect?: AppMetadataRedirect;
+};
+
 /**
  * Normalizes the user-provided `appMetadata` (WC metadata shape) into the
  * fully-resolved shape the SDK uses internally.
  *
  * Input shape (WalletConnect/Reown metadata standard):
- *   { name, description?, url?, icons? }
+ *   { name, description?, url?, icons?, redirect? }
  *
  * - `url` is auto-derived from `window.location.origin` when omitted (browser)
  * - `url` is auto-formatted: prefixed with `https://` if no protocol
  * - `domain` (for SIWS) is derived from `url` by stripping protocol + path
  * - `uri` (for SIWS) = `url`
+ * - `redirect` values are trimmed and empty strings dropped
  *
  * The same object is passed directly to WalletConnect as its `metadata`.
  */
 export function normalizeAppMetadata(
-  meta: { name: string; description?: string; url?: string; icons?: string[] },
-): { name: string; description?: string; url?: string; icons?: string[] } {
-  let { name, description, url, icons } = meta;
+  meta: { name: string; description?: string; url?: string; icons?: string[]; redirect?: AppMetadataRedirect },
+): AppKitAppMetadata {
+  let { name, description, url, icons, redirect } = meta;
 
   // Auto-derive url from window.location when available (browser only)
   if (typeof window !== 'undefined' && window.location) {
@@ -209,7 +245,23 @@ export function normalizeAppMetadata(
     }
   }
 
-  return { name, description, url, icons };
+  // Redirect: trim + drop empty strings so downstream code can rely on
+  // "present string" meaning "configured".
+  const trimmedRedirect: AppMetadataRedirect = {};
+  if (redirect) {
+    const native = redirect.native?.trim();
+    const universal = redirect.universal?.trim();
+    if (native) trimmedRedirect.native = native;
+    if (universal) trimmedRedirect.universal = universal;
+  }
+
+  return {
+    name,
+    description,
+    url,
+    icons,
+    redirect: trimmedRedirect.native || trimmedRedirect.universal ? trimmedRedirect : undefined,
+  };
 }
 
 /**

@@ -31,6 +31,16 @@ export const rnState = {
   os: 'ios' as 'ios' | 'android',
   appStateListeners: [] as AppStateHandler[],
   linkingListeners: {} as Record<string, LinkingHandler[]>,
+  /**
+   * AppState.currentState — what focus-return reads to decide whether the
+   * app is foregrounded. Defaults to 'active' (the common test posture);
+   * backgrounded-app tests set 'background'.
+   */
+  appStateCurrent: 'active' as string | null | undefined,
+  /** Linking.openURL(url) calls made since the last reset (focus-return tests assert on these). */
+  openedUrls: [] as string[],
+  /** When true, Linking.openURL rejects — the OS refusing a backgrounded self-open. */
+  openUrlThrows: false,
   /** RN core Clipboard presence + behavior (see clipboard.ts). */
   hasClipboard: true,
   clipboardThrows: false,
@@ -43,6 +53,9 @@ export function resetRnState(): void {
   rnState.os = 'ios';
   rnState.appStateListeners = [];
   rnState.linkingListeners = {};
+  rnState.appStateCurrent = 'active';
+  rnState.openedUrls = [];
+  rnState.openUrlThrows = false;
   rnState.hasClipboard = true;
   rnState.clipboardThrows = false;
   rnState.clipboardText = null;
@@ -63,13 +76,20 @@ export function emitLinkingUrl(url: string): void {
 const registry = {
   Vibration: { vibrate: () => {} },
   Linking: {
-    openURL: async () => undefined,
+    openURL: async (url: string) => {
+      rnState.openedUrls.push(url);
+      if (rnState.openUrlThrows) throw new Error('unable to open URL');
+      return undefined;
+    },
     addEventListener: (type: string, handler: LinkingHandler) => {
       rnState.linkingListeners[type] = [...(rnState.linkingListeners[type] ?? []), handler];
       return { remove: () => {} };
     },
   },
   AppState: {
+    get currentState(): string | null | undefined {
+      return rnState.appStateCurrent;
+    },
     addEventListener: (_type: string, handler: AppStateHandler) => {
       rnState.appStateListeners.push(handler);
       return {

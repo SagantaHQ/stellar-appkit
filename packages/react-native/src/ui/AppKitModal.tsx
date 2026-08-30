@@ -83,6 +83,7 @@ import {
 import { useAppKit } from './useAppKit.js';
 import { useReducedMotion } from './animations.js';
 import { useWalletConnectForegroundRefresh } from '../wc-foreground.js';
+import { useAppFocusReturn } from '../focus-return.js';
 import { copyText } from '../clipboard.js';
 import { useSiwsFlow } from './useSiws.js';
 import { buildStyles } from './styles.js';
@@ -155,6 +156,13 @@ export function AppKitModal({
   // this the approval never lands and the flow below stays stuck on the
   // connecting view. See wc-foreground.ts.
   useWalletConnectForegroundRefresh(client);
+
+  // Focus return: when the operation the app requested settles while the
+  // app sits backgrounded behind the wallet app, re-focus it (self-open
+  // of appMetadata.redirect's deep link, best effort — cooperating wallets
+  // bounce back on their own via the session proposal's redirect). Skipped
+  // automatically while the app is foregrounded. See focus-return.ts.
+  useAppFocusReturn(client);
 
   // All copy is `t()`-resolved at render time — re-render when the app
   // switches the locale so the sheet translates instantly (web parity:

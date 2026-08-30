@@ -51,7 +51,15 @@ export const [xbullView, setXBullView] = useState<React.ReactElement | null>(nul
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
-  appMetadata: { name: 'My App', url: 'https://myapp.example' }, // url is required on RN (no window.location)
+  appMetadata: {
+    name: 'My App',
+    url: 'https://myapp.example', // url is required on RN (no window.location)
+    // Optional (mobile focus-return): your app's own deep link, carried in
+    // WC session proposals so cooperating wallets re-focus your app after
+    // approve/reject — and used by the RN modal as its self-open target
+    // when an operation settles while the app is backgrounded.
+    redirect: { native: 'myapp://', universal: 'https://myapp.example' },
+  },
   storage: createAsyncStorage(AsyncStorage),                     // sessions persist across restarts
   connectors: defaultReactNativeConnectors({
     projectId: '<WalletConnect Cloud project ID>',
@@ -306,6 +314,33 @@ registerMobileWallet({
 `buildWalletConnectDeepLink(id, uri)` then produces `<registered-link>/wc?uri=<encoded>` — byte-compatible with WalletConnect's own modal (`CoreUtil.formatNativeUrl`), the format every Explorer-registered wallet is tested against. Pass `link` for wallets whose registered native entry includes a path (like Scopuly's `scopuly://wc` or Freighter's `freighterwallet://wc-redirect`) and `universal` for an https fallback.
 
 > **Use the wallet's REGISTERED link, not its bare scheme.** Some wallets validate the URL they're asked to open: Freighter Mobile's deep-link handler silently ignores anything that doesn't contain its Reown-registered redirect (`freighterwallet://wc-redirect`), so a `freighterwallet://wc?uri=...` link opens the app and then does nothing — no pairing prompt. The Explorer entry (`mobile.native`) is the source of truth; every built-in wallet ships its exact value.
+
+## Returning focus to your app after the operation
+
+The deep-link handoff above puts the user inside the wallet app to approve (or reject). The moment they answer, the task is done — the user belongs back in YOUR app, not still staring at Freighter/LOBSTR/HOT Wallet. Neither OS lets a backgrounded app force itself to the foreground (iOS forbids it outright, Android 10+ blocks background activity starts), so AppKit pulls every sanctioned lever for you:
+
+1. **The wallet bounces the user back (primary).** Set your app's deep link in `appMetadata.redirect` — it rides the WalletConnect session proposal (`proposer.metadata.redirect`, the Reown/WC "return to dapp" standard). Cooperating wallets open it right after approve/reject, backgrounding themselves and re-focusing your app. This is the same mechanism MetaMask/Rainbow/Trust use on both platforms, because it's the WALLET (a foreground app) doing the opening.
+2. **The library self-opens (best-effort fallback).** When the operation settles while your app is backgrounded but its JS is still alive (common on Android for the first seconds after the handoff, before the OS reaps the relay socket), the modal re-opens your own deep link — some Android builds honor that self-intent and reorder your task to the front; iOS and stricter Android builds refuse it and the attempt is a silent no-op. Both success AND failure count as settled — either way the user is done in the wallet.
+3. **The user returns manually (the floor).** If nothing above fired, the AppState foreground refresh (the zombie-socket fix) guarantees the instant they swipe back, the relay restarts and the settled operation lands.
+
+```ts
+const appkit = new StellarAppKit({
+  network: 'TESTNET',
+  appMetadata: {
+    name: 'My App',
+    url: 'https://myapp.example',
+    // Your app's own deep link — registered in app.json (Expo: `scheme`)
+    // or AndroidManifest.xml / Info.plist. A bare scheme is normalized
+    // ("myapp" → "myapp://").
+    redirect: { native: 'myapp://', universal: 'https://myapp.example' },
+  },
+  // ...
+});
+```
+
+The modal installs this automatically (no wiring). Headless apps get the same behavior with `attachAppFocusReturn(appkit)`. With no `redirect` configured there is nothing to self-open — you still keep lever 3, and in-app outcomes (rejecting a preview at the account screen, an SIWS cancel) never steal focus because attempts only fire while the app is backgrounded.
+
+> **Wallet support varies.** Whether the automatic bounce-back (lever 1) happens is up to each wallet — AppKit advertises the redirect to every wallet, but only wallets implementing the Reown redirect behavior act on it. Test with your target wallets; for the rest, levers 2–3 still land the user back in the app the moment they switch.
 
 ## Headless usage (no modal)
 
