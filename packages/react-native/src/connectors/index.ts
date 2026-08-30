@@ -15,6 +15,11 @@
  * - **Albedo (WebView)** bridges Albedo's web confirm flow into an in-app
  *   WebView — register it only if you also install `react-native-webview`
  *   and pass a bridge (the `./albedo` entry provides one).
+ * - **xBull (WebView)** bridges the xBull web wallet (wallet.xbull.app) the
+ *   same way — xBull has no native app and isn't in the WalletConnect
+ *   Explorer's Stellar namespace, so the WebView popup protocol is its only
+ *   mobile surface. Register it only if you pass `xbullBridge` (the `./xbull`
+ *   entry provides one).
  *
  * Browser extensions and hardware transports are simply not registered —
  * their reachability then reports `not-installed`/`unavailable` honestly if
@@ -27,6 +32,7 @@ import {
   type ConnectStorage,
 } from '@saganta/stellar-appkit';
 import { createAlbedoWebViewConnector, type AlbedoWebViewBridge } from './albedo-webview.js';
+import { createXBullWebViewConnector, type XBullWebViewBridge } from './xbull-webview.js';
 
 export interface ReactNativeConnectorsOptions {
   /** WalletConnect Cloud project ID — required (cloud.walletconnect.com). */
@@ -50,12 +56,21 @@ export interface ReactNativeConnectorsOptions {
   albedoBridge?: AlbedoWebViewBridge;
   /** The app's origin for the Albedo intent (Albedo shows it to the user). */
   albedoOrigin?: string;
+  /**
+   * xBull WebView bridge. When omitted, the xBull connector is NOT
+   * registered. The `@saganta/stellar-appkit-react-native/xbull` entry
+   * exports a ready bridge implementation (renders the wallet.xbull.app
+   * popup protocol inside a WebView).
+   */
+  xbullBridge?: XBullWebViewBridge;
+  /** The app's origin for xBull requests (the wallet shows it to the user). */
+  xbullOrigin?: string;
 }
 
 /**
  * The React Native default connector set: WalletConnect (+ optional
- * Albedo WebView). Order matters — WalletConnect is pinned first by the
- * registry's sort, matching the web modal's behavior.
+ * Albedo WebView + optional xBull WebView). Order matters — WalletConnect
+ * is pinned first by the registry's sort, matching the web modal's behavior.
  */
 export function defaultReactNativeConnectors(opts: ReactNativeConnectorsOptions): WalletConnector[] {
   const connectors: WalletConnector[] = [
@@ -76,8 +91,24 @@ export function defaultReactNativeConnectors(opts: ReactNativeConnectorsOptions)
     );
   }
 
+  if (opts.xbullBridge) {
+    connectors.push(
+      createXBullWebViewConnector({
+        bridge: opts.xbullBridge,
+        origin: opts.xbullOrigin ?? 'https://example.com',
+      })
+    );
+  }
+
   return connectors;
 }
 
 export { createAlbedoWebViewConnector, ALBEDO_FRONTEND_URL } from './albedo-webview.js';
 export type { AlbedoWebViewBridge, AlbedoWebViewConnectorOptions } from './albedo-webview.js';
+export { createXBullWebViewConnector, XBULL_WALLET_URL } from './xbull-webview.js';
+export type {
+  XBullWebViewBridge,
+  XBullWalletHandle,
+  XBullWalletMessage,
+  XBullWebViewConnectorOptions,
+} from './xbull-webview.js';

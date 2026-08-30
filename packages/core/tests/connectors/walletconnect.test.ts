@@ -46,6 +46,12 @@ let sessionAccounts: string[] = [];
 let connectCalls: WCConnectCall[] = [];
 /** Captured wc.request() arguments. */
 let requestCalls: WCRequestCall[] = [];
+/** How many times SignClient.init ran — the warm-up tests assert on it. */
+let initCount = 0;
+/** When set, SignClient.init rejects — warm-up failure simulation. */
+let initError: Error | null = null;
+/** When set, SignClient.init blocks on this promise — concurrency tests release it. */
+let initBlocker: Promise<void> | null = null;
 /** Per-method canned responses for wc.request(). */
 let requestResponses: Record<string, unknown> = {};
 /** When set, every wc.request() rejects with this error. */
@@ -85,7 +91,12 @@ const fakeClient = {
 
 mock.module('@walletconnect/sign-client', () => ({
   SignClient: {
-    init: async () => fakeClient,
+    init: async () => {
+      initCount++;
+      if (initBlocker) await initBlocker;
+      if (initError) throw initError;
+      return fakeClient;
+    },
   },
 }));
 
@@ -102,6 +113,9 @@ beforeEach(() => {
   requestCalls = [];
   requestResponses = {};
   requestError = null;
+  initCount = 0;
+  initError = null;
+  initBlocker = null;
 });
 
 describe('createWalletConnectConnector — session proposal', () => {
@@ -237,5 +251,58 @@ describe('createWalletConnectConnector — approved-methods verification', () =>
 
     await expect(connector.getAddress()).rejects.toThrow();
     await expect(connector.getNetwork()).rejects.toThrow();
+  });
+});
+
+describe('createWalletConnectConnector — warmUp() (cold-start off the tap)', () => {
+  test('warmUp() initializes the SignClient exactly once and resolves', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    await connector.warmUp!();
+    await connector.warmUp!(); // idempotent
+
+    expect(initCount).toBe(1);
+
+    // A subsequent connect() reuses the warm client — no second init.
+    const account = await connector.connect();
+    expect(account.address).toBe(ADDRESS);
+    expect(initCount).toBe(1);
+  });
+
+  test('warmUp() swallows init failures and a later connect() retries', async () => {
+    initError = new Error('relay unreachable');
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+
+    // Must NOT throw — a failed warm-up leaves the connector cold.
+    await connector.warmUp!();
+    expect(initCount).toBe(1);
+
+    // The next call retries initialization instead of caching the rejection.
+    initError = null;
+    const account = await connector.connect();
+    expect(account.address).toBe(ADDRESS);
+    expect(initCount).toBe(2);
+  });
+
+  test('a concurrent warmUp() and connect() share ONE init (no double init race)', async () => {
+    // Block the first init so both callers are provably in flight together.
+    let unblock!: () => void;
+    initBlocker = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    const warm = connector.warmUp!();
+    const connect = connector.connect();
+
+    // Let both callers reach ensureClient() while init is still pending.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(initCount).toBe(1); // exactly one init in flight
+
+    unblock();
+    await Promise.all([warm, connect]);
+
+    expect(initCount).toBe(1);
+    expect(connectCalls).toHaveLength(1);
   });
 });

@@ -20,9 +20,15 @@ export * from '@saganta/stellar-appkit';
 export {
   defaultReactNativeConnectors,
   createAlbedoWebViewConnector,
+  createXBullWebViewConnector,
+  XBULL_WALLET_URL,
   type ReactNativeConnectorsOptions,
   type AlbedoWebViewBridge,
   type AlbedoWebViewConnectorOptions,
+  type XBullWebViewBridge,
+  type XBullWalletHandle,
+  type XBullWalletMessage,
+  type XBullWebViewConnectorOptions,
   ALBEDO_FRONTEND_URL,
 } from './connectors/index.js';
 

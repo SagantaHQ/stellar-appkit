@@ -5,6 +5,8 @@ React Native support for [Stellar AppKit](https://github.com/SagantaHQ/stellar-a
 - **Deep-link-only pairing, full wallet registry** — every consumer wallet registered against WalletConnect's Stellar namespace ships built-in: the featured **Freighter, LOBSTR, HOT Wallet, Scopuly** plus 17 multichain wallets (SafePal, Blockchain.com, Arculus, Atomic Wallet, COCA, Trustee, MaxWallet, Zypto, Hero, UKey, ECOIN, SwiftEx, Panaroma, Kotai, Cryptokara, UKISS Hub, SOC) under a collapsible "More wallets" section. Tap one and we embed the pairing URI into its deep link (`freighterwallet://wc?uri=...`, WalletConnect-modal compatible) and hand off to the wallet app, Solana-Mobile-Adapter style — branded with the wallet's own name and icon throughout. On a phone the same device would have to scan a QR code, so the modal never renders one; a "Copy pairing code" fallback covers wallets with manual pairing fields.
 - **True wallet names** — WalletConnect sessions capture the peer wallet's metadata, so the connecting and account views show "Freighter" or "HOT Wallet", never a generic "WalletConnect" label.
 - **Albedo WebView bridge** — Albedo's web confirm flow, reproduced inside an in-app WebView (`window.opener` shim + synthetic MessageEvents — the exact popup protocol).
+- **xBull WebView bridge** — xBull's web wallet (wallet.xbull.app), same trick: the nacl-box popup protocol reproduced inside an in-app WebView. xBull has no native app and isn't in the WalletConnect Explorer's Stellar namespace, so this is its only mobile surface — and it restores wallet-list parity with the web modal, where xBull is a featured connector.
+- **Instant wallet taps (`warmUp()`)** — the WalletConnect connector exposes `warmUp()`: it pre-evaluates the `@walletconnect/sign-client` module tree and opens the relay WebSocket so the first tap is instant. Without it, Metro evaluates hundreds of WC modules synchronously on the tap — a multi-second freeze on debug builds. The modal warms up automatically when it opens; apps can also warm at app start (`client.registry.get('walletconnect')?.warmUp?.()`).
 - **AsyncStorage persistence** — sessions survive app restarts via a first-class `ConnectStorage` adapter.
 - **Full modal parity (1:1 with the web modal)** — bottom-sheet modal (`@gorhom/bottom-sheet`) or **inline panel** (`mode="inline"`, web parity), web-metric wallet list with live reachability, the web's squircle dash-arc spinner (the traveling-dash rounded-square — not a circle — rebuilt with pure Views, same 2s/0.8s timings, reduced-motion aware via `AccessibilityInfo`), the web's back-arrow error header, connecting/signing/SIWS error variants with retry pills, network-mismatch view, "Powered by Stellar AppKit" footer, i18n (25 locales).
 - **SIWS (Sign-In With Stellar)** — when `siwsConfig` is set on the client, the modal runs the automatic sign-in flow right after connect (checking session → fetching nonce → approve in wallet → verifying), with per-step timeouts, retry caps and disconnect-on-fail — the same flow, phases and copy as the web modal.
@@ -19,7 +21,7 @@ npm install @saganta/stellar-appkit-react-native \
   @react-native-async-storage/async-storage \
   @gorhom/bottom-sheet \
   buffer react-native-get-random-values
-# only if you use the Albedo WebView bridge:
+# only if you use the Albedo and/or xBull WebView bridges:
 npm install react-native-webview
 # (no react-native-svg needed — icons are pre-rasterized PNGs)
 ```
@@ -41,9 +43,11 @@ import {
   createAsyncStorage,
 } from '@saganta/stellar-appkit-react-native';
 import { createAlbedoWebViewBridge } from '@saganta/stellar-appkit-react-native/albedo';
+import { createXBullWebViewBridge } from '@saganta/stellar-appkit-react-native/xbull';
 import { AppKitModal } from '@saganta/stellar-appkit-react-native/ui';
 
 export const [albedoView, setAlbedoView] = useState<React.ReactElement | null>(null);
+export const [xbullView, setXBullView] = useState<React.ReactElement | null>(null);
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -54,6 +58,8 @@ const appkit = new StellarAppKit({
     storage: createAsyncStorage(AsyncStorage),
     albedoBridge: createAlbedoWebViewBridge(setAlbedoView),      // optional — requires react-native-webview
     albedoOrigin: 'https://myapp.example',
+    xbullBridge: createXBullWebViewBridge(setXBullView),         // optional — web-wallet-list parity with xBull
+    xbullOrigin: 'https://myapp.example',
   }),
 });
 
@@ -64,6 +70,7 @@ export function App() {
       <Button title="Connect" onPress={() => setOpen(true)} />
       {open && <AppKitModal client={appkit} open={open} onClose={() => setOpen(false)} />}
       {albedoView}
+      {xbullView}
     </>
   );
 }
@@ -128,7 +135,7 @@ before sign-in succeeds) disconnects the wallet when
 The modal's wallet list shows every wallet that can actually pair on a phone — deep link only, never a QR code (the same phone would have to scan it):
 
 1. **Featured Stellar wallets** — Freighter, LOBSTR, HOT Wallet and Scopuly each get their own row in the primary section (when the WalletConnect connector is configured). Tapping one starts the pairing and deep-links straight into the wallet app — the whole flow (connecting view, account view, sign requests) is branded with that wallet's own name and icon, and falls back to the wallet's https universal link when the native scheme can't open. If neither works, the connecting view offers the store page and a "Copy pairing code" action for wallets with a manual pairing field.
-2. **Registered connectors** — Albedo (WebView), right under the featured wallets.
+2. **Registered connectors** — Albedo (WebView) and xBull (WebView), right under the featured wallets.
 3. **More wallets** — every other WalletConnect-registered mobile wallet (SafePal, Blockchain.com, Arculus, …) collapses under a "More wallets" expander, same deep-link flow.
 
 The built-in registry (verified against the WalletConnect Explorer, `chains=stellar:pubnet`):
@@ -334,6 +341,7 @@ The [RN demo](https://github.com/SagantaHQ/stellar-appkit-rn-expo-demo) ships bo
 | `.../polyfills` | `installPolyfills()` |
 | `.../ui` | `AppKitModal` (bottom-sheet + inline modes), `useAppKit`, `useSiwsFlow`, `WalletIcon`, `SquircleArc` + squircle-track geometry, pure-View icon set, themes (5 × dark/light) |
 | `.../albedo` | `createAlbedoWebViewBridge` + `AlbedoWebViewScreen` (requires `react-native-webview`) |
+| `.../xbull` | `createXBullWebViewBridge` + `XBullWebViewScreen` — the xBull web-wallet popup protocol in a WebView (requires `react-native-webview`) |
 
 ## Modal internals (for contributors)
 

@@ -186,8 +186,13 @@ export function AppKitModal({
       setOpenFailed(false);
       setConnectingWallet(null);
       void refreshWallets();
+      // Pre-warm the WalletConnect SignClient while the user is still
+      // scanning the wallet list — the SDK module evaluation + relay
+      // WebSocket handshake then never land on the tap. (Warm-up is
+      // idempotent; apps that already warmed at app start no-op here.)
+      void wcConnector?.warmUp?.();
     }
-  }, [effectiveOpen, client, client.session, refreshWallets]);
+  }, [effectiveOpen, client, client.session, refreshWallets, wcConnector]);
 
   // --- client event → view wiring (mirrors the web modal's client setter) ----
   useEffect(() => {
