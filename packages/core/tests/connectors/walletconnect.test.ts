@@ -878,3 +878,168 @@ describe('createWalletConnectConnector — wallet-initiated session_delete', () 
     await expect(connector.getAddress()).rejects.toThrow(/not connected/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Wallet-initiated disconnect propagation — the user taps Disconnect INSIDE
+// the wallet and the library must disconnect too.
+//
+// The regression these pin: the connector's session_delete handler used to
+// clear only its OWN private state (topic, cached address, persisted record).
+// StellarAppKit kept serving the dead session — status 'connected', account
+// view up, hooks reporting a wallet — until the next sign request blew up
+// with "WalletConnect is not connected — call connect() first". Now the
+// connector notifies the client through setOnSessionInvalidated (wired by
+// the StellarAppKit constructor), and the client reconciles exactly like an
+// app-initiated disconnect: session dropped (memory + storage), status
+// flipped, `disconnect` + `sessionsChanged` emitted.
+// ---------------------------------------------------------------------------
+
+describe('wallet-initiated disconnect — connector → client propagation', () => {
+  test('setOnSessionInvalidated fires when the wallet deletes the session', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    let invalidated = 0;
+    (connector as { setOnSessionInvalidated?: (fn: (() => void) | null) => void }).setOnSessionInvalidated?.(() => invalidated++);
+
+    const handlers = eventHandlers['session_delete'] ?? [];
+    handlers[0]!({ topic: 'test-topic' });
+    expect(invalidated).toBe(1);
+    // A second delivery for the same (now-dead) topic doesn't re-fire —
+    // the relay can echo session_delete + session_expire back to back.
+    handlers[0]!({ topic: 'test-topic' });
+    expect(invalidated).toBe(1);
+  });
+
+  test('session_expire (the ~7-day TTL lapse) fires the same callback', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    let invalidated = 0;
+    (connector as { setOnSessionInvalidated?: (fn: (() => void) | null) => void }).setOnSessionInvalidated?.(() => invalidated++);
+
+    const handlers = eventHandlers['session_expire'] ?? [];
+    expect(handlers.length).toBeGreaterThan(0);
+    handlers[0]!({ topic: 'test-topic' });
+    expect(invalidated).toBe(1);
+  });
+
+  test('the callback is NOT fired for our own disconnect() (no event double-fire)', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+
+    let invalidated = 0;
+    (connector as { setOnSessionInvalidated?: (fn: (() => void) | null) => void }).setOnSessionInvalidated?.(() => invalidated++);
+
+    await connector.disconnect();
+    expect(invalidated).toBe(0);
+
+    // The SDK's late local echo of our own deletion (if any arrives) is
+    // also suppressed — the topic no longer matches our session.
+    const handlers = eventHandlers['session_delete'] ?? [];
+    if (handlers.length > 0) handlers[0]!({ topic: 'test-topic' });
+    expect(invalidated).toBe(0);
+  });
+
+  test('StellarAppKit: a wallet-side delete drops the session, flips the status, and emits disconnect — exactly like an app-side disconnect', async () => {
+    const { storage } = makeStorage();
+    const appkit = new StellarAppKit({
+      connectors: [createWalletConnectConnector({ projectId: 'test-project', storage })],
+      network: 'TESTNET',
+      storage,
+    });
+    await appkit.connect('walletconnect');
+    expect(appkit.status).toBe('connected');
+    expect(appkit.sessions.map((s) => s.walletId)).toEqual(['walletconnect']);
+
+    const disconnects: string[] = [];
+    const sessionChanges: number[] = [];
+    const statuses: string[] = [];
+    appkit.on('disconnect', (e) => disconnects.push(e.walletId));
+    appkit.on('sessionsChanged', () => sessionChanges.push(appkit.sessions.length));
+    appkit.on('statusChange', (s) => statuses.push(s));
+
+    // The wallet kills the session from its side.
+    (eventHandlers['session_delete'] ?? [])[0]!({ topic: 'test-topic' });
+    await new Promise((r) => setTimeout(r, 30)); // reconciliation is fire-and-forget async
+
+    expect(disconnects).toEqual(['walletconnect']);
+    expect(appkit.session).toBeNull();
+    expect(appkit.sessions).toHaveLength(0);
+    expect(appkit.status).toBe('idle');
+    expect(statuses).toContain('idle');
+    // The client-level persisted session went with it — a cold restart
+    // must NOT resurrect a session the wallet already killed (persist()
+    // writes the emptied record, same as an app-initiated disconnect).
+    const stored = JSON.parse((await storage.getItem('saganta-connect:session'))!) as { sessions?: unknown[] };
+    expect(stored.sessions).toHaveLength(0);
+    expect(await storage.getItem('saganta-appkit:walletconnect-session')).toBeNull();
+    // The connector is cold: further signs fail with the "not connected"
+    // guard instead of hanging a dead session topic.
+    await expect(appkit.signTransaction('AAAA-tx')).rejects.toThrow();
+  });
+
+  test('StellarAppKit: the app-initiated disconnect() path still emits exactly ONE disconnect event', async () => {
+    const { storage } = makeStorage();
+    const appkit = new StellarAppKit({
+      connectors: [createWalletConnectConnector({ projectId: 'test-project', storage })],
+      network: 'TESTNET',
+      storage,
+    });
+    await appkit.connect('walletconnect');
+
+    const disconnects: string[] = [];
+    appkit.on('disconnect', (e) => disconnects.push(e.walletId));
+
+    await appkit.disconnect();
+    expect(disconnects).toEqual(['walletconnect']);
+  });
+
+  test('peer metadata carries the wallet redirect deep links (sign handoff survives restarts)', async () => {
+    // The fake wallet settles with peer name "Freighter"; give it a native
+    // redirect so the capture path has something to record.
+    const { storage } = makeStorage();
+    const originalConnect = fakeClient.connect.bind(fakeClient);
+    (fakeClient as { connect: unknown }).connect = async (opts: WCConnectCall) => {
+      const result = await originalConnect(opts);
+      return {
+        ...result,
+        approval: async () => {
+          if (approvalBlocker) await approvalBlocker;
+          if (approvalError !== null) throw approvalError;
+          return {
+            topic: 'test-topic',
+            namespaces: { stellar: { accounts: sessionAccounts, methods: sessionMethods } },
+            peer: {
+              metadata: {
+                name: 'Freighter',
+                url: 'https://freighter.app',
+                icons: [],
+                redirect: { native: 'freighterwallet://wc-redirect', universal: 'https://freighter.app/uni' },
+              },
+            },
+          };
+        },
+      };
+    };
+    try {
+      const connector = createWalletConnectConnector({ projectId: 'test-project', storage });
+      await connector.connect();
+      expect(connector.getSessionPeer?.()).toEqual({
+        name: 'Freighter',
+        url: 'https://freighter.app',
+        icon: null,
+        redirect: { native: 'freighterwallet://wc-redirect', universal: 'https://freighter.app/uni' },
+      });
+
+      // The redirect is persisted with the record — a cold-restarted
+      // connector rehydrates it instead of losing the handoff target.
+      const record = JSON.parse((await storage.getItem('saganta-appkit:walletconnect-session'))!) as {
+        peerMetadata?: { redirect?: { native?: string } };
+      };
+      expect(record.peerMetadata?.redirect?.native).toBe('freighterwallet://wc-redirect');
+    } finally {
+      (fakeClient as { connect: unknown }).connect = originalConnect;
+    }
+  });
+});

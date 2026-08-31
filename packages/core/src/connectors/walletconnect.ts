@@ -258,6 +258,18 @@ export interface WalletConnectPeerMetadata {
   url: string | null;
   /** The wallet's icon (https URL), when provided. */
   icon: string | null;
+  /**
+   * The wallet's own declared deep links (WalletConnect `redirect`
+   * metadata) — `native` is a custom scheme that re-opens the WALLET app,
+   * `universal` its https fallback. Mobile UIs use these to hand off to
+   * the wallet for a pending sign request (and back) without knowing the
+   * wallet's scheme a priori — the session itself carries it.
+   *
+   * Null/absent when the wallet didn't declare redirects (desktop wallets,
+   * older wallets) or before a session settles. Persisted alongside the
+   * rest of the peer record so a cold-restarted app can still hand off.
+   */
+  redirect?: { native: string | null; universal: string | null } | null;
 }
 
 export interface WalletConnectConnectorOptions {
@@ -491,6 +503,35 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let onUriHandler: ((uri: string) => void) | null = opts.onUri ?? (() => {});
 
   /**
+   * Late-bound wallet-initiated-disconnect handler — fires when the WALLET
+   * kills the session from its side (`session_delete` delivered over the
+   * relay, or `session_expire` when the ~7-day TTL lapses), as opposed to
+   * disconnect(), which is the app asking the wallet to leave.
+   *
+   * StellarAppKit's constructor wires this automatically: the callback
+   * reconciles the client's session map, drops the persisted session,
+   * emits `disconnect` + `sessionsChanged`, and flips the status — so a
+   * wallet-side disconnect is reflected everywhere (modal views, hooks,
+   * persisted storage) exactly like an app-initiated one. Without it the
+   * connector only cleared its OWN state: the client kept serving a dead
+   * session (status 'connected', account view up) until the next sign
+   * blew up with "call connect() first".
+   *
+   * NOT fired for self-initiated disconnects — the SDK echoes our own
+   * `session_delete` back through this handler, and the client's
+   * disconnect() path already emits its own events (a second callback
+   * here would double-fire them).
+   */
+  let onSessionInvalidatedHandler: (() => void) | null = null;
+
+  /**
+   * True while THIS side is disconnecting (connector.disconnect()) — the
+   * SDK emits `session_delete` locally for our own deletion, and that echo
+   * must not be reported as a wallet-initiated invalidation.
+   */
+  let selfDisconnecting = false;
+
+  /**
    * Aborts an in-flight connect() attempt. Set when the user cancels
    * (abort() — the modal's back arrow) or when a fatal relay error is
    * detected. connect() checks this after every await and bails out.
@@ -700,11 +741,19 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
 
           const session = wc.session.get(saved.topic) as {
             topic?: string;
+            expiry?: number;
             namespaces?: { stellar?: { accounts?: string[]; methods?: string[] } };
-            peer?: { metadata?: { name?: string; url?: string; icons?: string[] } };
+            peer?: { metadata?: { name?: string; url?: string; icons?: string[]; redirect?: { native?: string; universal?: string } } };
           } | undefined;
 
-          if (!session || session.topic !== saved.topic) {
+          // Expired-on-paper sessions get the same treatment as deleted
+          // ones: the SDK's expirer usually prunes them from the store, but
+          // a device that was offline past the ~7-day TTL can still hold
+          // the record — rehydrating it would hand the app a session the
+          // relay refuses the moment it's used.
+          const expired = typeof session?.expiry === 'number' && session.expiry > 0 && session.expiry * 1000 < Date.now();
+
+          if (!session || session.topic !== saved.topic || expired) {
             // Wallet deleted the session / it expired — drop our record so
             // the next restore doesn't repeat this lookup.
             try { await opts.storage!.removeItem(WC_STORAGE_KEY); } catch { /* best-effort */ }
@@ -720,7 +769,14 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           } else {
             const peer = session.peer?.metadata;
             peerMetadata = peer?.name
-              ? { name: peer.name, url: peer.url || null, icon: peer.icons?.[0] || null }
+              ? {
+                  name: peer.name,
+                  url: peer.url || null,
+                  icon: peer.icons?.[0] || null,
+                  redirect: peer.redirect
+                    ? { native: peer.redirect.native ?? null, universal: peer.redirect.universal ?? null }
+                    : null,
+                }
               : null;
           }
 
@@ -767,13 +823,22 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         ...(opts.logger ? { logger: opts.logger } : {}),
       });
 
-      // Listen for session deletion (wallet disconnected from their side).
+      // Listen for the wallet deleting / expiring the session from ITS side.
       // Clears EVERYTHING the connector knows about the session — including
       // the persisted record, so a cold restart doesn't try to rehydrate a
       // session the wallet already killed. Without the storage removal the
       // record lingered until the next rehydration attempt noticed the SDK
       // store no longer had the topic.
-      client.on('session_delete', (...args: unknown[]) => {
+      //
+      // It also notifies the host via onSessionInvalidatedHandler so
+      // StellarAppKit can reconcile its OWN session map (drop the session,
+      // emit disconnect/sessionsChanged, flip the status) — the user
+      // disconnecting inside the wallet must disconnect the library too,
+      // not just this connector's private state. Skipped while
+      // selfDisconnecting: our disconnect() already drives the client-side
+      // teardown, and the SDK's local echo of our own deletion must not
+      // double-fire those events.
+      const handleSessionInvalidated = (...args: unknown[]) => {
         const event = args[0] as { topic?: string };
         if (event?.topic === sessionTopic) {
           sessionTopic = null;
@@ -784,8 +849,21 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           if (opts.storage) {
             void Promise.resolve(opts.storage.removeItem(WC_STORAGE_KEY)).catch(() => undefined);
           }
+          if (!selfDisconnecting && onSessionInvalidatedHandler) {
+            try {
+              onSessionInvalidatedHandler();
+            } catch {
+              // Host callback failure must never break the cleanup above.
+            }
+          }
         }
-      });
+      };
+      // session_delete — the wallet explicitly disconnected (or echoed our
+      // own deletion; the flag above sorts those apart).
+      client.on('session_delete', handleSessionInvalidated);
+      // session_expire — the ~7-day session TTL lapsed while we weren't
+      // looking. Same reconciliation: the session is equally gone.
+      client.on('session_expire', handleSessionInvalidated);
 
       // CRITICAL: Listen for relay transport errors that are FATAL — e.g.
       // "Project not found" (code 3000) when the projectId is invalid.
@@ -1206,13 +1284,18 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
           // ("Freighter", "LOBSTR", "HOT Wallet", ...), not the generic
           // "WalletConnect" label. Every WC wallet sends this on session settle;
           // the UI reads it via getSessionPeer() to brand the connecting/account
-          // views after the user picked a specific wallet.
-          const peer = (session as { peer?: { metadata?: { name?: string; url?: string; icons?: string[] } } }).peer?.metadata;
+          // views after the user picked a specific wallet. The peer's own
+          // `redirect` deep links ride along so a later sign handoff can
+          // re-open the wallet app even after a cold restart.
+          const peer = (session as { peer?: { metadata?: { name?: string; url?: string; icons?: string[]; redirect?: { native?: string; universal?: string } } } }).peer?.metadata;
           if (peer?.name) {
             peerMetadata = {
               name: peer.name,
               url: peer.url || null,
               icon: peer.icons?.[0] || null,
+              redirect: peer.redirect
+                ? { native: peer.redirect.native ?? null, universal: peer.redirect.universal ?? null }
+                : null,
             };
           } else {
             peerMetadata = null;
@@ -1351,26 +1434,37 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
     },
 
     async disconnect() {
-      if (client && sessionTopic) {
-        try {
-          await client.disconnect({
-            topic: sessionTopic,
-            reason: { code: 6000, message: 'User disconnected' },
-          });
-        } catch {
-          // Session may already be deleted — ignore
+      // Mark this as SELF-initiated before touching the SDK: it echoes our
+      // own deletion back as a local session_delete event, and that echo
+      // must not fire onSessionInvalidatedHandler (the client's disconnect()
+      // path already tears down sessions and emits its own events — a second
+      // round would double-fire them).
+      selfDisconnecting = true;
+      try {
+        if (client && sessionTopic) {
+          try {
+            await client.disconnect({
+              topic: sessionTopic,
+              reason: { code: 6000, message: 'User disconnected' },
+            });
+          } catch {
+            // Session may already be deleted — ignore
+          }
         }
-      }
-      // Tear down the relay socket so it stops retrying.
-      // Without this, the WC SDK keeps the WebSocket open and retries
-      // forever even after disconnect.
-      teardownClient();
-      cachedAddress = null;
-      cachedNetwork = null;
-      peerMetadata = null;
-      grantedMethods = new Set();
-      if (opts.storage) {
-        await opts.storage.removeItem(WC_STORAGE_KEY);
+        // Tear down the relay socket so it stops retrying.
+        // Without this, the WC SDK keeps the WebSocket open and retries
+        // forever even after disconnect.
+        teardownClient();
+        sessionTopic = null;
+        cachedAddress = null;
+        cachedNetwork = null;
+        peerMetadata = null;
+        grantedMethods = new Set();
+        if (opts.storage) {
+          await opts.storage.removeItem(WC_STORAGE_KEY);
+        }
+      } finally {
+        selfDisconnecting = false;
       }
     },
 
@@ -1639,6 +1733,21 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    */
   (connector as WalletConnector & { setOnUri?: (fn: ((uri: string) => void) | null) => void }).setOnUri = (fn: ((uri: string) => void) | null) => {
     onUriHandler = fn;
+  };
+
+  /**
+   * Late-bound wallet-initiated-disconnect handler setter. StellarAppKit's
+   * constructor calls this on every connector that has it; the handler then
+   * fires when the WALLET kills the session (session_delete / session_expire),
+   * so the client can reconcile its session map and emit disconnect events.
+   *
+   * This is a non-standard extension on the WalletConnect connector only —
+   * direct connectors have no wallet side that could disconnect from under
+   * us. The client checks for its existence with
+   * `typeof connector.setOnSessionInvalidated === 'function'` before calling.
+   */
+  (connector as WalletConnector & { setOnSessionInvalidated?: (fn: (() => void) | null) => void }).setOnSessionInvalidated = (fn: (() => void) | null) => {
+    onSessionInvalidatedHandler = fn;
   };
 
   /**

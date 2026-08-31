@@ -318,6 +318,24 @@ export interface WalletConnector {
   getSessionPeer?(): { name: string; url: string | null; icon: string | null } | null;
 
   /**
+   * Optional: registers a callback the connector fires when the WALLET
+   * kills the connection from its side — WalletConnect's `session_delete`
+   * (user tapped Disconnect inside the wallet) or `session_expire` (the
+   * session TTL lapsed). This is the wallet-initiated counterpart of
+   * `disconnect()`, which is the app asking the wallet to leave.
+   *
+   * Only relay-based connectors implement it. StellarAppKit wires it
+   * automatically at construction (if present): the callback reconciles
+   * the client's session map, drops the persisted session, and emits
+   * `disconnect` + `sessionsChanged` so every listener — modals, hooks,
+   * app code — sees the wallet leave exactly as if the app had called
+   * `disconnect()` itself. Headless users who manage a connector directly
+   * can register their own handler; the connector's own state and
+   * persisted record are cleared either way.
+   */
+  setOnSessionInvalidated?(cb: (() => void) | null): void;
+
+  /**
    * Optional: returns a URL to the connected account's profile picture /
    * avatar, if the wallet supports one. Used by the UI to render an
    * avatar next to the address instead of a generic colored circle.
