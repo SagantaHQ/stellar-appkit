@@ -66,6 +66,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SignRetriedKind,
   type SiwsConfig,
   type LocaleCode,
   getLocale,
@@ -461,6 +462,28 @@ export interface UseSignResult<T> {
 }
 
 /**
+ * Folds a successful modal-driven sign retry ("Try again" on the
+ * signing-error view → client.retryLastSign) back into the calling hook's
+ * state. The original sign() promise already rejected — this event is the
+ * only channel that carries the retried result — so without this listener
+ * a retried sign would succeed in the wallet but the hook would keep
+ * showing the stale error. Filters by `kind` so each hook only sees its
+ * own API's retries.
+ */
+function useSignRetriedResult<T>(kind: SignRetriedKind, setData: (v: T) => void, setError: (v: unknown) => void) {
+  const client = useAppKitContext();
+  useEffect(
+    () =>
+      client.on('signRetried', (e) => {
+        if (e.kind !== kind) return;
+        setData(e.result as T);
+        setError(null);
+      }),
+    [client, kind, setData, setError]
+  );
+}
+
+/**
  * Signs a transaction via the active wallet. Automatically goes through
  * the onPreviewTransaction hook (set via the provider's config) before
  * reaching the wallet. Pass `{ skipPreview: true }` in opts to bypass.
@@ -489,6 +512,8 @@ export function useSignTransaction(): UseSignResult<SignTransactionResult> & {
       }
     };
   }, [client]);
+
+  useSignRetriedResult<SignTransactionResult>('transaction', setData, setError);
 
   return { sign, isSigning, data, error };
 }
@@ -522,6 +547,8 @@ export function useSignMessage(): UseSignResult<SignMessageResult> & {
     };
   }, [client]);
 
+  useSignRetriedResult<SignMessageResult>('message', setData, setError);
+
   return { sign, isSigning, data, error };
 }
 
@@ -553,6 +580,8 @@ export function useSignIn(): UseSignResult<SignInResult> & {
       }
     };
   }, [client]);
+
+  useSignRetriedResult<SignInResult>('signIn', setData, setError);
 
   return { sign, isSigning, data, error };
 }

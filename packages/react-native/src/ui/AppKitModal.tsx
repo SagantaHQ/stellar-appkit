@@ -973,7 +973,23 @@ export function AppKitModal({
             setConnectingError(null);
             const last = lastApprovedPreview.current;
             if (last) {
-              setPendingPreview({ preview: last, resolve: () => undefined });
+              // Approving the re-shown preview re-drives the WALLET-SIDE
+              // half of the failed request via client.retryLastSign() — the
+              // sign queue re-runs and every queue/error event fires again,
+              // so this component flows back through the signing view
+              // exactly as it did the first time. (The previous no-op
+              // resolve left the sheet on a dead spinner — the wallet was
+              // never actually re-asked.)
+              setPendingPreview({
+                preview: last,
+                resolve: (approved) => {
+                  if (approved && !client.retryLastSign()) {
+                    // Nothing left to retry (superseded/torn down) — land on
+                    // the account view instead of a dead signing spinner.
+                    setView(client.session ? 'account' : 'list');
+                  }
+                },
+              });
               setView('preview');
             } else {
               setView(client.session ? 'account' : 'list');

@@ -152,28 +152,36 @@ export function createFreighterConnector(): WalletConnector {
 
     async signTransaction(xdr: string, opts?: SignTxOptions): Promise<SignTransactionResult> {
       return withNormalizedError(meta.id, async () => {
-        const { signTransaction } = await sdk();
-        const res = unwrapResult(
-          meta.id,
-          await signTransaction(xdr, {
-            networkPassphrase: opts?.networkPassphrase,
-            address: opts?.address,
-          })
-        );
+        const { signTransaction, setAllowed } = await sdk();
+        const call = async () =>
+          unwrapResult(
+            meta.id,
+            await signTransaction(xdr, {
+              networkPassphrase: opts?.networkPassphrase,
+              address: opts?.address,
+            })
+          );
+        const res = await retryOnLostConnection(call, () => setAllowed()).catch((err: unknown) => {
+          throw ensureRetryableSignError(err, meta.id);
+        });
         return { signedTxXdr: res.signedTxXdr, signerAddress: res.signerAddress };
       });
     },
 
     async signAuthEntry(authEntryXdr: string, opts?: SignOptions): Promise<SignAuthEntryResult> {
       return withNormalizedError(meta.id, async () => {
-        const { signAuthEntry } = await sdk();
-        const res = unwrapResult(
-          meta.id,
-          await signAuthEntry(authEntryXdr, {
-            networkPassphrase: opts?.networkPassphrase,
-            address: opts?.address,
-          })
-        );
+        const { signAuthEntry, setAllowed } = await sdk();
+        const call = async () =>
+          unwrapResult(
+            meta.id,
+            await signAuthEntry(authEntryXdr, {
+              networkPassphrase: opts?.networkPassphrase,
+              address: opts?.address,
+            })
+          );
+        const res = await retryOnLostConnection(call, () => setAllowed()).catch((err: unknown) => {
+          throw ensureRetryableSignError(err, meta.id);
+        });
         // freighter-api returns the signed entry as a raw Buffer (or null on
         // some versions/error paths) rather than a pre-encoded string.
         if (!res.signedAuthEntry) {
@@ -188,14 +196,18 @@ export function createFreighterConnector(): WalletConnector {
 
     async signMessage(message: string, opts?: SignOptions): Promise<SignMessageResult> {
       return withNormalizedError(meta.id, async () => {
-        const { signMessage } = await sdk();
-        const res = unwrapResult(
-          meta.id,
-          await signMessage(message, {
-            networkPassphrase: opts?.networkPassphrase,
-            address: opts?.address,
-          })
-        );
+        const { signMessage, setAllowed } = await sdk();
+        const call = async () =>
+          unwrapResult(
+            meta.id,
+            await signMessage(message, {
+              networkPassphrase: opts?.networkPassphrase,
+              address: opts?.address,
+            })
+          );
+        const res = await retryOnLostConnection(call, () => setAllowed()).catch((err: unknown) => {
+          throw ensureRetryableSignError(err, meta.id);
+        });
         // Freighter has shipped two response shapes across versions: an
         // older one returning a raw Buffer (nullable), and a newer one
         // returning an already-encoded string. Normalize both to a string.
@@ -227,6 +239,59 @@ export function createFreighterConnector(): WalletConnector {
 /** Freighter's signAuthEntry/signMessage have returned either a raw Buffer or an already-encoded string across versions — normalize both to base64. */
 function bufferLikeToBase64(value: string | { toString(encoding: 'base64'): string }): string {
   return typeof value === 'string' ? value : value.toString('base64');
+}
+
+/** Freighter's connection-class error messages — the extension lost/revoked this origin's authorization ("Connection not found. Please try creating a new connection…") or the postMessage round-trip glitched ("Connection was lost in transit. Try again"). */
+const CONNECTION_LOST_PATTERNS: RegExp[] = [
+  /connection not found/i,
+  /connection was lost/i,
+  /lost connection/i,
+];
+
+/** True when the error (any shape) is a Freighter connection-class failure. */
+function isConnectionLostError(err: unknown): boolean {
+  const message =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'string'
+        ? err
+        : (err as { message?: string })?.message ?? String(err ?? '');
+  return CONNECTION_LOST_PATTERNS.some((re) => re.test(message));
+}
+
+/**
+ * Runs a Freighter sign call; on a connection-class failure, re-establishes
+ * the dapp's authorization (setAllowed — Freighter's own "create a new
+ * connection" advice, resolved silently when access is still granted) and
+ * asks for the signature exactly once more. Any other failure — or a second
+ * connection failure — propagates untouched.
+ */
+async function retryOnLostConnection<T>(
+  call: () => Promise<T>,
+  reestablishAccess: () => Promise<unknown>
+): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (!isConnectionLostError(err)) throw err;
+    await reestablishAccess();
+    return call();
+  }
+}
+
+/**
+ * Wraps a connection-class failure that survived the retry above into a
+ * friendlier ConnectError: the wallet is telling the user to re-authorize,
+ * so the message keeps the wallet's guidance but gets a stable `code`
+ * (type 3 external-service) instead of bubbling up as an opaque string.
+ */
+function ensureRetryableSignError(err: unknown, walletId: string): unknown {
+  if (isConnectionLostError(err)) {
+    const message =
+      err instanceof Error ? err.message : typeof err === 'string' ? err : String((err as { message?: string })?.message ?? err);
+    return ConnectError.externalService(message, undefined, walletId);
+  }
+  return err;
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignAuthEntryResult,
+  type SignRetriedKind,
   type StellarAppKitEvents,
   type StellarNetwork,
   type WalletConnector,
@@ -327,6 +328,13 @@ export class StellarAppKit {
   private tabSync: TabSync | null = null;
   private signChain: Promise<void> = Promise.resolve();
   private _pendingSignCount = 0;
+  /**
+   * The last FAILED wallet-side sign that "Try again" can re-drive — armed
+   * by runRetryableSign() only when the wallet call itself rejects (never
+   * for preview rejections), cleared on success / new sign / disconnect.
+   * See retryLastSign().
+   */
+  private retryableSign: { rerun: () => void } | null = null;
 
   constructor(config: StellarAppKitConfig) {
     this.registry = new ConnectorRegistry();
@@ -729,6 +737,10 @@ export class StellarAppKit {
     const targetId = walletId ?? this._activeWalletId;
     if (!targetId) return;
 
+    // Any pending "Try again" for this wallet's sign is dead — the wallet
+    // half can't run without the connection it was signed with.
+    if (targetId === this._activeWalletId) this.retryableSign = null;
+
     // Clear SIWS session + call signout() if configured (before disconnect)
     await this.clearSiwsSession();
 
@@ -755,6 +767,7 @@ export class StellarAppKit {
     }
     this._sessions.clear();
     this._activeWalletId = null;
+    this.retryableSign = null; // all pending "Try again"s are dead
     await this.persist();
     this.setStatus('idle');
     walletIds.forEach((walletId) => this.emitter.emit('disconnect', { walletId }));
@@ -870,6 +883,11 @@ export class StellarAppKit {
     this._pendingSignCount++;
     this.emitter.emit('signQueueChange', this._pendingSignCount);
 
+    // A new sign supersedes any retryable sign left over from a previous
+    // failure — "Try again" always re-drives the LAST request, never a
+    // stale one hidden behind a newer call.
+    this.retryableSign = null;
+
     const result = this.signChain.then(fn, fn);
     this.signChain = result.then(
       () => undefined,
@@ -892,6 +910,70 @@ export class StellarAppKit {
         this._pendingSignCount--;
         this.emitter.emit('signQueueChange', this._pendingSignCount);
       });
+  }
+
+  // ---- Wallet-sign retry ("Try again" on the signing-error view) ----
+  // The modals re-show the approved preview after a failed wallet sign; when
+  // the user approves it again, they call retryLastSign(), which re-drives
+  // the WALLET-SIDE half of the request through the normal queue (all the
+  // usual signQueueChange / error events fire, so the modal views behave
+  // exactly as they did the first time). The preview is NOT re-run — the
+  // user just re-approved it in the modal.
+
+  /**
+   * Runs the wallet-side half of a sign request. On failure, records the
+   * rerun for retryLastSign(). The app-facing promise still rejects
+   * normally — the retry result is delivered via the 'signRetried' event
+   * because the original promise cannot be settled twice.
+   *
+   * Preview rejections never reach this wrapper (they throw before the
+   * wallet call), so a preview the user declined can never be bypassed by
+   * a retry.
+   */
+  private runRetryableSign<T>(walletCall: () => Promise<T>, kind: SignRetriedKind): Promise<T> {
+    return walletCall().then(
+      (result) => {
+        this.retryableSign = null;
+        return result;
+      },
+      (err) => {
+        this.retryableSign = { rerun: () => this.redriveSign(walletCall, kind) };
+        throw err;
+      }
+    );
+  }
+
+  /** Re-enqueues a recorded wallet-side sign and emits 'signRetried' on success. Fire-and-forget — the result reaches apps via the event, not a promise. */
+  private redriveSign<T>(walletCall: () => Promise<T>, kind: SignRetriedKind): void {
+    void this.enqueueSign(() => this.runRetryableSign(walletCall, kind)).then(
+      (result) => {
+        this.emitter.emit('signRetried', { kind, result });
+      },
+      () => {
+        // The error event already fired inside enqueueSign and the modal is
+        // showing the signing-error view with the fresh wallet message; the
+        // retry was re-armed by runRetryableSign for another "Try again".
+      }
+    );
+  }
+
+  /**
+   * Re-drives the last FAILED wallet-side sign (the "Try again" button on the
+   * modals' signing-error view). The wallet is asked again through the normal
+   * sign queue — every signQueueChange / error event fires, the modal flows
+   * back through the signing view exactly as it did the first time, and a
+   * successful retry emits 'signRetried' with the result.
+   *
+   * Returns false when there's nothing to retry (the last sign succeeded, a
+   * newer sign superseded it, or the session was torn down) — callers treat
+   * that as "fall back to the previous view".
+   */
+  retryLastSign(): boolean {
+    const entry = this.retryableSign;
+    if (!entry) return false;
+    this.retryableSign = null;
+    entry.rerun();
+    return true;
   }
 
   // ---- Unified signing API — proxies to whichever wallet is active, so app code never branches on wallet identity ----
@@ -926,7 +1008,8 @@ export class StellarAppKit {
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return connector.signTransaction(xdr, resolvedOpts);
+      // Wallet-side half — a failure here arms retryLastSign() ("Try again").
+      return this.runRetryableSign(() => connector.signTransaction(xdr, resolvedOpts), 'transaction');
     });
   }
 
@@ -954,7 +1037,8 @@ export class StellarAppKit {
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return connector.signAuthEntry(authEntryXdr, opts);
+      // Wallet-side half — a failure here arms retryLastSign() ("Try again").
+      return this.runRetryableSign(() => connector.signAuthEntry(authEntryXdr, opts), 'authEntry');
     });
   }
 
@@ -981,7 +1065,8 @@ export class StellarAppKit {
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return connector.signMessage(message, opts);
+      // Wallet-side half — a failure here arms retryLastSign() ("Try again").
+      return this.runRetryableSign(() => connector.signMessage(message, opts), 'message');
     });
   }
 
@@ -1024,16 +1109,21 @@ export class StellarAppKit {
         if (!approved) throw ConnectError.rejected(connector.id);
       }
 
-      return signInWithStellar({
-        ...opts,
-        connector,
-        network: this.network,
-        appMetadata: {
-          name: this.appMetadata!.name,
-          domain,
-          uri,
-        },
-      });
+      // Wallet-side half — a failure here arms retryLastSign() ("Try again").
+      return this.runRetryableSign(
+        () =>
+          signInWithStellar({
+            ...opts,
+            connector,
+            network: this.network,
+            appMetadata: {
+              name: this.appMetadata!.name,
+              domain,
+              uri,
+            },
+          }),
+        'signIn'
+      );
     });
   }
 }

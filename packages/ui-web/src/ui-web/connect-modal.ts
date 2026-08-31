@@ -236,6 +236,15 @@ export class SagantaAppKitModal extends ModalBase {
           this.render();
         }
       }),
+      // A wallet sign that failed once and was re-driven successfully via the
+      // signing-error view's "Try again" (client.retryLastSign). Re-dispatch
+      // as a DOM event so apps can fold the retried result into their state
+      // (the original signTransaction() promise already rejected).
+      client.on('signRetried', ({ result }) => {
+        this.dispatchEvent(new CustomEvent('sc-sign-retried', { detail: result, bubbles: true, composed: true }));
+        // The queue-drain handler above returns the view to 'connected' and
+        // refreshes account data; nothing else to do here.
+      }),
       client.on('error', (err) => {
         this.lastError = err;
         // If we're in the connecting view and the error isn't a network mismatch,
@@ -2141,10 +2150,25 @@ export class SagantaAppKitModal extends ModalBase {
     this.root.querySelector('[data-action="retry-signing"]')?.addEventListener('click', () => {
       this.connectingError = null;
       if (this.lastApprovedPreview) {
-        // Re-show the preview — the user can approve again
+        // Re-show the preview — when the user approves it again, the resolve
+        // below re-drives the WALLET-SIDE half of the failed request via
+        // client.retryLastSign() (the sign queue re-runs, every queue/error
+        // event fires again, and a successful retry emits 'signRetried').
+        // The old no-op resolve left the modal on a dead "Continue in your
+        // wallet" spinner forever — the wallet was never actually re-asked.
         this.pendingPreview = {
           preview: this.lastApprovedPreview,
-          resolve: () => { /* no-op — the actual retry happens via the sign queue */ },
+          resolve: (approved) => {
+            if (approved) {
+              if (!this._client?.retryLastSign()) {
+                // Nothing left to retry (superseded or torn down) — don't
+                // sit on a dead signing spinner; fall back to the connected
+                // view.
+                this.view = this._client?.session ? 'connected' : 'wallet-list';
+                this.render();
+              }
+            }
+          },
           wasAlreadyOpen: true,
         };
         this.view = 'transaction-preview';

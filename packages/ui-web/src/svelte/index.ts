@@ -52,6 +52,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SignRetriedKind,
   type SiwsSession,
   type LocaleCode,
   getLocale,
@@ -67,7 +68,7 @@ import {
 // Svelte's reactivity primitives — we import lazily so consumers who
 // don't use this subpath don't need svelte installed.
 // The `import type` ensures no runtime dependency on svelte for type-only usage.
-import { writable, derived, type Readable } from 'svelte/store';
+import { writable, derived, type Readable, type Writable } from 'svelte/store';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton (Svelte 5 doesn't have Context like React)
@@ -292,6 +293,25 @@ export function useConnectStore(): UseConnectStoreResult {
 // Signing composables (store-based)
 // ---------------------------------------------------------------------------
 
+/**
+ * Folds a successful modal-driven sign retry ("Try again" on the
+ * signing-error view → client.retryLastSign) back into the calling
+ * composable's stores. The original sign() promise already rejected — this
+ * event is the only channel carrying the retried result — so without this
+ * listener a retried sign would succeed in the wallet while the composable
+ * kept showing the stale error. Filters by `kind` so each composable only
+ * sees its own API's retries. (Unsubscription follows this file's store
+ * convention — the listener dies with the store.)
+ */
+function useSignRetriedResult<T>(kind: SignRetriedKind, data: Writable<T | null>, error: Writable<unknown>) {
+  const client = getAppKit();
+  client.on('signRetried', (e) => {
+    if (e.kind !== kind) return;
+    data.set(e.result as T);
+    error.set(null);
+  });
+}
+
 export interface UseSignStoreResult<T> {
   sign: (...args: never[]) => Promise<T>;
   isSigning: Readable<boolean>;
@@ -321,6 +341,8 @@ export function useSignTransactionStore(): UseSignStoreResult<SignTransactionRes
       isSigning.set(false);
     }
   };
+
+  useSignRetriedResult<SignTransactionResult>('transaction', data, error);
 
   return {
     sign,
@@ -353,6 +375,8 @@ export function useSignMessageStore(): UseSignStoreResult<SignMessageResult> & {
     }
   };
 
+  useSignRetriedResult<SignMessageResult>('message', data, error);
+
   return {
     sign,
     isSigning: { subscribe: isSigning.subscribe },
@@ -383,6 +407,8 @@ export function useSignInStore(): UseSignStoreResult<SignInResult> & {
       isSigning.set(false);
     }
   };
+
+  useSignRetriedResult<SignInResult>('signIn', data, error);
 
   return {
     sign,

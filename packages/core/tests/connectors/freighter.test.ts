@@ -161,3 +161,109 @@ describe('createFreighterConnector — signMessage', () => {
     expect(connector.signMessage(message)).rejects.toThrow(/rejected/i);
   });
 });
+
+describe('createFreighterConnector — connection-class error recovery', () => {
+  const CONNECTION_NOT_FOUND =
+    'Connection not found. Please try creating a new connection or switch to another account which has the connection in your Freighter wallet.';
+  const address = 'GA2C5RFPE6GCKMY3US5PAB6UZLKIGSPIUKSLRB6Q3IY7ZP4PAOMM43YA';
+
+  /**
+   * Freighter's newer extension builds revoke/lose a dapp's authorization
+   * ("Connection not found…") — the error's own guidance is to create a new
+   * connection. The connector does exactly that for the user: re-run the
+   * setAllowed access handshake (resolved silently when access is still
+   * granted) and ask for the signature exactly once more.
+   */
+  test('signTransaction re-runs setAllowed and re-signs once when the connection was lost', async () => {
+    let calls = 0;
+    let allowed = 0;
+    fakeApi.signTransaction = async () => {
+      calls++;
+      if (calls === 1) return { signedTxXdr: '', signerAddress: '', error: CONNECTION_NOT_FOUND };
+      return { signedTxXdr: 'recovered', signerAddress: address };
+    };
+    fakeApi.setAllowed = async () => {
+      allowed++;
+      return {};
+    };
+
+    const connector = createFreighterConnector();
+    const result = await connector.signTransaction('tx-xdr', { networkPassphrase: 'Test SDF Network ; September 2015' });
+
+    expect(result.signedTxXdr).toBe('recovered');
+    expect(calls).toBe(2); // asked twice
+    expect(allowed).toBe(1); // re-established access once
+  });
+
+  test('a second connection failure propagates (no infinite retry loop)', async () => {
+    let allowed = 0;
+    fakeApi.signTransaction = async () => ({ signedTxXdr: '', signerAddress: '', error: CONNECTION_NOT_FOUND });
+    fakeApi.setAllowed = async () => {
+      allowed++;
+      return {};
+    };
+
+    const connector = createFreighterConnector();
+    await expect(
+      connector.signTransaction('tx-xdr', { networkPassphrase: 'Test SDF Network ; September 2015' })
+    ).rejects.toThrow(/Connection not found/);
+    expect(allowed).toBe(1); // exactly one recovery attempt
+  });
+
+  test('non-connection errors never trigger the setAllowed handshake', async () => {
+    let allowed = 0;
+    fakeApi.signTransaction = async () => ({ signedTxXdr: '', signerAddress: '', error: 'User rejected the request' });
+    fakeApi.setAllowed = async () => {
+      allowed++;
+      return {};
+    };
+
+    const connector = createFreighterConnector();
+    await expect(
+      connector.signTransaction('tx-xdr', { networkPassphrase: 'Test SDF Network ; September 2015' })
+    ).rejects.toThrow(/rejected/i);
+    expect(allowed).toBe(0);
+  });
+
+  test('signMessage recovers the same way', async () => {
+    let calls = 0;
+    let allowed = 0;
+    fakeApi.signMessage = async () => {
+      calls++;
+      if (calls === 1) return { signedMessage: '', signerAddress: '', error: 'Connection was lost in transit. Try again' };
+      return { signedMessage: Buffer.alloc(64), signerAddress: address };
+    };
+    fakeApi.setAllowed = async () => {
+      allowed++;
+      return {};
+    };
+
+    const connector = createFreighterConnector();
+    const result = await connector.signMessage('hello');
+
+    expect(result.signerAddress).toBe(address);
+    expect(calls).toBe(2);
+    expect(allowed).toBe(1);
+  });
+
+  test('signAuthEntry recovers the same way', async () => {
+    let calls = 0;
+    let allowed = 0;
+    fakeApi.signAuthEntry = async () => {
+      calls++;
+      if (calls === 1) return { signedAuthEntry: '', signerAddress: '', error: CONNECTION_NOT_FOUND };
+      return { signedAuthEntry: Buffer.alloc(64), signerAddress: address };
+    };
+    fakeApi.setAllowed = async () => {
+      allowed++;
+      return {};
+    };
+
+    const connector = createFreighterConnector();
+    const result = await connector.signAuthEntry('entry-xdr');
+
+    expect(result.signerAddress).toBe(address);
+    expect(calls).toBe(2);
+    expect(allowed).toBe(1);
+  });
+});

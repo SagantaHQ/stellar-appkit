@@ -58,6 +58,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SignRetriedKind,
   type SiwsSession,
   type LocaleCode,
   getLocale,
@@ -334,6 +335,25 @@ export function useConnect(): UseConnectResult {
 // reactive loading/error/result refs.
 // ---------------------------------------------------------------------------
 
+/**
+ * Folds a successful modal-driven sign retry ("Try again" on the
+ * signing-error view → client.retryLastSign) back into the calling
+ * composable's refs. The original sign() promise already rejected — this
+ * event is the only channel carrying the retried result — so without this
+ * listener a retried sign would succeed in the wallet while the composable
+ * kept showing the stale error. Filters by `kind` so each composable only
+ * sees its own API's retries.
+ */
+function useSignRetriedResult<T>(kind: SignRetriedKind, data: Ref<T | null>, error: Ref<unknown>) {
+  const client = useClient();
+  const unsub = client.on('signRetried', (e) => {
+    if (e.kind !== kind) return;
+    data.value = e.result as T;
+    error.value = null;
+  });
+  onUnmounted(unsub);
+}
+
 export interface UseSignResult<T> {
   sign: (...args: never[]) => Promise<T>;
   isSigning: Readonly<Ref<boolean>>;
@@ -363,6 +383,8 @@ export function useSignTransaction(): UseSignResult<SignTransactionResult> & {
       isSigning.value = false;
     }
   };
+
+  useSignRetriedResult<SignTransactionResult>('transaction', data, error);
 
   return {
     sign,
@@ -395,6 +417,8 @@ export function useSignMessage(): UseSignResult<SignMessageResult> & {
     }
   };
 
+  useSignRetriedResult<SignMessageResult>('message', data, error);
+
   return {
     sign,
     isSigning: shallowReadonly(isSigning),
@@ -425,6 +449,8 @@ export function useSignIn(): UseSignResult<SignInResult> & {
       isSigning.value = false;
     }
   };
+
+  useSignRetriedResult<SignInResult>('signIn', data, error);
 
   return {
     sign,

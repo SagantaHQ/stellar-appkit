@@ -365,7 +365,20 @@ export interface StellarAppKitEvents {
   /** Number of sign requests currently queued (including the one in flight) — see StellarAppKit's signature queueing. */
   signQueueChange: number;
   error: ConnectError;
+  /**
+   * A wallet-side sign that failed once and was successfully re-driven via
+   * retryLastSign() (the modal's "Try again"). Payload is `{ kind, result }` —
+   * which sign API the retry re-drove, and its result. The original promise
+   * the app awaited has already rejected and cannot be resurrected, so apps
+   * that want the retried result subscribe to this event (the ui-web
+   * re-dispatches it as a DOM `sc-sign-retried` event; the
+   * react/vue/solid/svelte hooks fold matching kinds back into their state).
+   */
+  signRetried: { kind: SignRetriedKind; result: unknown };
 }
+
+/** Which sign API a 'signRetried' event re-drove — lets per-API consumers filter. */
+export type SignRetriedKind = 'transaction' | 'authEntry' | 'message' | 'signIn';
 
 /**
  * SIWS session — the authenticated session returned by the server after

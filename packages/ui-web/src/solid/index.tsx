@@ -56,6 +56,7 @@ import {
   type SignTransactionResult,
   type SignTxOptions,
   type SignOptions,
+  type SignRetriedKind,
   type SiwsSession,
   type LocaleCode,
   getLocale,
@@ -287,6 +288,25 @@ export function useConnect(): UseConnectResult {
 // Signing hooks
 // ---------------------------------------------------------------------------
 
+/**
+ * Folds a successful modal-driven sign retry ("Try again" on the
+ * signing-error view → client.retryLastSign) back into the calling hook's
+ * signals. The original sign() promise already rejected — this event is
+ * the only channel carrying the retried result — so without this listener
+ * a retried sign would succeed in the wallet while the hook kept showing
+ * the stale error. Filters by `kind` so each hook only sees its own
+ * API's retries.
+ */
+function useSignRetriedResult<T>(kind: SignRetriedKind, setData: (v: T) => void, setError: (v: unknown) => void) {
+  const client = useClient();
+  const unsub = client.on('signRetried', (e) => {
+    if (e.kind !== kind) return;
+    setData(e.result as T);
+    setError(null);
+  });
+  onCleanup(unsub);
+}
+
 export interface UseSignResult<T> {
   sign: (...args: never[]) => Promise<T>;
   isSigning: Accessor<boolean>;
@@ -317,6 +337,8 @@ export function useSignTransaction(): UseSignResult<SignTransactionResult> & {
     }
   };
 
+  useSignRetriedResult<SignTransactionResult>('transaction', setData, setError);
+
   return { sign, isSigning, data, error };
 }
 
@@ -343,6 +365,8 @@ export function useSignMessage(): UseSignResult<SignMessageResult> & {
     }
   };
 
+  useSignRetriedResult<SignMessageResult>('message', setData, setError);
+
   return { sign, isSigning, data, error };
 }
 
@@ -368,6 +392,8 @@ export function useSignIn(): UseSignResult<SignInResult> & {
       setIsSigning(false);
     }
   };
+
+  useSignRetriedResult<SignInResult>('signIn', setData, setError);
 
   return { sign, isSigning, data, error };
 }
