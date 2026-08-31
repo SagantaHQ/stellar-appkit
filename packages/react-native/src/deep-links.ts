@@ -587,3 +587,50 @@ export function findWalletByDeepLink(deepLink: string): MobileWalletDeepLink | u
   if (!scheme) return undefined;
   return listMobileWallets().find((w) => w.scheme.toLowerCase() === scheme);
 }
+
+/**
+ * The deep-link shape the settled WalletConnect session's PEER metadata
+ * reports for the wallet that answered — the connector's getSessionPeer()
+ * `redirect` field. Structural on purpose: the core type flows in as a
+ * plain object and this module shouldn't import from core.
+ */
+export interface WalletPeerRedirect {
+  native: string | null;
+  universal: string | null;
+}
+
+/**
+ * Resolves which registered mobile wallet a sign request should hand off
+ * to — the wallet the user picked during connect, or — after a cold
+ * restart, when that pick was never made in this process — the wallet the
+ * restored session's peer metadata points back to (its `redirect.native`
+ * scheme is the wallet's own re-open link). Returns null when no target is
+ * derivable (desktop wallet, unregistered scheme, no session).
+ */
+export function resolveSignHandoffWalletId(
+  peer: WalletPeerRedirect | null | undefined,
+  pickedWalletId: string | null,
+): string | null {
+  if (pickedWalletId && getMobileWallet(pickedWalletId)) return pickedWalletId;
+  const native = peer?.native;
+  if (native) {
+    const wallet = findWalletByDeepLink(native);
+    if (wallet) return wallet.id;
+  }
+  return null;
+}
+
+/**
+ * Builds the "open this wallet for the pending sign request" link for the
+ * handoff target: the registered wallet's bare scheme when the id maps into
+ * the registry, otherwise the peer's own native deep link verbatim (an
+ * unregistered wallet's redirect still opens that wallet). Returns null when
+ * neither is available — the caller keeps its manual affordances.
+ */
+export function buildSignHandoffLink(
+  walletId: string | null,
+  peer: WalletPeerRedirect | null | undefined,
+): string | null {
+  if (walletId && getMobileWallet(walletId)) return buildOpenWalletAppLink(walletId);
+  return peer?.native ?? null;
+}

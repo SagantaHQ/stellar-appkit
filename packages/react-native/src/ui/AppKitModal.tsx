@@ -76,6 +76,21 @@
  *   the JS thread for seconds on debug builds, and firing it in the open
  *   tick would freeze the sheet's layout/entrance animation — the tap
  *   would look dead for 5-10 seconds. See ui/warm-up.ts.
+ * - **Auto-open the wallet on sign** (`autoOpenWalletOnSign`, default on)
+ *   — the moment a WalletConnect request is queued from this side (sign,
+ *   auth entry, SIWS prompt, retry), the paired wallet app opens by
+ *   itself, MWA-style: the user lands straight in the wallet's pending
+ *   prompt instead of tapping "Open in wallet app". Fires only on NEW
+ *   requests (count increases), only while the app is foregrounded, and
+ *   only when a target is derivable — the connect-time pick, or the
+ *   wallet the restored session's peer metadata points back to after a
+ *   cold restart. Failures are silent; the manual button remains.
+ * - **Wallet-side disconnects propagate** — when the user disconnects
+ *   INSIDE the wallet, session_delete arrives over the relay (typically
+ *   on the next foregrounding, when the transport restart re-delivers
+ *   queued messages), core reconciles its session map, and the modal
+ *   flips off the account view exactly as if the app had disconnected.
+ *   No zombie "connected" UI for a session the wallet already killed.
  *
  * Presentation: @gorhom/bottom-sheet with a backdrop + swipe-to-dismiss
  * (default), or the inline panel. Icons render through `<WalletIcon>` —
@@ -84,7 +99,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
+import { AppState, Linking, Platform, Pressable, ScrollView, Text, Vibration, View } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetFooter, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { ImageSourcePropType } from 'react-native';
 import { ConnectError, NetworkMismatchError, onLocaleChange, t } from '@saganta/stellar-appkit';
@@ -93,8 +108,11 @@ import {
   buildWalletConnectDeepLink,
   buildWalletConnectUniversalLink,
   buildOpenWalletAppLink,
+  buildSignHandoffLink,
   getMobileWallet,
+  resolveSignHandoffWalletId,
   type MobileWalletDeepLink,
+  type WalletPeerRedirect,
 } from '../deep-links.js';
 import { useAppKit } from './useAppKit.js';
 import { useReducedMotion } from './animations.js';
@@ -164,6 +182,20 @@ export interface AppKitModalProps {
    * management never self-closes. See ui/auto-close.ts.
    */
   autoCloseOnComplete?: boolean;
+  /**
+   * Default true: the moment a WalletConnect request is triggered from
+   * this side — a sign, an auth entry, a SIWS prompt — the paired wallet
+   * app is opened automatically (MWA-style: the user lands straight in the
+   * wallet's pending prompt instead of tapping "Open in wallet app" by
+   * hand). Only fires while the app is foregrounded and only when a target
+   * is derivable: the wallet the user picked during connect, or the wallet
+   * the restored session's peer metadata points back to after a cold
+   * restart. The short dispatch delay lets the request reach the relay
+   * before the app backgrounds; failures are silent (the manual button on
+   * the signing view remains as the fallback). Set false to keep the
+   * fully-manual handoff (the button only).
+   */
+  autoOpenWalletOnSign?: boolean;
 }
 
 export function AppKitModal({
@@ -176,6 +208,7 @@ export function AppKitModal({
   logo,
   browser,
   autoCloseOnComplete = true,
+  autoOpenWalletOnSign = true,
 }: AppKitModalProps) {
   const state = useAppKit(client);
   const reducedMotion = useReducedMotion();
@@ -462,7 +495,16 @@ export function AppKitModal({
           setView(isMismatch ? 'network-mismatch' : 'error');
         }
       }),
-      client.on('disconnect', () => {
+      client.on('disconnect', ({ walletId }) => {
+        // A wallet-side disconnect (the user tapped Disconnect INSIDE the
+        // wallet — session_delete arrives over the relay, delivered on the
+        // next foregrounding) lands here exactly like an app-initiated one,
+        // now that core propagates it. Either way: the mobile pairing hint
+        // for that wallet is dead — drop it so the sign handoff and the
+        // connecting branding don't point at a wallet that already left.
+        if (walletId === 'walletconnect' && !client.sessions.some((s) => s.walletId === 'walletconnect')) {
+          pairedMobileWalletId.current = null;
+        }
         setView(client.sessions.length > 0 ? 'account' : 'list');
       }),
       client.on('accountSwitch', () => setView('account')),
@@ -503,6 +545,87 @@ export function AppKitModal({
       setView(client.session ? 'account' : 'list');
     }
   }, [state.pendingSignCount, client.session, view]);
+
+  // --- auto-open the wallet app when a WalletConnect request is fired -------
+  // (MWA-style sign handoff — autoOpenWalletOnSign, default on)
+  //
+  // The moment the client queues a NEW wallet-side request (pendingSignCount
+  // increases: a sign, an auth entry, a SIWS prompt, a retry), the paired
+  // wallet app is opened automatically so the user lands straight in its
+  // pending prompt — mirroring mobile wallet adapters, where "Continue in
+  // wallet" is a tap the OS makes for you. The connect flow already does
+  // this via setOnUri (deep link the instant the pairing URI exists); this
+  // is the same handoff for everything that comes AFTER connecting.
+  //
+  // Guards, all load-bearing:
+  // - INCREASES only: a drain (count falling) or an unrelated re-render
+  //   (the snapshot re-fires on every client event) never re-opens the
+  //   wallet — only a genuinely new request does, including a "Try again"
+  //   after a failure (the queue went back down before it went up).
+  // - AppState 'active': never yank the user out of another app — iOS
+  //   refuses background openURL anyway; Android would rudely foreground
+  //   the wallet over whatever the user switched to.
+  // - Dispatch delay (350ms): the signQueueChange event fires BEFORE the
+  //   request reaches the relay (enqueueSign emits, then the connector
+  //   call runs). Backgrounding the app a beat later lets the WebSocket
+  //   publish land first — otherwise the request can be lost to the
+  //   zombified socket and the wallet opens with nothing to approve.
+  // - Silent failure: Linking errors are swallowed — the manual "Open in
+  //   wallet app" button on the signing view stays as the fallback.
+  const SIGN_HANDOFF_DELAY_MS = 350;
+  const autoOpenRef = useRef(autoOpenWalletOnSign);
+  autoOpenRef.current = autoOpenWalletOnSign;
+  const lastSignCountRef = useRef(0);
+  const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const count = state.pendingSignCount;
+    const prev = lastSignCountRef.current;
+    lastSignCountRef.current = count;
+    if (!autoOpenRef.current || count <= prev) return; // disabled, drain, or echo
+    // A connect pairing is already driving its own deep link (setOnUri);
+    // a sign can't be in flight before a session exists, but a stray
+    // handoff during the connecting view would fight that flow.
+    if (viewRef.current === 'connecting') return;
+    // Resolve the target: the wallet the user picked, else the wallet the
+    // restored session's peer metadata points back to.
+    const peer = (wcConnector?.getSessionPeer?.() as { redirect?: WalletPeerRedirect | null } | null)?.redirect ?? null;
+    const walletId = resolveSignHandoffWalletId(peer, pairedMobileWalletId.current);
+    const link = buildSignHandoffLink(walletId, peer);
+    if (!link) return; // no derivable wallet (desktop/unregistered) — manual only
+    if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
+    handoffTimerRef.current = setTimeout(() => {
+      handoffTimerRef.current = null;
+      if (AppState.currentState !== 'active') return;
+      Linking.openURL(link).catch(() => undefined);
+    }, SIGN_HANDOFF_DELAY_MS);
+  }, [state.pendingSignCount, wcConnector]);
+  // Never leave a pending handoff timer armed past unmount.
+  useEffect(
+    () => () => {
+      if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current);
+    },
+    []
+  );
+
+  // The sign-handoff target as a render value (not just the ref): after a
+  // cold restart the user never picked a wallet in this process, but the
+  // restored session's peer metadata still names it — this is what puts the
+  // "Open in wallet app" button on the signing view for restored sessions.
+  const signHandoffWalletId = useMemo(
+    () =>
+      resolveSignHandoffWalletId(
+        (wcConnector?.getSessionPeer?.() as { redirect?: WalletPeerRedirect | null } | null)?.redirect ?? null,
+        pairedMobileWalletId.current,
+      ),
+    // Re-resolved on every session/snapshot change — the peer metadata is
+    // captured lazily (restore() rehydrates it), so the first resolve after
+    // a cold start can be null until the connector warms up.
+    [state.session, state.walletName, wcConnector, view, open]
+  );
+  const signHandoffLink = useMemo(() => {
+    const peer = (wcConnector?.getSessionPeer?.() as { redirect?: WalletPeerRedirect | null } | null)?.redirect ?? null;
+    return buildSignHandoffLink(signHandoffWalletId, peer);
+  }, [signHandoffWalletId, wcConnector, state.session]);
 
   // --- auto-close on successful operation completion (ui/auto-close.ts) ---
   // Mobile deep-link UX: when the operation the app requested completes
@@ -699,9 +822,14 @@ export function AppKitModal({
     if (action) void action();
   }, []);
 
-  /** Re-opens the paired wallet app (sign-request handoff). */
-  const reopenPairedWallet = useCallback(async () => {
-    const id = pairedMobileWalletId.current;
+  /**
+   * Re-opens the paired wallet app (sign-request handoff). Works for BOTH
+   * the wallet the user picked during connect (ref) and — after a cold
+   * restart — the wallet the restored session's peer metadata names
+   * (signHandoffWalletId), so the affordance survives an app restart.
+   */
+  const reopenPairedWallet = useCallback(async (targetId?: string) => {
+    const id = targetId ?? pairedMobileWalletId.current;
     if (!id) return;
     try {
       await Linking.openURL(buildOpenWalletAppLink(id));
@@ -709,6 +837,21 @@ export function AppKitModal({
       /* the wallet prompts manually */
     }
   }, []);
+
+  /**
+   * Opens whatever deep link the sign handoff resolved to — a registered
+   * wallet's bare scheme, or the peer's own native redirect for wallets
+   * outside the registry. Used by the signing view's manual button when no
+   * registry id applies (restored, unregistered wallet).
+   */
+  const reopenSignHandoffWallet = useCallback(async () => {
+    if (!signHandoffLink) return;
+    try {
+      await Linking.openURL(signHandoffLink);
+    } catch {
+      /* the wallet prompts manually */
+    }
+  }, [signHandoffLink]);
 
   /** Re-fires the deep link on the connecting view ("open again"). */
   const retryOpenWallet = useCallback(async () => {
@@ -964,8 +1107,11 @@ export function AppKitModal({
           // Mobile handoff: the paired wallet waits in the background while
           // the WC sign request is in flight — one tap re-opens it right at
           // the pending prompt (browser-extension wallets don't need this;
-          // their prompt pops up over the page by itself).
-          onOpenWallet={pairedMobileWalletId.current ? reopenPairedWallet : undefined}
+          // their prompt pops up over the page by itself). Resolved for
+          // BOTH the connect-time pick and the restored session's peer
+          // wallet, and the auto-open (autoOpenWalletOnSign) usually beats
+          // the user to it — the button is the fallback.
+          onOpenWallet={signHandoffWalletId ? () => void reopenPairedWallet(signHandoffWalletId) : signHandoffLink ? reopenSignHandoffWallet : undefined}
           onRetry={() => {
             // Web retry-signing: re-show the approved preview so the user
             // can approve again; without one, fall back to the account view.

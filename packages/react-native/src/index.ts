@@ -56,7 +56,10 @@ export {
   findWalletByDeepLink,
   formatWalletConnectLink,
   formatWalletConnectUniversalLink,
+  resolveSignHandoffWalletId,
+  buildSignHandoffLink,
   type MobileWalletDeepLink,
+  type WalletPeerRedirect,
 } from './deep-links.js';
 
 export { isReactNativeRuntime } from './platform.js';

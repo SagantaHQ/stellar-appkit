@@ -354,6 +354,26 @@ registerMobileWallet({
 
 > **Use the wallet's REGISTERED link, not its bare scheme.** Some wallets validate the URL they're asked to open: Freighter Mobile's deep-link handler silently ignores anything that doesn't contain its Reown-registered redirect (`freighterwallet://wc-redirect`), so a `freighterwallet://wc?uri=...` link opens the app and then does nothing — no pairing prompt. The Explorer entry (`mobile.native`) is the source of truth; every built-in wallet ships its exact value.
 
+### Sign requests: the wallet opens itself
+
+Connecting isn't the only handoff — every WalletConnect request your app fires afterwards (a `signTransaction()`, a `signAuthEntry()`, a SIWS prompt, even a "Try again" after a rejection) opens the paired wallet app automatically, Mobile Wallet Adapter style. The user taps **Send** in your app and lands straight in the wallet's pending approval prompt; no detour past a "Continue in wallet" screen with a button they must now tap.
+
+The wiring is `autoOpenWalletOnSign` (default on):
+
+- **Only new requests fire it.** The sign queue count increasing — a drain, a re-render, a settled request — never re-opens the wallet behind the user's back.
+- **Only while your app is foregrounded.** A sign that lands while the app is backgrounded never yanks the wallet (or anything else) to the front.
+- **Only when a target is derivable.** The wallet the user picked during connect, or — after an app restart, when no pick happened in this process — the wallet the restored WalletConnect session's peer metadata points back to (its `redirect.native` scheme is captured at settle time and persisted with the session record). Wallets with no resolvable target (desktop, unregistered) keep the manual button.
+- **A 350ms dispatch beat.** The queue event fires just before the request reaches the relay; waiting a third of a second before backgrounding the app lets the publish land, so the wallet opens with a prompt actually waiting (otherwise the request can be lost to the socket the OS is about to freeze).
+- **Failures are silent.** `Linking.openURL` rejections are swallowed — the "Open in wallet app" button on the signing view remains as the fallback, and it now resolves for restored sessions too.
+
+Opt out per instance if you want the manual handoff back:
+
+```tsx
+<AppKitModal client={appkit} open={open} onClose={close} autoOpenWalletOnSign={false} />
+```
+
+Headless apps can drive the same resolution themselves with `resolveSignHandoffWalletId(peer, pickedWalletId)` and `buildSignHandoffLink(walletId, peer)` (both exported from the package root).
+
 ## Returning focus to your app after the operation
 
 The deep-link handoff above puts the user inside the wallet app to approve (or reject). The moment they answer, the task is done — the user belongs back in YOUR app, not still staring at Freighter/LOBSTR/HOT Wallet. Neither OS lets a backgrounded app force itself to the foreground (iOS forbids it outright, Android 10+ blocks background activity starts), so AppKit pulls every sanctioned lever for you:
@@ -380,6 +400,17 @@ const appkit = new StellarAppKit({
 The modal installs this automatically (no wiring). Headless apps get the same behavior with `attachAppFocusReturn(appkit)`. With no `redirect` configured there is nothing to self-open — you still keep lever 3, and in-app outcomes (rejecting a preview at the account screen, an SIWS cancel) never steal focus because attempts only fire while the app is backgrounded.
 
 > **Wallet support varies.** Whether the automatic bounce-back (lever 1) happens is up to each wallet — AppKit advertises the redirect to every wallet, but only wallets implementing the Reown redirect behavior act on it. Test with your target wallets; for the rest, levers 2–3 still land the user back in the app the moment they switch.
+
+## Wallet-side disconnects propagate to the library
+
+When the user disconnects from **inside the wallet** (its own settings screen, a "forget this dapp" action), the session is dead on the wallet's side — and the library now treats it that way too. The WalletConnect `session_delete` (and `session_expire` when the ~7-day session TTL lapses) is delivered over the relay — on React Native typically the moment your app foregrounds again, since the relay transport restart re-delivers messages that queued while the app was backgrounded — and core reconciles exactly like an app-initiated `disconnect()`:
+
+- the session is dropped from the client (memory **and** persisted storage — a cold restart will not resurrect it),
+- `disconnect` and `sessionsChanged` events fire, the status flips (`connected` → `idle` when it was the only wallet),
+- any SIWS session is cleared (the `signout()` hook runs when configured),
+- a pending "Try again" for that wallet dies with the connection.
+
+The modal needs no wiring for this: its existing `disconnect` listener flips the sheet off the account view back to the wallet list. Headless clients get the events directly. Before this propagation, the connector cleared only its own private state and the client kept serving the dead session — status `'connected'`, account view up — until the next sign request failed with "WalletConnect is not connected — call connect() first".
 
 ## Headless usage (no modal)
 
