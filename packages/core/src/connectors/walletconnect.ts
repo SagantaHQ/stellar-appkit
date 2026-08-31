@@ -525,6 +525,39 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
   let onSessionInvalidatedHandler: (() => void) | null = null;
 
   /**
+   * Late-bound sign-request dispatch handler — fires at the exact moment a
+   * SIGN request leaves for the relay (`stellar_signXDR` /
+   * `stellar_signAuthEntry` / `stellar_signMessage`), AFTER the connector's
+   * connected + approved-method pre-checks passed and therefore only when
+   * the request is genuinely going out on the wire.
+   *
+   * This is the mobile auto-open hook (MWA-style handoff): by the time it
+   * fires, the app-side preview gate has ALREADY been passed — the user
+   * tapped Sign/Approve in the app's preview modal — so opening the paired
+   * wallet app now lands the user straight in the wallet's pending prompt
+   * with the request actually waiting. The previous trigger (the client's
+   * signQueueChange / pendingSignCount increase) fired the moment the app
+   * CALLED signTransaction(), i.e. BEFORE the preview consent — the wallet
+   * opened with nothing to approve while the user was still reading the
+   * preview in the app.
+   *
+   * The host callback is guarded: a throwing handler must never break the
+   * request path itself. NOT fired for connect-time requests
+   * (stellar_getNetwork) — those drive their own deep link via setOnUri.
+   */
+  let onSignRequestDispatchHandler: ((info: { method: string }) => void) | null = null;
+
+  /** Fire the dispatch handler (best-effort — see doc above). */
+  const notifySignDispatch = (method: string): void => {
+    if (!onSignRequestDispatchHandler) return;
+    try {
+      onSignRequestDispatchHandler({ method });
+    } catch {
+      // Host callback failure must never break the sign request itself.
+    }
+  };
+
+  /**
    * True while THIS side is disconnecting (connector.disconnect()) — the
    * SDK emits `session_delete` locally for our own deletion, and that echo
    * must not be reported as a wallet-initiated invalidation.
@@ -1508,6 +1541,11 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         }
         let result: Record<string, unknown>;
         try {
+          // The mobile handoff hook: the user already approved the preview
+          // (client-side consent) and every pre-check above passed — this
+          // request is about to hit the relay, so the paired wallet app
+          // may be opened to meet it.
+          notifySignDispatch('stellar_signXDR');
           result = await client.request({
             topic: sessionTopic,
             chainId: resolveWcChainId(),
@@ -1571,6 +1609,8 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // Response: { signedAuthEntry, signerAddress }
         let result: Record<string, unknown>;
         try {
+          // Mobile handoff hook — see stellar_signXDR above.
+          notifySignDispatch('stellar_signAuthEntry');
           result = await client.request({
             topic: sessionTopic,
             chainId: resolveWcChainId(),
@@ -1631,6 +1671,9 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
         // Some wallets (Hana/Lobstr) return { signedMessage } instead of
         // { signature } — we check both field names.
         try {
+          // Mobile handoff hook — see stellar_signXDR above. Covers SIWS
+          // too: signIn() lands here through connector.signMessage.
+          notifySignDispatch('stellar_signMessage');
           const result = await client.request({
             topic: sessionTopic,
             chainId: resolveWcChainId(),
@@ -1748,6 +1791,30 @@ export function createWalletConnectConnector(opts: WalletConnectConnectorOptions
    */
   (connector as WalletConnector & { setOnSessionInvalidated?: (fn: (() => void) | null) => void }).setOnSessionInvalidated = (fn: (() => void) | null) => {
     onSessionInvalidatedHandler = fn;
+  };
+
+  /**
+   * Late-bound sign-request dispatch handler setter. The mobile UI calls
+   * this to learn the exact moment a sign request leaves for the relay —
+   * which is AFTER the app-side preview gate resolved (the user consented)
+   * and after the connector's connected + approved-method pre-checks, so
+   * the notification only ever means "this request is on the wire now".
+   *
+   * This is the auto-open-the-wallet-app trigger for the MWA-style mobile
+   * handoff — deliberately NOT the client's signQueueChange event, which
+   * fires the moment the app CALLS signTransaction() (before the preview
+   * consent) and would open the wallet with nothing waiting in it. The
+   * handler receives the WC method name so hosts can distinguish request
+   * kinds if they ever need to.
+   *
+   * This is a non-standard extension on the WalletConnect connector only —
+   * direct connectors (browser extensions, WebViews) surface their prompt
+   * themselves; there is no second app to hand off to. The mobile modal
+   * checks for its existence with `typeof connector.setOnSignRequestDispatch
+   * === 'function'` before calling.
+   */
+  (connector as WalletConnector & { setOnSignRequestDispatch?: (fn: ((info: { method: string }) => void) | null) => void }).setOnSignRequestDispatch = (fn: ((info: { method: string }) => void) | null) => {
+    onSignRequestDispatchHandler = fn;
   };
 
   /**

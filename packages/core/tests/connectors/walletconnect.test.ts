@@ -315,6 +315,116 @@ describe('createWalletConnectConnector — approved-methods verification', () =>
   });
 });
 
+describe('createWalletConnectConnector — sign-request dispatch callback (the mobile auto-open hook)', () => {
+  // The mobile UI opens the paired wallet app when this callback fires —
+  // it must mean EXACTLY "a sign request is going out on the wire right
+  // now", not "the app called signTransaction()" (that happens BEFORE the
+  // preview consent; the wallet would open with nothing to approve).
+  type Dispatch = { method: string; requestCountWhenFired: number };
+  let dispatches: Dispatch[];
+
+  /** Registers a recording handler on the connector. */
+  const recordDispatches = (connector: ReturnType<typeof createWalletConnectConnector>) => {
+    (connector as { setOnSignRequestDispatch?: (fn: ((info: { method: string }) => void) | null) => void }).setOnSignRequestDispatch?.(
+      (info) => dispatches.push({ method: info.method, requestCountWhenFired: requestCalls.length })
+    );
+  };
+
+  beforeEach(() => {
+    dispatches = [];
+  });
+
+  test('fires with the method name BEFORE the WC request is issued', async () => {
+    requestResponses['stellar_signXDR'] = { signedXDR: 'AAAA-signed' };
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    const before = requestCalls.length;
+    recordDispatches(connector);
+    await connector.signTransaction('AAAA-tx');
+
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]?.method).toBe('stellar_signXDR');
+    // The notification precedes the wire call — the host starts its
+    // settle window at dispatch, not after the wallet answered.
+    expect(dispatches[0]?.requestCountWhenFired).toBe(before);
+    expect(requestCalls).toHaveLength(before + 1);
+  });
+
+  test('fires for signMessage and signAuthEntry as well (SIWS lands here too)', async () => {
+    requestResponses['stellar_signMessage'] = { signature: 'sig-1' };
+    requestResponses['stellar_signAuthEntry'] = { signedAuthEntry: 'entry-1' };
+    sessionMethods = ['stellar_signXDR', 'stellar_signMessage', 'stellar_signAuthEntry'];
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    recordDispatches(connector);
+
+    await connector.signMessage('hello');
+    await connector.signAuthEntry('AAAA-entry');
+
+    expect(dispatches.map((d) => d.method)).toEqual(['stellar_signMessage', 'stellar_signAuthEntry']);
+  });
+
+  test('does NOT fire when the pre-checks fail — nothing leaves, nothing to open for', async () => {
+    // Method not approved by the session → the guard throws before the
+    // request (and before the callback).
+    sessionMethods = ['stellar_signXDR'];
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    recordDispatches(connector);
+
+    await expect(connector.signMessage('hello')).rejects.toThrow(/stellar_signMessage/);
+    expect(dispatches).toHaveLength(0);
+  });
+
+  test('does NOT fire when the connector is not connected', async () => {
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    recordDispatches(connector);
+
+    await expect(connector.signTransaction('AAAA-tx')).rejects.toThrow(/not connected/i);
+    expect(dispatches).toHaveLength(0);
+  });
+
+  test('does NOT fire for connect-time requests (stellar_getNetwork drives its own deep link)', async () => {
+    sessionMethods = ['stellar_signXDR', 'stellar_getNetwork'];
+    requestResponses['stellar_getNetwork'] = { network: 'TESTNET', networkPassphrase: TESTNET_PASSPHRASE };
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    recordDispatches(connector);
+    await connector.connect();
+
+    expect(requestCalls.map((c) => c.request.method)).toContain('stellar_getNetwork');
+    expect(dispatches).toHaveLength(0);
+  });
+
+  test('a throwing host handler never breaks the sign request', async () => {
+    requestResponses['stellar_signXDR'] = { signedXDR: 'AAAA-signed' };
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    (connector as { setOnSignRequestDispatch?: (fn: ((info: { method: string }) => void) | null) => void }).setOnSignRequestDispatch?.(() => {
+      throw new Error('host handler bug');
+    });
+
+    const result = await connector.signTransaction('AAAA-tx');
+    expect(result.signedTxXdr).toBe('AAAA-signed');
+  });
+
+  test('detach — setOnSignRequestDispatch(null) stops the notifications', async () => {
+    requestResponses['stellar_signXDR'] = { signedXDR: 'AAAA-signed' };
+
+    const connector = createWalletConnectConnector({ projectId: 'test-project' });
+    await connector.connect();
+    recordDispatches(connector);
+    (connector as { setOnSignRequestDispatch?: (fn: ((info: { method: string }) => void) | null) => void }).setOnSignRequestDispatch?.(null);
+
+    await connector.signTransaction('AAAA-tx');
+    expect(dispatches).toHaveLength(0);
+    expect(requestCalls.at(-1)?.request.method).toBe('stellar_signXDR'); // the request itself still ran
+  });
+});
+
 describe('createWalletConnectConnector — warmUp() (cold-start off the tap)', () => {
   test('warmUp() initializes the SignClient exactly once and resolves', async () => {
     const connector = createWalletConnectConnector({ projectId: 'test-project' });

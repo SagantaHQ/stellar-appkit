@@ -1,6 +1,6 @@
 /**
- * Tests for the MWA-style sign handoff — the auto-open of the paired wallet
- * app the moment a WalletConnect request is queued from this side.
+ * Tests for the MWA-style sign handoff — the auto-open of the paired
+ * wallet app AFTER the user consents to the request.
  *
  * Two layers, pinned separately:
  *
@@ -11,16 +11,22 @@
  *    null for wallets that can't be re-opened at all.
  *
  * 2. The modal wiring (source-checked here, same pattern as
- *    sign-retry-wiring.test.ts): the auto-open effect must fire only on
- *    pendingSignCount INCREASES (drains and unrelated snapshot re-renders
- *    never re-open the wallet), only while the app is foregrounded, and
- *    behind the autoOpenWalletOnSign prop (default on) — plus the manual
- *    "Open in wallet app" button must now resolve for restored sessions
- *    too, not just a connect-time pick.
+ *    sign-retry-wiring.test.ts): the handoff arms ONLY on the connector's
+ *    setOnSignRequestDispatch notification — the moment a sign request is
+ *    actually dispatched to the relay, which is AFTER the preview gate
+ *    (the user tapped Sign/Approve) — NEVER on the sign queue count
+ *    increasing (that fires when the app calls signTransaction(), before
+ *    the user consented; opening the wallet there was the consent-gating
+ *    bug). A request that settles within the 350ms window cancels the
+ *    handoff; the open itself only happens while foregrounded, and it is
+ *    silent on failure — the manual "Open in wallet app" button stays.
  *
- * The full end-to-end (Linking.openURL actually launching the wallet, the
- * 350ms dispatch delay letting the request reach the relay first) needs a
- * device — these pin the decisions that must not silently regress.
+ * The core side (when the notification fires: post pre-checks, post
+ * preview; never for getNetwork; detach) is unit-tested in
+ * packages/core/tests/connectors/walletconnect.test.ts. The full
+ * end-to-end (Linking.openURL actually launching the wallet, the settle
+ * window letting the publish land) needs a device — these pin the
+ * decisions that must not silently regress.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -100,21 +106,58 @@ describe('buildSignHandoffLink — the link the handoff opens', () => {
 });
 
 describe('AppKitModal — auto-open wiring (source checks)', () => {
-  test('the effect fires only on pendingSignCount increases, gated on the prop', () => {
-    const effectMatch = MODAL_SRC.match(
-      /if \(!autoOpenRef\.current \|\| count <= prev\) return;[\s\S]*?\}, \[state\.pendingSignCount, wcConnector\]\);/
+  test('the handoff arms on the connector DISPATCH notification, not the sign queue', () => {
+    // The subscription: the connector notifies the modal the moment a sign
+    // request is dispatched to the relay (post-consent, post pre-checks) —
+    // that is the ONLY thing that arms the handoff.
+    const subMatch = MODAL_SRC.match(
+      /setOnSignRequestDispatch[\s\S]*?\n[ \t]*setter\(\(\) => armSignHandoffRef\.current\(\)\);\n[ \t]*return \(\) => setter\(null\);/
     );
-    expect(effectMatch).not.toBeNull();
-    const effect = effectMatch![0];
-    // The guard itself.
-    expect(effect).toContain('count <= prev');
-    expect(effect).toContain('autoOpenRef.current');
+    expect(subMatch).not.toBeNull();
+    // The arming callback — gated on the prop, resolving the target from
+    // the connect-time pick or the restored session's peer redirect.
+    const armMatch = MODAL_SRC.match(
+      /const armSignHandoff = useCallback\(\(\) => \{[\s\S]*?Linking\.openURL\(link\)\.catch\(\(\) => undefined\);[\s\S]*?\}, \[wcConnector\]\);/
+    );
+    expect(armMatch).not.toBeNull();
+    const arm = armMatch![0];
+    // The prop gate (opt-out).
+    expect(arm).toContain('if (!autoOpenRef.current) return');
     // Foreground-only — never yank the user out of another app.
-    expect(effect).toContain("AppState.currentState !== 'active'");
-    // The dispatch delay that lets the request reach the relay first.
-    expect(effect).toContain('SIGN_HANDOFF_DELAY_MS');
+    expect(arm).toContain("AppState.currentState !== 'active'");
+    // The settle window that lets the request reach the relay first.
+    expect(arm).toContain('SIGN_HANDOFF_DELAY_MS');
     // Silent failure — the manual button stays the fallback.
-    expect(effect).toMatch(/Linking\.openURL\(link\)\.catch\(\(\) => undefined\)/);
+    expect(arm).toMatch(/Linking\.openURL\(link\)\.catch\(\(\) => undefined\)/);
+    // The target resolution survives cold restarts (peer fallback).
+    expect(arm).toContain('resolveSignHandoffWalletId(peer, pairedMobileWalletId.current)');
+  });
+
+  test('CONSENT GATING: nothing arms on pendingSignCount increases (the old pre-consent trigger is gone)', () => {
+    // The regression this file guards: the wallet used to open the moment
+    // the app CALLED signTransaction() (queue count 0→1) — before the
+    // preview modal's Sign/Approve consent. The increase-triggered effect
+    // must not come back.
+    expect(MODAL_SRC).not.toMatch(/count <= prev\) return;/);
+    // The queue count is still watched — but ONLY to CANCEL an armed
+    // handoff when the request settles (count decreases).
+    const watcher = MODAL_SRC.match(
+      /const lastSignCountRef = useRef\(0\);[\s\S]*?\}, \[state\.pendingSignCount\]\);/
+    );
+    expect(watcher).not.toBeNull();
+    expect(watcher![0]).toContain('const decreased = count < lastSignCountRef.current');
+    expect(watcher![0]).toContain('if (decreased) cancelSignHandoffRef.current();');
+  });
+
+  test('a sign failure inside the settle window cancels the handoff (error event cancels immediately)', () => {
+    // The error listener runs cancelSignHandoffRef BEFORE its early
+    // returns — every sign failure path cancels, even the suppressed
+    // "user rejected" ones (a no-op when nothing is armed).
+    const errListener = MODAL_SRC.match(
+      /client\.on\('error', \(err\) => \{[\s\S]*?previewJustRejected\.current && err instanceof ConnectError/
+    );
+    expect(errListener).not.toBeNull();
+    expect(errListener![0]).toContain('cancelSignHandoffRef.current();');
   });
 
   test('a pending handoff timer never outlives the modal (unmount clears it)', () => {

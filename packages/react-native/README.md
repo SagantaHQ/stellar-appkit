@@ -354,17 +354,21 @@ registerMobileWallet({
 
 > **Use the wallet's REGISTERED link, not its bare scheme.** Some wallets validate the URL they're asked to open: Freighter Mobile's deep-link handler silently ignores anything that doesn't contain its Reown-registered redirect (`freighterwallet://wc-redirect`), so a `freighterwallet://wc?uri=...` link opens the app and then does nothing — no pairing prompt. The Explorer entry (`mobile.native`) is the source of truth; every built-in wallet ships its exact value.
 
-### Sign requests: the wallet opens itself
+### Sign requests: the wallet opens itself — but only after consent
 
-Connecting isn't the only handoff — every WalletConnect request your app fires afterwards (a `signTransaction()`, a `signAuthEntry()`, a SIWS prompt, even a "Try again" after a rejection) opens the paired wallet app automatically, Mobile Wallet Adapter style. The user taps **Send** in your app and lands straight in the wallet's pending approval prompt; no detour past a "Continue in wallet" screen with a button they must now tap.
+Connecting isn't the only handoff — every WalletConnect request your app fires afterwards (a `signTransaction()`, a `signAuthEntry()`, a SIWS prompt, even a "Try again" after a rejection) opens the paired wallet app automatically, Mobile Wallet Adapter style. But the handoff happens at the RIGHT moment: after the user taps **Sign/Approve** in the app's preview modal and the request is actually on the wire. The wallet is never opened before the consent — the trigger is the connector's dispatch notification (fired after the preview gate and after its pre-checks), not the sign queue, which starts counting the moment your code calls `signTransaction()`, i.e. while the user is still reading the preview.
 
-The wiring is `autoOpenWalletOnSign` (default on):
+The full sequence with `autoOpenWalletOnSign` (default on):
 
-- **Only new requests fire it.** The sign queue count increasing — a drain, a re-render, a settled request — never re-opens the wallet behind the user's back.
+1. Your code calls `signTransaction()` → the preview modal opens in YOUR app.
+2. The user reviews the transaction and taps **Sign**/`Approve` — that's the consent.
+3. The WalletConnect `session_request` is dispatched to the relay.
+4. A short settle window passes (350ms — lets the publish land on the WebSocket before the OS freezes it in the background) and, if the request hasn't settled in the meantime, the paired wallet app opens. The user lands straight in its pending approval prompt; no detour past a "Continue in wallet" screen with a button they must now tap.
+
+- **A request that settles inside the window cancels the handoff.** A fast failure (dead session, unapproved method — the error event fires and the queue drains) or a wallet that answered before the app could switch: either way there is nothing waiting in the wallet to open for, and your user is already looking at the result.
 - **Only while your app is foregrounded.** A sign that lands while the app is backgrounded never yanks the wallet (or anything else) to the front.
 - **Only when a target is derivable.** The wallet the user picked during connect, or — after an app restart, when no pick happened in this process — the wallet the restored WalletConnect session's peer metadata points back to (its `redirect.native` scheme is captured at settle time and persisted with the session record). Wallets with no resolvable target (desktop, unregistered) keep the manual button.
-- **A 350ms dispatch beat.** The queue event fires just before the request reaches the relay; waiting a third of a second before backgrounding the app lets the publish land, so the wallet opens with a prompt actually waiting (otherwise the request can be lost to the socket the OS is about to freeze).
-- **Failures are silent.** `Linking.openURL` rejections are swallowed — the "Open in wallet app" button on the signing view remains as the fallback, and it now resolves for restored sessions too.
+- **Failures are silent.** `Linking.openURL` rejections are swallowed — the "Open in wallet app" button on the signing view remains as the fallback, and it resolves for restored sessions too.
 
 Opt out per instance if you want the manual handoff back:
 

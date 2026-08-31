@@ -336,6 +336,31 @@ export interface WalletConnector {
   setOnSessionInvalidated?(cb: (() => void) | null): void;
 
   /**
+   * Optional: registers a callback the connector fires the moment a SIGN
+   * request is dispatched to the relay — `stellar_signXDR`,
+   * `stellar_signAuthEntry`, or `stellar_signMessage` — after its
+   * connected + approved-method pre-checks passed, i.e. only when the
+   * request is genuinely going out on the wire.
+   *
+   * This is the mobile auto-open-the-wallet-app trigger (MWA-style
+   * handoff): by the time it fires, the app-side preview gate has already
+   * resolved — the user tapped Sign/Approve in the app's preview modal —
+   * so opening the paired wallet app lands the user straight in the
+   * wallet's pending prompt. Deliberately NOT wired to the client's
+   * `signQueueChange` event, which fires the moment the app calls
+   * signTransaction() (BEFORE the preview consent) and would open the
+   * wallet with nothing waiting in it.
+   *
+   * Only relay-based connectors (WalletConnect) implement it — direct
+   * connectors surface their prompt themselves; there is no second app to
+   * hand off to. Connector implementations swallow errors thrown by the
+   * host callback so a misbehaving handler can never break the request
+   * path. Headless hosts can use it for telemetry (which requests left,
+   * when) the same way mobile UIs use it for the handoff.
+   */
+  setOnSignRequestDispatch?(cb: ((info: { method: string }) => void) | null): void;
+
+  /**
    * Optional: returns a URL to the connected account's profile picture /
    * avatar, if the wallet supports one. Used by the UI to render an
    * avatar next to the address instead of a generic colored circle.

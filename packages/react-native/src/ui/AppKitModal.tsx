@@ -77,11 +77,14 @@
  *   tick would freeze the sheet's layout/entrance animation — the tap
  *   would look dead for 5-10 seconds. See ui/warm-up.ts.
  * - **Auto-open the wallet on sign** (`autoOpenWalletOnSign`, default on)
- *   — the moment a WalletConnect request is queued from this side (sign,
- *   auth entry, SIWS prompt, retry), the paired wallet app opens by
- *   itself, MWA-style: the user lands straight in the wallet's pending
- *   prompt instead of tapping "Open in wallet app". Fires only on NEW
- *   requests (count increases), only while the app is foregrounded, and
+ *   — once the user CONSENTS (taps Sign/Approve in the app's preview
+ *   modal) and the WalletConnect request is actually on the wire, the
+ *   paired wallet app opens by itself, MWA-style: the user lands straight
+ *   in the wallet's pending prompt instead of tapping "Open in wallet
+ *   app". Never fires before consent — the trigger is the connector's
+ *   post-preview dispatch notification, not the sign queue — and a
+ *   request that settles (fails or completes) within the short settle
+ *   window cancels the handoff. Only while the app is foregrounded and
  *   only when a target is derivable — the connect-time pick, or the
  *   wallet the restored session's peer metadata points back to after a
  *   cold restart. Failures are silent; the manual button remains.
@@ -183,17 +186,26 @@ export interface AppKitModalProps {
    */
   autoCloseOnComplete?: boolean;
   /**
-   * Default true: the moment a WalletConnect request is triggered from
-   * this side — a sign, an auth entry, a SIWS prompt — the paired wallet
-   * app is opened automatically (MWA-style: the user lands straight in the
-   * wallet's pending prompt instead of tapping "Open in wallet app" by
-   * hand). Only fires while the app is foregrounded and only when a target
-   * is derivable: the wallet the user picked during connect, or the wallet
-   * the restored session's peer metadata points back to after a cold
-   * restart. The short dispatch delay lets the request reach the relay
-   * before the app backgrounds; failures are silent (the manual button on
-   * the signing view remains as the fallback). Set false to keep the
-   * fully-manual handoff (the button only).
+   * Default true: once the user CONSENTS to a wallet-side request — taps
+   * Sign/Approve in the app's preview modal (a SIWS prompt or a
+   * "Try again" re-approval included) — and the WalletConnect request is
+   * dispatched to the relay, the paired wallet app is opened
+   * automatically (MWA-style: the user lands straight in the wallet's
+   * pending prompt instead of tapping "Open in wallet app" by hand). The
+   * wallet is NEVER opened before the consent: the trigger is the
+   * connector's dispatch notification (fired after the preview gate and
+   * after its pre-checks), not the sign queue, which starts counting the
+   * moment the app calls signTransaction(). A request that settles
+   * within the short settle window — a fast failure (dead session) or an
+   * instant answer — cancels the handoff: there is nothing waiting in
+   * the wallet to switch to. Only fires while the app is foregrounded
+   * and only when a target is derivable: the wallet the user picked
+   * during connect, or the wallet the restored session's peer metadata
+   * points back to after a cold restart. The short settle delay lets the
+   * request reach the relay before the app backgrounds; failures are
+   * silent (the manual button on the signing view remains as the
+   * fallback). Set false to keep the fully-manual handoff (the button
+   * only).
    */
   autoOpenWalletOnSign?: boolean;
 }
@@ -460,6 +472,11 @@ export function AppKitModal({
         }
       }),
       client.on('error', (err) => {
+        // A sign failure cancels any armed wallet handoff BEFORE its settle
+        // window elapses (the queue-drain watcher below is the second line
+        // of defense — the error event lands first). The request failed;
+        // there is nothing waiting in the wallet to switch to.
+        cancelSignHandoffRef.current();
         // The "user rejected" error that follows a preview Cancel is the
         // outcome the user chose — settle on the account/list view instead
         // of routing to the generic error screen (see rejectPreview).
@@ -546,42 +563,58 @@ export function AppKitModal({
     }
   }, [state.pendingSignCount, client.session, view]);
 
-  // --- auto-open the wallet app when a WalletConnect request is fired -------
+  // --- auto-open the wallet app once a sign request is DISPATCHED -----------
   // (MWA-style sign handoff — autoOpenWalletOnSign, default on)
   //
-  // The moment the client queues a NEW wallet-side request (pendingSignCount
-  // increases: a sign, an auth entry, a SIWS prompt, a retry), the paired
-  // wallet app is opened automatically so the user lands straight in its
-  // pending prompt — mirroring mobile wallet adapters, where "Continue in
-  // wallet" is a tap the OS makes for you. The connect flow already does
-  // this via setOnUri (deep link the instant the pairing URI exists); this
-  // is the same handoff for everything that comes AFTER connecting.
+  // The wallet opens ONLY AFTER the user consented AND the WalletConnect
+  // request is on the wire:
+  //
+  //   app button → preview modal (user reads the tx) → Sign/Approve tap
+  //   → connector dispatches the session_request → NOW the wallet opens
+  //
+  // The trigger is the connector's setOnSignRequestDispatch notification —
+  // fired after the preview gate resolved (the user tapped Sign/Approve in
+  // the app's preview modal) and after the connector's connected + approved-
+  // method pre-checks, so it only ever means "this request is on the wire
+  // now". Deliberately NOT the client's pendingSignCount: that increases
+  // the moment the app CALLS signTransaction() — BEFORE the preview
+  // consent — and opening the wallet there backgrounds the app while the
+  // preview is still waiting for a decision, leaving the wallet open with
+  // nothing to approve and the user bouncing between two apps.
   //
   // Guards, all load-bearing:
-  // - INCREASES only: a drain (count falling) or an unrelated re-render
-  //   (the snapshot re-fires on every client event) never re-opens the
-  //   wallet — only a genuinely new request does, including a "Try again"
-  //   after a failure (the queue went back down before it went up).
+  // - Settle window (350ms): the notification fires just before the
+  //   request reaches the relay; waiting a beat before backgrounding the
+  //   app lets the WebSocket publish land so the wallet opens with a
+  //   prompt actually waiting (the OS freezes the socket right after the
+  //   app switches away). If the request SETTLES inside the window — a
+  //   fast failure (dead session, method gap: error event + queue drain)
+  //   or a wallet that answered before we could switch — the handoff is
+  //   cancelled: there is nothing left to open for and an error view (or
+  //   a completed request) is already on screen.
   // - AppState 'active': never yank the user out of another app — iOS
   //   refuses background openURL anyway; Android would rudely foreground
   //   the wallet over whatever the user switched to.
-  // - Dispatch delay (350ms): the signQueueChange event fires BEFORE the
-  //   request reaches the relay (enqueueSign emits, then the connector
-  //   call runs). Backgrounding the app a beat later lets the WebSocket
-  //   publish land first — otherwise the request can be lost to the
-  //   zombified socket and the wallet opens with nothing to approve.
   // - Silent failure: Linking errors are swallowed — the manual "Open in
   //   wallet app" button on the signing view stays as the fallback.
   const SIGN_HANDOFF_DELAY_MS = 350;
   const autoOpenRef = useRef(autoOpenWalletOnSign);
   autoOpenRef.current = autoOpenWalletOnSign;
-  const lastSignCountRef = useRef(0);
   const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const count = state.pendingSignCount;
-    const prev = lastSignCountRef.current;
-    lastSignCountRef.current = count;
-    if (!autoOpenRef.current || count <= prev) return; // disabled, drain, or echo
+
+  /** Cancels an armed (not yet fired) handoff. No-op when none is armed. */
+  const cancelSignHandoff = useCallback(() => {
+    if (handoffTimerRef.current) {
+      clearTimeout(handoffTimerRef.current);
+      handoffTimerRef.current = null;
+    }
+  }, []);
+  const cancelSignHandoffRef = useRef(cancelSignHandoff);
+  cancelSignHandoffRef.current = cancelSignHandoff;
+
+  /** Arms the handoff: open the paired wallet once the settle window passes. */
+  const armSignHandoff = useCallback(() => {
+    if (!autoOpenRef.current) return; // disabled — manual button only
     // A connect pairing is already driving its own deep link (setOnUri);
     // a sign can't be in flight before a session exists, but a stray
     // handoff during the connecting view would fight that flow.
@@ -598,7 +631,35 @@ export function AppKitModal({
       if (AppState.currentState !== 'active') return;
       Linking.openURL(link).catch(() => undefined);
     }, SIGN_HANDOFF_DELAY_MS);
-  }, [state.pendingSignCount, wcConnector]);
+  }, [wcConnector]);
+  const armSignHandoffRef = useRef(armSignHandoff);
+  armSignHandoffRef.current = armSignHandoff;
+
+  // Subscribe to the connector's dispatch notification (post-consent, post
+  // pre-checks — see setOnSignRequestDispatch in the core connector). The
+  // handler resolves through a ref so the subscription runs once per
+  // connector, not on every render.
+  useEffect(() => {
+    const setter = (
+      wcConnector as (WalletConnector & { setOnSignRequestDispatch?: (fn: ((info: { method: string }) => void) | null) => void }) | undefined
+    )?.setOnSignRequestDispatch;
+    if (typeof setter !== 'function') return; // older core — manual handoff only
+    setter(() => armSignHandoffRef.current());
+    return () => setter(null);
+  }, [wcConnector]);
+
+  // Settle-window cancel: a pendingSignCount DECREASE while a handoff is
+  // armed means the request that just dispatched already settled (the
+  // queue is FIFO and one-at-a-time, so the decrease can only be that
+  // request). Fast failure or instant answer — either way, opening the
+  // wallet now would strand the user in an app with nothing pending.
+  const lastSignCountRef = useRef(0);
+  useEffect(() => {
+    const count = state.pendingSignCount;
+    const decreased = count < lastSignCountRef.current;
+    lastSignCountRef.current = count;
+    if (decreased) cancelSignHandoffRef.current();
+  }, [state.pendingSignCount]);
   // Never leave a pending handoff timer armed past unmount.
   useEffect(
     () => () => {
