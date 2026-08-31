@@ -98,8 +98,12 @@ export function AccountView(props: AccountViewProps) {
   const networkColor = isTestnet ? '#f59e0b' : '#6EE7B7';
   const avatar = avatarColorsFromAddress(address);
 
+  // Root = web .account (gap 20, padding-top 6): the vertical rhythm that
+  // keeps header / pending banner / balance / history evenly 20px apart —
+  // previously missing, which crushed the blocks together (the header sat
+  // ~2px above the balance label). See styles.ts `account`.
   return (
-    <View>
+    <View style={styles.account}>
       {/* Account header: avatar + address (tap to copy) + network pill + overflow */}
       <View style={styles.accountHeader}>
         <View style={[styles.accountAvatar, { backgroundColor: avatar.backgroundColor }]} />

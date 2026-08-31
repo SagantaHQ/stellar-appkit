@@ -256,13 +256,21 @@ export function buildStyles(theme: ConnectThemeRN) {
     signingActions: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
 
     // ---- Deep-link extras (RN-only affordances) ----------------------------
+    // These stack under the connecting-view core (subtitle carries
+    // margin-bottom 32/24 toward whatever follows, exactly like the web
+    // retry pill), so they add NO top margin of their own — a second beat
+    // on top of the subtitle's would double the gap (32+8 = 40 between
+    // text and button, visibly uneven vs the 24/32 everywhere else).
+    // primaryButton instead carries margin-BOTTOM: the "Copy pairing code"
+    // text link that follows it in ConnectingView sat 2dp below the button
+    // before — the one spacing bug users actually notice.
     openFailedCard: {
       alignItems: 'center',
       gap: 10,
       backgroundColor: theme.colorSurface,
       borderRadius: theme.radiusMd,
       padding: 16,
-      marginTop: 8,
+      marginTop: 12,
       alignSelf: 'stretch',
     },
     openFailedText: { color: theme.colorText, fontSize: 14, textAlign: 'center' },
@@ -273,7 +281,8 @@ export function buildStyles(theme: ConnectThemeRN) {
       paddingVertical: 14,
       paddingHorizontal: 20,
       alignItems: 'center',
-      marginTop: 8,
+      marginTop: 0,
+      marginBottom: 12,
       alignSelf: 'stretch',
     },
     primaryButtonPressed: { opacity: 0.8 },
@@ -298,10 +307,21 @@ export function buildStyles(theme: ConnectThemeRN) {
     },
     dangerButtonPressed: { opacity: 0.6 },
     dangerButtonText: { color: theme.colorDanger, fontSize: 14, fontWeight: '600' },
-    textButton: { paddingVertical: 8, marginTop: 2 },
+    textButton: { paddingVertical: 8, marginTop: 0 },
     textButtonText: { color: theme.colorAccent, fontSize: 14, fontWeight: '600' },
 
     // ---- Account view (web .account — 1:1 port of renderConnected) --------
+    // Web .account: flex column, gap 20px, padding 6px 10px 14px. THE
+    // vertical rhythm of the whole connected screen lives here — every
+    // block (header → pending banner → balance → history) is 20px apart.
+    // The RN port initially dropped this container style, leaving the
+    // blocks to ad-hoc per-view margins (2/4/8/12 mixed) and the header
+    // sitting 2px above the balance label. Horizontal padding is
+    // intentionally NOT doubled here: RN's `content` already provides the
+    // 10px sheet inset (the web stacks .body 10 + .account 10 — a phone
+    // sheet is narrower, one inset is the right call); the bottom is
+    // covered by content's paddingBottom (24, or the 68 sheet override).
+    account: { gap: 20, paddingTop: 6 },
     // Web .account-header: flex row, gap 12, padding 2px 0.
     accountHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 2 },
     // Web .account-avatar: 42×42, radius 12. RN has no zero-dep linear
@@ -348,7 +368,8 @@ export function buildStyles(theme: ConnectThemeRN) {
     explorerButton: { padding: 2, opacity: 0.7 },
     // Web .overflow-menu: column, gap 2, padding 6, radius radiusMd,
     // surfaceHover background, 1px border. Hidden until toggled (RN: rendered
-    // conditionally).
+    // conditionally). No margin — the .account container's 20px gap spaces
+    // it from the header and the next block, like the web.
     overflowMenu: {
       gap: 2,
       padding: 6,
@@ -356,7 +377,6 @@ export function buildStyles(theme: ConnectThemeRN) {
       backgroundColor: theme.colorSurfaceHover,
       borderWidth: 1,
       borderColor: theme.colorBorder,
-      marginBottom: 12,
     },
     overflowItem: {
       flexDirection: 'row',
@@ -371,7 +391,8 @@ export function buildStyles(theme: ConnectThemeRN) {
     overflowDangerText: { color: '#ef4444' },
 
     // Web .pending-banner: row, gap 10, padding 10px 14px, radius radiusMd,
-    // rgba(110,231,183,.08) bg + .2 border, 13px accent text.
+    // rgba(110,231,183,.08) bg + .2 border, 13px accent text. No margin —
+    // the .account container's 20px gap spaces it (web parity).
     pendingBanner: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -382,7 +403,6 @@ export function buildStyles(theme: ConnectThemeRN) {
       backgroundColor: 'rgba(110, 231, 183, 0.08)',
       borderWidth: 1,
       borderColor: 'rgba(110, 231, 183, 0.2)',
-      marginBottom: 4,
     },
     pendingBannerText: { color: theme.colorAccent, fontSize: 13, flex: 1 },
 

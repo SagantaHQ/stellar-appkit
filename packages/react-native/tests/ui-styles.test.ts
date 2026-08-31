@@ -155,6 +155,7 @@ describe('modal split structure — shared styles keep serving every view', () =
     const s = buildStyles(minimalDark);
     // Web .account-header/.network-pill/.balance-section/.tx-history ports.
     for (const key of [
+      'account',
       'accountHeader',
       'accountAvatar',
       'accountAddress',
@@ -185,6 +186,36 @@ describe('modal split structure — shared styles keep serving every view', () =
     expect(s.balanceValue.fontSize).toBe(32);
     expect(s.balanceValue.fontWeight).toBe('700');
     expect(s.networkPill.borderRadius).toBe(999);
+  });
+
+  // The web .account rhythm the RN port originally dropped: gap 20px +
+  // padding 6px 10px 14px, with per-block margins REMOVED so the container
+  // gap is the one true spacing (before, the header sat ~2px above the
+  // balance label and the blocks mixed 2/4/8/12 ad-hoc margins).
+  test('account container carries the web .account rhythm (gap 20, no per-block margins fighting it)', () => {
+    const s = buildStyles(minimalDark);
+    expect(s.account.gap).toBe(20); // web: .account { gap: 20px }
+    expect(s.account.paddingTop).toBe(6); // web: .account { padding: 6px 10px 14px }
+    // Per-block margins that used to compensate for the missing gap are gone.
+    expect((s.pendingBanner as Record<string, unknown>).marginBottom).toBeUndefined();
+    expect((s.overflowMenu as Record<string, unknown>).marginBottom).toBeUndefined();
+    // Web-parity margins INSIDE balance-section survive (they're children,
+    // not direct .account blocks).
+    expect(s.friendbotButton.marginTop).toBe(8);
+    expect(s.fundsBanner.marginTop).toBe(8);
+  });
+
+  test('deep-link button rhythm: no double margin after the subtitle, real margin under the primary', () => {
+    const s = buildStyles(minimalDark);
+    // The subtitle owns the beat toward whatever follows (mb 32 / 24 in the
+    // error variant) — buttons add no top margin of their own (was 32+8=40).
+    expect(s.primaryButton.marginTop).toBe(0);
+    expect(s.textButton.marginTop).toBe(0);
+    // The "Copy pairing code" link under the primary button needs real
+    // separation — it sat 2dp below the button before.
+    expect(s.primaryButton.marginBottom).toBe(12);
+    // The install card clears the retry pill with a visible break.
+    expect(s.openFailedCard.marginTop).toBe(12);
   });
 
   test('transaction preview carries the web renderTransactionPreview style set', () => {
