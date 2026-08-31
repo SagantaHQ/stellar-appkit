@@ -295,21 +295,31 @@ export function CircleXIcon({ color, size = 40 }: IconProps) {
 export function RetryIcon({ color, size = 14 }: IconProps) {
   const s = size / 24;
   const sw = 2 * s;
-  const box = 18 * s; // ring outer side: r=9 centered (12,12) → 3..21
+  // Stroke CENTERED on the r=9 path like the web SVG (outer r=10, inner
+  // r=8): a 20-unit box at (2,2) with borderWidth 2 puts the border
+  // centerline exactly at r=9. (The old 18-unit box at (3,3) drew the
+  // whole stroke inside r=9 — one unit thin on the outside.)
+  const box = 20 * s;
   return (
     <View style={{ width: size, height: size }}>
       <View
         style={{
           position: 'absolute',
-          left: 3 * s,
-          top: 3 * s,
+          left: 2 * s,
+          top: 2 * s,
           width: box,
           height: box,
-          borderRadius: 9 * s,
+          borderRadius: 10 * s,
           borderWidth: sw,
           borderColor: color,
-          borderTopColor: 'transparent',
+          // ¾ ring: hide ONE border quarter (the left, gap centered on
+          // 9:00) and rotate the ring +45° so the gap lands on the
+          // top-left quarter (9:00→12:00) — exactly where the web arc
+          // opens. The old version hid top+left, painting only a HALF
+          // ring (180°) where the web icon shows 270°: the "reload"
+          // arrow read as a broken half-circle.
           borderLeftColor: 'transparent',
+          transform: [{ rotate: '45deg' }],
         }}
       />
       <Bar x1={3} y1={4} x2={3} y2={9} color={color} width={2} scale={s} />
