@@ -43,6 +43,7 @@ const sv: LocaleMessages = {
     "section_stellar": "Stellar-plånböcker",
     "more_wallets": "Fler plånböcker ({count})",
     "status": {
+      "checking": "Kontrollerar…",
       "connecting": "Ansluter…",
       "locked": "Låst",
       "unavailable": "Otillgänglig",

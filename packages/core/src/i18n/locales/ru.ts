@@ -43,6 +43,7 @@ const ru: LocaleMessages = {
     "section_stellar": "Кошельки Stellar",
     "more_wallets": "Больше кошельков ({count})",
     "status": {
+      "checking": "Проверка…",
       "connecting": "Подключение…",
       "locked": "Заблокирован",
       "unavailable": "Недоступен",

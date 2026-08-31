@@ -43,6 +43,7 @@ const ro: LocaleMessages = {
     "section_stellar": "Portofele Stellar",
     "more_wallets": "Mai multe portofele ({count})",
     "status": {
+      "checking": "Se verifică…",
       "connecting": "Se conectează…",
       "locked": "Blocat",
       "unavailable": "Indisponibil",

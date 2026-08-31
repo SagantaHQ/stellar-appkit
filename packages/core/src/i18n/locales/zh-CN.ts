@@ -43,6 +43,7 @@ const zh_CN: LocaleMessages = {
     "section_stellar": "Stellar 钱包",
     "more_wallets": "更多钱包（{count}）",
     "status": {
+      "checking": "检查中…",
       "connecting": "连接中…",
       "locked": "已锁定",
       "unavailable": "不可用",

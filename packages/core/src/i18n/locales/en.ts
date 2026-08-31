@@ -59,6 +59,10 @@ export const en = {
     // Collapsible section for the remaining WalletConnect-registered wallets (RN modal).
     more_wallets: 'More wallets ({count})',
     status: {
+      // Progressive wallet-list reachability (ui-web wallet-list.ts): the
+      // row's installed-check is still in flight. Falls back to this English
+      // string in locales that haven't added the key yet.
+      checking: 'Checking…',
       connecting: 'Connecting…',
       locked: 'Locked',
       unavailable: 'Unavailable',

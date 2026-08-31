@@ -43,6 +43,7 @@ const es: LocaleMessages = {
     "section_stellar": "Billeteras de Stellar",
     "more_wallets": "Más billeteras ({count})",
     "status": {
+      "checking": "Comprobando…",
       "connecting": "Conectando…",
       "locked": "Bloqueada",
       "unavailable": "No disponible",

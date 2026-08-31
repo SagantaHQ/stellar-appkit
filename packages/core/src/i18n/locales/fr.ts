@@ -43,6 +43,7 @@ const fr: LocaleMessages = {
     "section_stellar": "Portefeuilles Stellar",
     "more_wallets": "Plus de portefeuilles ({count})",
     "status": {
+      "checking": "Vérification…",
       "connecting": "Connexion…",
       "locked": "Verrouillé",
       "unavailable": "Indisponible",

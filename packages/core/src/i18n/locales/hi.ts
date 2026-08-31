@@ -43,6 +43,7 @@ const hi: LocaleMessages = {
     "section_stellar": "Stellar वॉलेट",
     "more_wallets": "अधिक वॉलेट ({count})",
     "status": {
+      "checking": "जाँच हो रही है…",
       "connecting": "कनेक्ट हो रहा है…",
       "locked": "लॉक्ड",
       "unavailable": "अनुपलब्ध",

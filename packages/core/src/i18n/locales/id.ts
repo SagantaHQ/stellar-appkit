@@ -43,6 +43,7 @@ const id: LocaleMessages = {
     "section_stellar": "Dompet Stellar",
     "more_wallets": "Dompet lainnya ({count})",
     "status": {
+      "checking": "Memeriksa…",
       "connecting": "Menghubungkan…",
       "locked": "Terkunci",
       "unavailable": "Tidak tersedia",

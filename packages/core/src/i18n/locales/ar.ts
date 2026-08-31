@@ -43,6 +43,7 @@ const ar: LocaleMessages = {
     "section_stellar": "محافظ Stellar",
     "more_wallets": "محافظ إضافية ({count})",
     "status": {
+      "checking": "جارٍ التحقق…",
       "connecting": "جارٍ التوصيل…",
       "locked": "مقفل",
       "unavailable": "غير متاح",

@@ -43,6 +43,7 @@ const ko: LocaleMessages = {
     "section_stellar": "Stellar 지갑",
     "more_wallets": "더 많은 지갑 ({count})",
     "status": {
+      "checking": "확인 중…",
       "connecting": "연결 중…",
       "locked": "잠김",
       "unavailable": "사용 불가",

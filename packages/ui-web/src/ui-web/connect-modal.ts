@@ -7,6 +7,7 @@ import { buildStyles } from './styles.js';
 import { icons, genericWalletIcon, getWalletIconDataUri } from './icons.js';
 import { trapFocus } from './a11y.js';
 import { gradientFromAddress, stellarExpertAvatarUrl, fetchWalletAvatar } from './avatar.js';
+import { trackWalletReachability, type WalletListRow } from './wallet-list.js';
 import {
   ModalMotionAnimator,
   BottomsheetMotionAnimator,
@@ -72,7 +73,14 @@ export class SagantaAppKitModal extends ModalBase {
   /** True once the enter transition has run — later re-renders (wallet list loading, connect/error events) shouldn't replay it. */
   private hasEnteredOpenState = false;
   private view: ViewState = 'wallet-list';
-  private walletList: { connector: WalletConnector; reachability: WalletReachability }[] = [];
+  /** Wallet rows for the picker — painted immediately in the 'checking' state
+   *  and settled per-row as each reachability check lands (see wallet-list.ts);
+   *  a slow check (Freighter's 3s timeout when the extension is absent) delays
+   *  only its own row, never the list. */
+  private walletList: WalletListRow[] = [];
+  /** Cancels the in-flight progressive reachability batch — superseded by the
+   *  next refreshWalletList() so stale rows never render over a fresh list. */
+  private cancelReachabilityTracking: (() => void) | null = null;
   private connectingWalletId: string | null = null;
 
   /** WalletConnect pairing URI — set via the connector's setOnUri() hook
@@ -149,6 +157,10 @@ export class SagantaAppKitModal extends ModalBase {
     this.modalAnimator.destroy();
     this.bottomsheetAnimator.destroy();
     this.stopBalancePolling();
+    // Freeze the progressive reachability batch — its pending callbacks
+    // would render into a torn-down shadow DOM otherwise.
+    this.cancelReachabilityTracking?.();
+    this.cancelReachabilityTracking = null;
     this.clientUnsubscribers.forEach((unsub) => unsub());
     this.localeUnsubscriber?.();
   }
@@ -525,10 +537,19 @@ export class SagantaAppKitModal extends ModalBase {
     if (e.key === 'Escape') this.close();
   };
 
-  private async refreshWalletList() {
+  private refreshWalletList() {
     if (!this._client) return;
-    this.walletList = await this._client.registry.listReachability();
-    this.render();
+    // Progressive paint (see wallet-list.ts): rows render IMMEDIATELY in the
+    // neutral 'checking' state — the modal is never held hostage to the
+    // slowest reachability check (Freighter's 3s extension timeout) — and
+    // each row settles the moment its own promise resolves. Superseded
+    // batches are cancelled so a client re-attach or modal re-open can't
+    // paint stale rows over the fresh list.
+    this.cancelReachabilityTracking?.();
+    this.cancelReachabilityTracking = trackWalletReachability(this._client.registry.list(), (rows) => {
+      this.walletList = rows;
+      this.render();
+    });
   }
 
   /**
@@ -1469,7 +1490,10 @@ export class SagantaAppKitModal extends ModalBase {
 
   private renderWalletList(): string {
     if (this.walletList.length === 0) {
-      // If we have a client, the list is loading (reachability checks in flight).
+      // With a client attached the progressive tracker paints rows
+      // synchronously — an empty list here means the registry is genuinely
+      // empty or the tracker hasn't run yet (first paint before attach
+      // finishes); the loading shell covers that sub-frame window.
       if (this._client) {
         return `<div style="padding: 32px 12px; text-align: center; font-size: 13px; color: var(--sak-color-text-muted);"><div class="wallet-list-loading"></div>${t('wallet_list.loading')}</div>`;
       }
@@ -1481,6 +1505,10 @@ export class SagantaAppKitModal extends ModalBase {
         const isConnecting = this.connectingWalletId === connector.id;
         const notInstalled = reachability === 'not-installed';
         const installUrl = pickInstallUrl(connector);
+        // 'checking' rows render like available ones (enabled, not dimmed,
+        // no Install pill) with a neutral "Checking…" sub-label — the row
+        // settles in place when its own reachability lands. Clicking early
+        // is safe: selectWallet() re-resolves reachability before acting.
 
         // Use the wallet's official icon URL first; fall back to our
         // bundled inline SVG data-URI if the URL fails to load.
@@ -1504,29 +1532,33 @@ export class SagantaAppKitModal extends ModalBase {
           `;
         }
 
-        // For installed wallets, show status subLabel (Connecting… / Locked / Installed / etc.)
-        // The "Installed" label makes it visually obvious which wallets are
-        // ready to use vs. which need to be installed first (those show an
-        // "Install" button instead of a subLabel — see the not-installed branch above).
+        // For installed wallets, show status subLabel (Connecting… / Locked /
+        // Installed / etc.) The "Installed" label makes it visually obvious
+        // which wallets are ready to use vs. which need to be installed first
+        // (those show an "Install" button instead of a subLabel — see the
+        // not-installed branch above).
         //
         // WalletConnect is special — it's never "installed" in the browser-extension
         // sense (it's a cloud relay). Showing "Installed" there is misleading, so
         // we swap the label to "Scan QR Code" to hint at the actual pairing flow.
+        // 'checking' (progressive list, see wallet-list.ts) shows a neutral label
+        // until the row settles — never a premature "Installed".
         const isWalletConnect = connector.id === 'walletconnect';
         const subLabel =
-          isConnecting ? t('wallet_list.status.connecting')
+          reachability === 'checking' ? t('wallet_list.status.checking')
+          : isConnecting ? t('wallet_list.status.connecting')
           : reachability === 'locked' ? t('wallet_list.status.locked')
           : reachability === 'unavailable' ? t('wallet_list.status.unavailable')
           : isWalletConnect ? t('wallet_list.status.scan_qr')
           : t('wallet_list.status.installed');
         const subLabelClass =
-          isConnecting || reachability === 'locked' || reachability === 'unavailable'
+          reachability === 'checking' || isConnecting || reachability === 'locked' || reachability === 'unavailable'
             ? 'wallet-sub'
             : 'wallet-sub wallet-sub--installed';
         const disabled = (this.view === 'connecting' && !isConnecting) || reachability === 'unavailable';
 
         return `
-          <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability !== 'available'}" ${disabled ? 'disabled' : ''}>
+          <button class="wallet-row" data-action="select-wallet" data-wallet-id="${connector.id}" data-unavailable="${reachability === 'locked' || reachability === 'unavailable'}" ${disabled ? 'disabled' : ''}>
             <span class="wallet-tile ${isConnecting ? 'connecting' : ''}" style="background-image: url('${escapeAttr(connector.meta.icon)}')">
             </span>
             <span class="wallet-name">${escapeHtml(connector.meta.name)}</span>

@@ -43,6 +43,7 @@ const nl: LocaleMessages = {
     "section_stellar": "Stellar-wallets",
     "more_wallets": "Meer wallets ({count})",
     "status": {
+      "checking": "Controleren…",
       "connecting": "Verbinden…",
       "locked": "Vergrendeld",
       "unavailable": "Niet beschikbaar",

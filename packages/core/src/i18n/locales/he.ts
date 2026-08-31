@@ -43,6 +43,7 @@ const he: LocaleMessages = {
     "section_stellar": "ארנקי Stellar",
     "more_wallets": "ארנקים נוספים ({count})",
     "status": {
+      "checking": "בודק…",
       "connecting": "מתחבר…",
       "locked": "נעול",
       "unavailable": "לא זמין",

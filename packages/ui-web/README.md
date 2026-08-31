@@ -41,6 +41,8 @@ await modal.open();
 
 **Animation presets:** `none`, `fade`, `scale`, `scale-blur`, `slide-up`, `slide-left`, `implode`. Separate open/close presets via object form.
 
+**Instant wallet list (progressive reachability):** `open()` renders the full wallet list immediately — every row paints in a neutral "Checking…" state and settles in place the moment its own reachability check resolves (`ui-web/wallet-list.ts`). A slow check (e.g. Freighter's 3-second extension timeout when the wallet isn't installed) delays only its own row, never the modal or the list. Clicking a row before its check settles is safe — reachability is re-resolved at click time before anything happens.
+
 **Theming:** 30+ CSS custom properties (`--sak-color-accent`, `--sak-radius-lg`, etc.) or the `theme="light|dark"` attribute.
 
 ### Framework wrappers
