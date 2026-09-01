@@ -83,16 +83,9 @@ export {
 } from './locale.js';
 
 export {
-  createThemedBrowserSession,
-  buildRebornOptions,
-  buildExpoOptions,
-  type BrowserThemeTokens,
-  type BrowserSurface,
-  type BrowserOpenResult,
-  type BrowserAuthResult,
-  type ThemedBrowserOptions,
-  type ThemedBrowserSession,
-  type RebornBrowserLike,
-  type ExpoWebBrowserLike,
-  type AuthSessionShape,
-} from './browser/inapp-browser.js';
+  createWebBrowser,
+  isHttpUrl,
+  type WebBrowserSession,
+  type WebBrowserDismiss,
+  type CreateWebBrowserOptions,
+} from './browser/web-view-browser.js';

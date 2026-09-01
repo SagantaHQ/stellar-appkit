@@ -41,6 +41,7 @@ import {
   StellarAppKit,
   defaultReactNativeConnectors,
   createAsyncStorage,
+  createWebBrowser,
 } from '@saganta/stellar-appkit-react-native';
 import { createAlbedoWebViewBridge } from '@saganta/stellar-appkit-react-native/albedo';
 import { createXBullWebViewBridge } from '@saganta/stellar-appkit-react-native/xbull';
@@ -48,6 +49,8 @@ import { AppKitModal } from '@saganta/stellar-appkit-react-native/ui';
 
 export const [albedoView, setAlbedoView] = useState<React.ReactElement | null>(null);
 export const [xbullView, setXBullView] = useState<React.ReactElement | null>(null);
+export const [browserView, setBrowserView] = useState<React.ReactElement | null>(null);
+export const browser = createWebBrowser(setBrowserView);
 
 const appkit = new StellarAppKit({
   network: 'TESTNET',
@@ -61,6 +64,7 @@ const appkit = new StellarAppKit({
     redirect: { native: 'myapp://', universal: 'https://myapp.example' },
   },
   storage: createAsyncStorage(AsyncStorage),                     // sessions persist across restarts
+  autoConnect: true,                                              // pair once: every start resumes connected (+ SIWS login)
   connectors: defaultReactNativeConnectors({
     projectId: '<WalletConnect Cloud project ID>',
     storage: createAsyncStorage(AsyncStorage),
@@ -76,9 +80,10 @@ export function App() {
   return (
     <>
       <Button title="Connect" onPress={() => setOpen(true)} />
-      {open && <AppKitModal client={appkit} open={open} onClose={() => setOpen(false)} />}
+      {open && <AppKitModal client={appkit} open={open} onClose={() => setOpen(false)} browser={browser} />}
       {albedoView}
       {xbullView}
+      {browserView}
     </>
   );
 }
@@ -243,62 +248,73 @@ becomes "Too many failed attempts". Cancelling (or dismissing the modal
 before sign-in succeeds) disconnects the wallet when
 `disconnectOnFail` is true (the default) — exactly the web semantics.
 
-### Themed in-app browser (Chrome Custom Tabs / SFSafariViewController)
+### Auto-connect and auto-login
 
-`createThemedBrowserSession()` opens web URLs on the **system-browser
-surface** — Chrome Custom Tabs on Android, SFSafariViewController on iOS —
-styled like a modal from your theme, with a preference chain that always
-picks the best available browser and falls back gracefully:
-
-1. **`react-native-inappbrowser-reborn`** — full styling (modal `pageSheet`
-   on iOS, themed toolbars on Android), `isAvailable()` Chrome-Tab
-   detection and `openAuth()` redirect interception. Native module — needs
-   a dev client / standalone build, **not Expo Go**.
-2. **`expo-web-browser`** — the same OS surfaces with toolbar theming;
-   bundled **with Expo Go**, so the chain always has an in-app browser
-   there.
-3. **External browser** via `Linking` — last resort, always available.
+Set `autoConnect: true` on the client config and the client schedules
+`restore()` itself at construction — no mount-effect wiring in your app:
 
 ```ts
-import InAppBrowser from 'react-native-inappbrowser-reborn';   // optional
-import * as ExpoWebBrowser from 'expo-web-browser';
-
-const browser = createThemedBrowserSession(
-  { reborn: InAppBrowser, expo: ExpoWebBrowser },  // inject what you have
-  { theme: stellarDark }                            // any ConnectThemeRN
-);
-
-// Pass it to the modal — explorer links, wallet install pages and the
-// footer link then open in the themed tab instead of leaving the app:
-<AppKitModal client={appkit} open={open} onClose={close} browser={browser} />;
-
-// Or drive it directly — resolves when the user dismisses the tab.
-await browser.open('https://testnet.stellarchain.io/account/G…');
-
-// Redirect-intercepting session (wallets with redirect callbacks):
-const result = await browser.openAuth(walletUrl, 'myapp://wallet-callback');
-if (result.type === 'success') parseResult(new URL(result.url));
-
-// Chrome Tab present on this device?
-if (await browser.isChromeTabsAvailable()) { /* prefer the tab */ }
+const appkit = new StellarAppKit({
+  // ...
+  storage: createAsyncStorage(AsyncStorage), // sessions persist across restarts
+  autoConnect: true,
+});
 ```
 
-**Why the system browser and not the WebView** — passkeys: WKWebView does
-not implement WebAuthn (Apple reserves the platform authenticator for
-browser-entitled apps) and Android WebView has none either, while Chrome
-Custom Tabs and SFSafariViewController support passkeys out of the box.
-They also share the system browser's cookie jar — a wallet the user
-already unlocked in their browser is already unlocked in the tab.
+Pair a wallet once; every subsequent app start resumes **connected**
+(persisted wallet session rehydrated, `status` goes straight to
+`connected`). With `siws` configured, a **still-valid SIWS session logs
+back in automatically** — no prompts, no re-signing (an expired one simply
+isn't restored; the next modal-triggered sign-in refreshes it). Restore
+silently drops anything it can't bring back (wallet removed, session
+invalidated), so a cold start can never end in a half-connected state.
+Explicit control is still available: `autoConnect` defaults to `false`,
+and calling `client.restore()` yourself (once, or after both) is
+harmless — the second restore just re-reads the same storage.
 
-**Why Albedo and xBull still use the WebView** — their protocols are
-`postMessage`-coupled end to end (Albedo's confirm page receives the
-intent request only via `window.postMessage` and replies to
-`window.opener`; xBull replies through the bare `opener` global with no
-redirect fallback). A Custom Tab has no `window.opener` and no message
-channel back into the app, so those flows cannot run there — the WebView
-bridges (which shim `window.opener`) stay. Every plain http(s) handoff
-moves to the themed browser, and any wallet that adds redirect callbacks
-plugs straight into `openAuth()`.
+### In-app web browser (WebView)
+
+`createWebBrowser()` opens plain web URLs — explorer links, wallet install
+pages, docs — in an **in-app WebView** with the same browser toolbar the
+Albedo/xBull screens carry (URL chip with tap-to-copy, Reload,
+Open-in-browser). One page at a time; `open()` resolves `'closed'` when the
+user dismisses it.
+
+```tsx
+const [browserView, setBrowserView] = useState<React.ReactElement | null>(null);
+const browser = useMemo(() => createWebBrowser(setBrowserView), []);
+
+// Pass it to the modal — explorer links, wallet install pages and the
+// footer link then open in-app instead of leaving the app:
+<AppKitModal client={appkit} open={open} onClose={close} browser={browser} />
+
+// Render the screen element at the app root (like albedoView/xbullView):
+{browserView}
+
+// Or drive it directly — resolves 'closed' on dismissal:
+await browser.open('https://testnet.stellarchain.io/account/G…');
+```
+
+Requires `react-native-webview` (already a peer dependency — the Albedo and
+xBull bridges need it too).
+
+**Why the WebView and not Chrome Custom Tabs / SFSafariViewController** —
+the system-browser surface was tried and removed:
+
+- A Custom Tab has **no `window.opener` and no message channel back into
+  the app**, so postMessage-coupled wallet protocols (Albedo's confirm
+  page, xBull's popup protocol) can't run there at all.
+- The styling/detection library (`react-native-inappbrowser-reborn`) is a
+  **native module that doesn't exist in Expo Go** — in the demo's primary
+  environment every open silently degraded to a fallback anyway, and the
+  dependency bought nothing.
+- The WebView works everywhere (Expo Go, dev-client, EAS, bare) and keeps
+  the user in-app with consistent chrome.
+
+The one Custom-Tab advantage — WebAuthn passkeys (WKWebView doesn't
+implement them) — is covered by the toolbar's "Open in browser" button: a
+page that needs a passkey is one tap from the system browser with its full
+feature set.
 
 ## The mobile wallet flow
 

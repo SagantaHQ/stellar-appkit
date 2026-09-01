@@ -126,7 +126,7 @@ import { copyText } from '../clipboard.js';
 import { useSiwsFlow } from './useSiws.js';
 import { buildStyles } from './styles.js';
 import { explorerUrl, fundViaFriendbot, useAccountData, type TxHistoryItem } from './accountData.js';
-import type { ThemedBrowserSession } from '../browser/inapp-browser.js';
+import type { WebBrowserSession } from '../browser/web-view-browser.js';
 import { VIEW_TITLES, resolveViewOnOpen, type WalletBranding, type WalletRow, type ViewId } from './types.js';
 import { AUTO_CLOSE_DELAY_MS, shouldAutoClose } from './auto-close.js';
 import { defaultTheme, type ConnectThemeRN } from './theme.js';
@@ -160,19 +160,21 @@ export interface AppKitModalProps {
   /** Header logo (web `logo-src` attribute). 22×22, radius 6. */
   logo?: ImageSourcePropType;
   /**
-   * Themed in-app browser for plain http(s) handoffs — explorer links,
-   * wallet install pages and the footer link open in a themed Chrome
-   * Custom Tab / SFSafariViewController (modal pageSheet on iOS) instead
-   * of bouncing the user out to the external browser. Wallet deep links
-   * (custom schemes) always go through `Linking` — Custom Tabs only
-   * handle web URLs. Optional: without it every URL opens via `Linking`
-   * exactly as before.
+   * In-app web browser for plain http(s) handoffs — explorer links,
+   * wallet install pages and the footer link open in an in-app WebView
+   * (with the URL-chip/Reload/Open-in-browser toolbar, same as the Albedo
+   * and xBull screens) instead of bouncing the user out to the external
+   * browser. Wallet deep links (custom schemes) always go through
+   * `Linking` — the WebView only loads web URLs. Optional: without it every
+   * URL opens via `Linking` exactly as before.
    *
-   * Build one with `createThemedBrowserSession({ reborn, expo }, { theme })`
-   * — see browser/inapp-browser.ts for the preference chain and why
-   * passkey-needing web wallets must use this surface instead of a WebView.
+   * Build one with `createWebBrowser(render)` — see
+   * browser/web-view-browser.ts for why the WebView and not Chrome Custom
+   * Tabs (no message channel back for wallet protocols; the Custom-Tab
+   * native module doesn't exist in Expo Go) and how the element injection
+   * works.
    */
-  browser?: ThemedBrowserSession;
+  browser?: WebBrowserSession;
   /**
    * Bottom-sheet mode only (default true): when an operation the app
    * requested completes SUCCESSFULLY — a connect settles (deep-link

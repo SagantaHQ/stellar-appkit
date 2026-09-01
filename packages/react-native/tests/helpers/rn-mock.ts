@@ -134,6 +134,12 @@ const registry = {
   Text: class {},
   View: class {},
   Pressable: class {},
+  // Modal + ActivityIndicator — linked by the browser screens (Albedo/
+  // xBull/WebBrowserScreen render full-screen Modals with a loading
+  // overlay). Class stubs suffice: the element trees are never rendered
+  // under bun, only constructed.
+  Modal: class {},
+  ActivityIndicator: class {},
   // The deprecated-but-universal core clipboard — optional at runtime; the
   // setString getter reads rnState per access so tests can simulate a
   // runtime where the export is gone.

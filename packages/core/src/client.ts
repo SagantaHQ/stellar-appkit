@@ -103,6 +103,20 @@ export interface StellarAppKitConfig {
   };
   /** Set false to disable cross-tab session sync (on by default, no-ops where BroadcastChannel isn't available anyway). */
   syncAcrossTabs?: boolean;
+  /**
+   * Auto-connect on construction: schedules `restore()` immediately, so a
+   * persisted wallet session reconnects (and, when `siws` is configured, a
+   * still-valid SIWS session logs back in) without the app wiring its own
+   * mount-effect `client.restore()` call. Fire-and-forget: restore() is
+   * designed to silently drop anything it can't bring back. Default false —
+   * apps that prefer explicit control keep calling `restore()` themselves
+   * (calling both is harmless; the second restore sees the same storage).
+   *
+   * On React Native this is the "auto connect and login" switch: pair once,
+   * then every app start resumes connected (and signed in, when SIWS is
+   * configured and the session hasn't expired).
+   */
+  autoConnect?: boolean;
   /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
   onPreviewTransaction?: PreviewHandler;
   /** Called before every signAuthEntry() with a decoded preview of the auth tree — return false to cancel before the wallet ever sees the request. Standalone auth-entry signing can grant broad contract permissions, so this preview is critical. */
@@ -397,6 +411,14 @@ export class StellarAppKit {
       this.tabSync = new TabSync(SESSION_STORAGE_KEY, () => {
         void this.resyncFromStorage();
       });
+    }
+
+    // Auto-connect: schedule restore() so persisted sessions (and a valid
+    // SIWS session, when configured) come back without the app wiring a
+    // mount effect. Restore never throws by design; the catch is pure
+    // belt-and-braces for storage adapters that reject outside its try/catch.
+    if (config.autoConnect) {
+      void this.restore().catch(() => undefined);
     }
   }
 
