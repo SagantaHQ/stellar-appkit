@@ -119,7 +119,7 @@ import {
 } from '../deep-links.js';
 import { useAppKit } from './useAppKit.js';
 import { useReducedMotion } from './animations.js';
-import { scheduleWalletConnectWarmUp } from './warm-up.js';
+import { scheduleWalletConnectWarmUp, WARM_UP_MOUNT_SETTLE_MS } from './warm-up.js';
 import { useWalletConnectForegroundRefresh } from '../wc-foreground.js';
 import { useAppFocusReturn } from '../focus-return.js';
 import { copyText } from '../clipboard.js';
@@ -328,13 +328,20 @@ export function AppKitModal({
 
   // Warm the WalletConnect SignClient at MOUNT, deferred (ui/warm-up.ts).
   // <AppKitModal> is typically mounted for the whole app lifetime (rendering
-  // null while closed), so this fires at app start: the SDK's module-tree
-  // evaluation and the relay WebSocket handshake complete while the user is
-  // still on the first screen — not on their first "Connect" tap. The settle
-  // window keeps the app's own first paint/animations ahead of the
-  // evaluation's JS-thread blockage; apps that warm the connector themselves
-  // (the RN demo does) just see the idempotent no-op.
-  useEffect(() => scheduleWalletConnectWarmUp(wcConnector), [wcConnector]);
+  // null while closed), so this fires at app start — but NOT as a race with
+  // the app's own startup: the schedule waits for interactions to settle
+  // (first paint + entrance animations) and then WARM_UP_MOUNT_SETTLE_MS,
+  // because the SDK's module-tree evaluation blocks the JS thread for
+  // seconds on debug builds and a warm-up in the first tick would leave the
+  // freshly-painted screen with dead buttons (every JS-driven touch frozen)
+  // for the whole evaluation. The warm-up is idempotent, so apps that warm
+  // the connector themselves — or eagerly preload the SDK module behind the
+  // splash (see the RN README's "zero startup freeze" pattern) — just see
+  // the no-op.
+  useEffect(
+    () => scheduleWalletConnectWarmUp(wcConnector, { settleMs: WARM_UP_MOUNT_SETTLE_MS }),
+    [wcConnector]
+  );
 
   // ---- onPreviewTransaction installation (web modal client setter) --------
   // The web modal assigns client.onPreviewTransaction when it attaches and

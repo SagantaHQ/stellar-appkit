@@ -47,6 +47,16 @@ export const rnState = {
   clipboardText: null as string | null,
   shareThrows: false,
   shareText: null as string | null,
+  /**
+   * InteractionManager gate (see warm-up.ts): when false (default),
+   * runAfterInteractions fires its callback synchronously — RN's own
+   * behavior when no interaction handles are in flight, and the posture
+   * every pre-existing test was written against. When true, callbacks are
+   * queued until flushInteractions() — the warm-up tests use it to pin the
+   * "nothing fires while an animation is running" invariant.
+   */
+  holdInteractions: false,
+  interactionQueue: [] as Array<() => void>,
 };
 
 export function resetRnState(): void {
@@ -61,6 +71,19 @@ export function resetRnState(): void {
   rnState.clipboardText = null;
   rnState.shareThrows = false;
   rnState.shareText = null;
+  rnState.holdInteractions = false;
+  rnState.interactionQueue = [];
+}
+
+/**
+ * Releases every queued runAfterInteractions callback in registration
+ * order — the "animations finished, app went idle" transition the warm-up
+ * scheduler waits for. Only meaningful while holdInteractions is true.
+ */
+export function flushInteractions(): void {
+  const queued = [...rnState.interactionQueue];
+  rnState.interactionQueue = [];
+  for (const cb of queued) cb();
 }
 
 /** Fires every registered AppState handler (simulates a foreground/background transition). */
@@ -98,6 +121,25 @@ const registry = {
           if (idx >= 0) rnState.appStateListeners.splice(idx, 1);
         },
       };
+    },
+  },
+  // InteractionManager — the warm-up scheduler's gate (ui/warm-up.ts).
+  // Default posture: no interactions in flight → callbacks run inline, RN's
+  // own behavior. holdInteractions=true queues them for flushInteractions().
+  // Returns an object shaped like RN's cancellable handle; the scheduler
+  // doesn't rely on it (the cancelled flag is the source of truth), it's
+  // here for API fidelity.
+  InteractionManager: {
+    runAfterInteractions: (callback: () => void) => {
+      if (rnState.holdInteractions) {
+        rnState.interactionQueue.push(callback);
+        return { cancel: () => {
+          const idx = rnState.interactionQueue.indexOf(callback);
+          if (idx >= 0) rnState.interactionQueue.splice(idx, 1);
+        } };
+      }
+      callback();
+      return { cancel: () => {} };
     },
   },
   NativeModules: {

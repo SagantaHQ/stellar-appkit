@@ -3,7 +3,9 @@
  * restore() that gives apps "auto connect and login" without wiring their
  * own mount effect. On React Native this is the pair-once / resume-every-
  * start switch (wallet session +, when configured, a still-valid SIWS
- * session).
+ * session) — with the restore deferred past the startup window there,
+ * because its WalletConnect rehydrate path evaluates the whole WC SDK
+ * synchronously and must never race the app's first paint.
  *
  * Freightere API is mocked like siws-session.test.ts so a real StellarAppKit
  * (with a real freighter connector) can be constructed against
@@ -160,5 +162,40 @@ describe('StellarAppKitConfig.autoConnect', () => {
     }
     expect(appkit.status).toBe('connected');
     expect(appkit.siwsSession?.address).toBe(TEST_ADDRESS); // logged back in, no prompts
+  });
+
+  test('on a React Native-like runtime: the auto restore is deferred past the startup window', async () => {
+    const storage = createMemoryStorage();
+    const seeder = makeAppkit({ storage });
+    await seeder.connect('freighter');
+    expect(storage.getItem('saganta-connect:session')).not.toBeNull();
+
+    // Mark the runtime as Hermes — the same signal isReactNativeLikeRuntime()
+    // checks in client.ts (core cannot import the RN package, so it reads
+    // the global directly; 'HermesInternal' is the Expo Go-proof branch).
+    const g = globalThis as { HermesInternal?: unknown };
+    g.HermesInternal = {};
+    try {
+      const appkit = makeAppkit({ storage, autoConnect: true });
+      // THE regression this pins: on RN the constructor-scheduled restore
+      // used to start immediately, and its WalletConnect rehydrate path
+      // evaluates the whole WC SDK synchronously — freezing the app's JS
+      // thread right as the first screen painted (all buttons dead for
+      // ~10s). The restore must NOT have run in the startup window.
+      await new Promise((r) => setTimeout(r, 60));
+      expect(appkit.status).not.toBe('connected');
+      expect(appkit.session).toBeNull();
+
+      // After the deferral window the session is back — auto connect still
+      // works, it just doesn't race the app's startup.
+      const deadline = Date.now() + 3000;
+      while (appkit.status !== 'connected' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(appkit.status).toBe('connected');
+      expect(appkit.session?.address).toBe(TEST_ADDRESS);
+    } finally {
+      delete g.HermesInternal;
+    }
   });
 });

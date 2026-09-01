@@ -104,17 +104,21 @@ export interface StellarAppKitConfig {
   /** Set false to disable cross-tab session sync (on by default, no-ops where BroadcastChannel isn't available anyway). */
   syncAcrossTabs?: boolean;
   /**
-   * Auto-connect on construction: schedules `restore()` immediately, so a
-   * persisted wallet session reconnects (and, when `siws` is configured, a
-   * still-valid SIWS session logs back in) without the app wiring its own
-   * mount-effect `client.restore()` call. Fire-and-forget: restore() is
-   * designed to silently drop anything it can't bring back. Default false —
-   * apps that prefer explicit control keep calling `restore()` themselves
-   * (calling both is harmless; the second restore sees the same storage).
+   * Auto-connect on construction: schedules `restore()`, so a persisted
+   * wallet session reconnects (and, when `siws` is configured, a still-valid
+   * SIWS session logs back in) without the app wiring its own mount-effect
+   * `client.restore()` call. Fire-and-forget: restore() is designed to
+   * silently drop anything it can't bring back. Default false — apps that
+   * prefer explicit control keep calling `restore()` themselves (calling
+   * both is harmless; the second restore sees the same storage).
    *
    * On React Native this is the "auto connect and login" switch: pair once,
    * then every app start resumes connected (and signed in, when SIWS is
-   * configured and the session hasn't expired).
+   * configured and the session hasn't expired). The restore is deferred ~1.2s
+   * there (after the app's first paint): with a persisted WalletConnect
+   * session the restore chain evaluates the whole WC SDK synchronously, and
+   * firing that in the constructor froze the freshly-started app's JS thread
+   * — every button dead for ~10s. Web restores immediately.
    */
   autoConnect?: boolean;
   /** Called before every signTransaction() with a decoded preview — return false to cancel before the wallet ever sees the request. `ui-web`'s modal sets this automatically when attached. */
@@ -314,6 +318,34 @@ const DEFAULT_RETRY_TIMEOUT_MS = 30_000;
 const SIWS_SESSION_STORAGE_KEY = 'saganta-appkit:siws-session';
 
 /**
+ * How long the autoConnect-scheduled restore() is deferred on React Native.
+ *
+ * The restore chain can reach the WalletConnect SDK's module evaluation
+ * (persisted WC session → rehydrate → ensureClient → dynamic import), which
+ * on RN is a synchronous require of the whole SDK tree — seconds of frozen
+ * JS thread on debug builds. Fired in the constructor (the old behavior)
+ * it landed exactly as the app's first screen painted: every JS-driven
+ * touch went dead for ~10s ("all buttons inactive after load"). Web pays
+ * nothing (the SDK eval is bundled/page-load work and restore() there is
+ * cheap), so the deferral is RN-only.
+ */
+const AUTO_CONNECT_RESTORE_DELAY_RN_MS = 1200;
+
+/**
+ * Runtime detection for the autoConnect deferral — core cannot import the
+ * RN package (that would be a dependency cycle), so it replicates the exact
+ * checks `isReactNativeRuntime()` performs there: RN defines a global
+ * `navigator` with product 'ReactNative', and Hermes runtimes (incl. Expo Go)
+ * expose `HermesInternal`. Browsers, Node, and bun all report neither.
+ */
+function isReactNativeLikeRuntime(): boolean {
+  if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+    return true;
+  }
+  return typeof globalThis !== 'undefined' && 'HermesInternal' in globalThis;
+}
+
+/**
  * The single object app code talks to. Wraps the connector registry, owns
  * connection state + persistence, and re-exports signIn() (SIWS) so a whole
  * app only ever needs one import.
@@ -417,8 +449,18 @@ export class StellarAppKit {
     // SIWS session, when configured) come back without the app wiring a
     // mount effect. Restore never throws by design; the catch is pure
     // belt-and-braces for storage adapters that reject outside its try/catch.
+    //
+    // On React Native the schedule is deferred (see
+    // AUTO_CONNECT_RESTORE_DELAY_RN_MS): with a persisted WalletConnect
+    // session the restore chain evaluates the whole WC SDK synchronously,
+    // and firing that in the constructor froze the freshly-started app's JS
+    // thread — the exact "buttons dead for ~10s after load" regression.
+    // Web restores immediately as before.
     if (config.autoConnect) {
-      void this.restore().catch(() => undefined);
+      const delayMs = isReactNativeLikeRuntime() ? AUTO_CONNECT_RESTORE_DELAY_RN_MS : 0;
+      setTimeout(() => {
+        void this.restore().catch(() => undefined);
+      }, delayMs);
     }
   }
 
